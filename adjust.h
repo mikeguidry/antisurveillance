@@ -1,0 +1,1 @@
+void PacketAdjustments(AS_attacks *aptr);
