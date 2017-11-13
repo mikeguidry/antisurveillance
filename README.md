@@ -17,3 +17,6 @@ really messy.
 original location:
 https://github.com/mikeguidry/clockwork/tree/antisurveillance/modules/anti_surveillance
 
+
+
+Funny enough.. It could be turned into a surveillance platform with the correct filters, and some external application preparing to analyze the data... LOL
