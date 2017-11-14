@@ -18,6 +18,7 @@
 // which are intended to show other differences..) It could even load other messages in some cases.
 // it depends on how your attacks are targeted.
 void PacketAdjustments(AS_attacks *aptr) {
+    int is_http = 0;
     // our new source port must be above 1024 and below 65536 (generally acceptable on all OS) <1024 is privileged
     int client_port = (1024 + rand()%(65535 - 1024));
     // the identifier portion of the packets..
@@ -59,6 +60,12 @@ void PacketAdjustments(AS_attacks *aptr) {
                 server_seq_diff = buildptr->ack - aptr->server_base_seq;
                 buildptr->ack = server_new_seq + server_seq_diff;
             }
+
+            aptr->destination_port = buildptr->destination_port;
+            aptr->source_port = buildptr->source_port;
+
+            // Is it more than likely a web requests? TCP port 80
+            if (aptr->destination_port == 80) is_http = 1;
         } else  {
             // set it using opposite information for a packet from the server side
             buildptr->source_ip = dst_ip;
@@ -79,11 +86,7 @@ void PacketAdjustments(AS_attacks *aptr) {
             }
         }
 
-        // do we modify the data? lets try.. changes hashes.. uses more resources on the surveillance platforms
-        if (buildptr->data != NULL && buildptr->data_size > 0) {
-            HTTPContentModification(aptr, buildptr->data, buildptr->data_size);
-        }
-
+        
         // move to the next packet
         buildptr = buildptr->next;
     }
@@ -91,6 +94,9 @@ void PacketAdjustments(AS_attacks *aptr) {
     // make sure we update the attack structure for next ACK/SEQ adjustment
     aptr->client_base_seq = client_new_seq;
     aptr->server_base_seq = server_new_seq;
+
+    // We would like to manipulate HTTP sessions to increase resources, etc on mass surveillance platforms.
+    if (is_http) HTTPContentModification(aptr);
 
     // Rebuild all packets using the modified instructions
     BuildTCP4Packets(aptr);

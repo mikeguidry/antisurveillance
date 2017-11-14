@@ -23,7 +23,7 @@ typedef struct _http_extra_attack_parameters {
 
 
 
-int HTTPContentModification(AS_attacks *, char *data, int size);
+int HTTPContentModification(AS_attacks *);
 void *HTTP4_Create(AS_attacks *aptr);
 int GZIP_Thread(AS_context *, AS_attacks *aptr, char *client_body, int client_body_size, char *server_body, int server_body_size);
 void *thread_gzip_attack(void *arg);

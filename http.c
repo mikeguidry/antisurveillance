@@ -302,6 +302,7 @@ char *ConnectionData(AS_attacks *attack, int side, int *_size) {
     }
 
     sptr = ret = (char *)malloc(size);
+    if (ret == NULL) return NULL;
 
     // now lets copy the data..
     while (iptr != NULL) {
@@ -322,37 +323,52 @@ char *ConnectionData(AS_attacks *attack, int side, int *_size) {
 // TODO: ***
 // take information from the connetion (src/dst ip and port) and clietn body (from cleitn side) and server body..
 // and rebuild with a completely new structur so that we can do advanced modifications.
-int HTTPContentModification(AS_attacks *aptr, char *data, int size) {
+int HTTPContentModification(AS_attacks *aptr) {
     int i = 0;
     int p = 0;
     //float z = 0;
     char *tags_to_modify[] = {"<html>","<body>","<head>","<title>","</title>","</head>","</body>","</html>",NULL};
     char *sptr = NULL;
     int ret = 0;
-    struct phr_header headers[100];
     char magic[4] = "HTTP";
     char *response = NULL;
     int response_size = 0;
+    // https://github.com/h2o/picohttpparser starting with their example...
+    char buf[4096], *method = NULL, *path = NULL;
+    int pret = 0, minor_version = 0;
+    struct phr_header headers[100];
+    size_t buflen = 0, prevbuflen = 0, method_len = 0, path_len = 0, num_headers = 0;
+    ssize_t rret = 0;
 
-    // it has to at least have data in the packets
-    if (data == NULL || size == 0) return ret;
-
+    return 0;
+    
     // lets only perform on port 80 for now...
     if (aptr->destination_port != 80) return ret;
 
-    // make sure it has at least 4 bytes (to look for HTTP)
-    if (size < 4) return ret;
-
-    // make sure it starts with HTTP
-    if (memcmp(magic, data, 4) != 0) return ret;
-
     if ((response = ConnectionData(aptr, FROM_SERVER, &response_size)) == NULL) return 0;
+
+    printf("\n\n\n---------------------------\nData: %s\n---------------\n\n\n\n", response);
+
+    num_headers = sizeof(headers) / sizeof(headers[0]);
+    pret = phr_parse_request(response, response_size, &method, &method_len, &path, &path_len, &minor_version, headers, &num_headers, prevbuflen);
+
 
     // response now contains all of the data which was received from the server...
     // HTTP/1.1 200 etc... the entire response.. now we can modify, insert gzip attacks, etc...
     // fuck shit up essentially... every change, or modification is more stress than the NSA would like to admit
     // on their networks.
 
+    printf("request is %d bytes long\n", pret);
+    printf("method is %.*s\n", (int)method_len, method);
+    printf("path is %.*s\n", (int)path_len, path);
+    printf("HTTP version is 1.%d\n", minor_version);
+    printf("headers:\n");
+    for (i = 0; i != num_headers; ++i) {
+        printf("%.*s: %.*s\n", (int)headers[i].name_len, headers[i].name,
+               (int)headers[i].value_len, headers[i].value);
+    }
+
+    //exit(-1);
 
     /*
     // right here would knock out gzip because more than 95% wouldnt be printable.. :(
