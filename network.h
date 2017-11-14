@@ -27,6 +27,8 @@ typedef struct _attack_outgoing_queue {
 
     AS_context *ctx;
 
+    int submitted;
+
 } AttackOutgoingQueue;
 
 

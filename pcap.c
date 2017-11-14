@@ -35,7 +35,7 @@
 
 
 // How many packets before we use pthreads to load the sessions?
-#define MAX_SINGLE_THREADED 100000
+#define MAX_SINGLE_THREADED 50000
 
 
 
@@ -236,6 +236,7 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
     AS_attacks *aptr = NULL;
     AS_attacks *ret = NULL;
     int total = 0;
+    int pcount = 0;
     //int start_ts = time(0);
 
     // load pcap file into packet information structures
@@ -244,20 +245,20 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
     // turn those packet structures into packet building instructions via analysis, etc
     if ((packetinstructions = PacketsToInstructions(packets)) == NULL) goto end;
 
-    printf("count: %d\n", L_count((LINK *)packetinstructions));
-    
     // prepare the filter for detination port
     FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
     
+    pcount = L_count((LINK *)packetinstructions);
     // If its more than 100k lets use multiple threads to complete it faster
-    if (L_count((LINK *)packetinstructions) > MAX_SINGLE_THREADED) {
+    if (pcount > MAX_SINGLE_THREADED) {
         // for high amounts of connections.. we want to use pthreads..
-        if ((aptr = ThreadedInstructionsFindConnection(ctx, &packetinstructions, &flt, 16, count, interval)) == NULL) goto end;
+        if ((packetinstructions = ThreadedInstructionsFindConnection(ctx, &packetinstructions, &flt, 16, count, interval)) == NULL) goto end;
     
-        total += L_count((LINK *)aptr);
+        total += L_count((LINK *)ctx->attack_list);
 
+        //printf("")
         // it needs to be add ordered.. if we add it first in the list then it will cut off packets 2 -> end
-        L_link_ordered((LINK **)&ctx->attack_list,(LINK *) aptr);
+        //L_link_ordered((LINK **)&ctx->attack_list,(LINK *) aptr);
     } else {
         // loop and load as many of this type of connection as possible..
         while (1) {

@@ -71,7 +71,7 @@ typedef struct _as_attacks {
     void *extra_attack_parameters;
 
     AS_context *ctx;
-    
+
 } AS_attacks;
 
 
@@ -131,6 +131,7 @@ typedef struct _antisurveillance_context {
     AttackOutgoingQueue *network_queue_last;
     pthread_mutex_t network_queue_mutex;
     pthread_t network_thread;
+    int network_threaded;
 } AS_context;
 
 

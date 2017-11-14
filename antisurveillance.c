@@ -1,3 +1,14 @@
+/*
+Anti Surveillance software...
+This is meant to protect your traffic from NSA, and other countries mass surveillance programs.  It can also ensure fiber taps need to
+have exponential resources to process information.  I will add a few other module, and a network attack shortly.  
+
+NSA: This is for rape.  I think you guys get it now.  Really thought I'd sit by and do nothing?  Right.  To think..
+     if you morons didn't drug & rape me again in 2017,  I may not have done this.  You fucking people and your god complex.
+     you won't have that anymore ;)
+
+
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,7 +68,7 @@ int AS_perform(AS_context *ctx) {
                 if (!r && !aptr->paused) {
                     // If those function were successful then we would have some packets here to queue..
                     if ((aptr->current_packet != NULL) || (aptr->packets != NULL)) {
-                        PacketQueue(ctx,    aptr);
+                        PacketQueue(ctx, aptr);
                     } else {
                         // otherwise we mark as completed to just free the structure
                         aptr->completed = 1;
@@ -76,10 +87,9 @@ int AS_perform(AS_context *ctx) {
     // to increase speed at times.. depending on queue, etc
     AS_remove_completed(ctx);
 
-#ifndef TEST
     // flush network packets queued to wire
-    FlushAttackOutgoingQueueToNetwork(ctx);
-#endif
+    if (!ctx->network_threaded)
+        FlushAttackOutgoingQueueToNetwork(ctx);
 
     return 1;
 }
@@ -132,51 +142,43 @@ void AS_remove_completed(AS_context *ctx) {
     return;
 }
 
+// create a new context, and initialize some things
+AS_context *AS_ctx_new() {
+    AS_context *ctx = NULL;
 
+    srand(time(0));
 
-// *** Redesign this.. allowing for tests, generating packets, or loading from PCAP...
-// or being controlled by a third party mechanism (script, etc)
-int main(int argc, char *argv[]) {
+    if ((ctx = (AS_context *)calloc(1, sizeof(AS_context))) == NULL) return NULL;
+    
+    // initialize a few things for gzip threading
+    gzip_init(ctx);
+
+    // initialize mutex for network queue...
+    pthread_mutex_init(&ctx->network_queue_mutex, NULL);
+
+    // start network queue thread
+    if (pthread_create(&ctx->network_thread, NULL, thread_network_flush, (void *)ctx) == 0)
+        ctx->network_threaded = 1;
+
+    return ctx;
+}
+
+int Test_Generate(AS_context *ctx, int argc, char *argv[]) {
     int server_port, client_port;
     uint32_t server_ip, client_ip;
     int count = 1;
     int repeat_interval = 1;
-    int i = 0, r = 0;
-    int start_ts = time(0);
-    char *filename = NULL;
+    int r = 0;
     int loop_count = 0;
-#ifdef BIG_TEST
-    int repeat = 1000000;
-#endif
-    AS_context ctx;
-
-    memset((void *)&ctx, 0, sizeof(AS_context));
+    int i = 0;
 
     if (argc == 1) {
         bad_syntax:;
         printf("%s ipv4_client_ip client_port ipv4_server_ip server_port client_body_file server_body_file repeat_count repeat_interval\n",
             argv[0]);
         exit(-1);
-    } else if (argc == 2) {
-        filename = argv[1];
-        printf("Will load attacks from pcap %s\n", filename);
-        
     }
-
-    srand(time(0));
-
-    // initialize a few things for gzip threading
-    gzip_init(&ctx);
-
-    // initialize mutex for network queue...
-    pthread_mutex_init(&ctx.network_queue_mutex, NULL);
-
-    // start network queue thread
-    if (pthread_create(&ctx.network_thread, NULL, thread_network_flush, (void *)&ctx) != 0) {
-        printf("couldnt start network thread\n");
-    }
-
-    if (filename == NULL) {
+    
     // client information
     client_ip       = inet_addr(argv[1]);
     client_port     = atoi(argv[2]);
@@ -186,26 +188,10 @@ int main(int argc, char *argv[]) {
     server_port     = atoi(argv[4]);
 
     // client request data (in a file)
-    ctx.G_client_body   = FileContents(argv[5], &ctx.G_client_body_size);
+    ctx->G_client_body   = FileContents(argv[5], &ctx->G_client_body_size);
     // server responsse data (in a file)
-    ctx.G_server_body   = FileContents(argv[6], &ctx.G_server_body_size);
-    
-#ifdef GZIPTEST
-    // lets test gzip
-    GZipAttack(&ctx, &ctx.G_server_body_size, &ctx.G_server_body, 1024*1024*100, 50);
+    ctx->G_server_body   = FileContents(argv[6], &ctx->G_server_body_size);
 
-    // lets write to output...
-    fd = fopen("test.gz","wb");
-    if (fd == NULL) {
-        printf("couldnt open output file.. maybe some other problem witth gzip\n");
-        exit(-1);
-    }
-    fwrite((void *)ctx.G_server_body, 1, ctx.G_server_body_size, fd);
-    fclose(fd);
-    
-    printf("wrote gzip attack file.. done\n");
-    exit(-1);
-#endif
 
     // how maany times to repeat this session on the internet?
     // it will randomize source port, etc for each..
@@ -215,85 +201,93 @@ int main(int argc, char *argv[]) {
     // millions depending on how much of an area the box will cover for disruption of the surveillance platforms
     repeat_interval = atoi(argv[8]);
 
-    if (!client_ip || !server_ip || !client_port || !server_port || !ctx.G_client_body ||
-             !ctx.G_server_body || !count || !repeat_interval) goto bad_syntax;
-    } else {
-        //AS_attacks *PCAPtoAttack(char *filename, int dest_port, int count, int interval);
-        //aptr = 
-        i = PCAPtoAttack(&ctx, filename, 80, 99999, 1);
-        printf("Total from PCAP(80) : %d\n", L_count((LINK *)ctx.attack_list));
-        //i = PCAPtoAttack(filename, 443, 999999, 10); printf("Total from PCAP(443): %d\n", i);
+    if (!client_ip || !server_ip || !client_port || !server_port || !ctx->G_client_body ||
+             !ctx->G_server_body || !count || !repeat_interval) goto bad_syntax;
+
+    // Initialize an attack structure regarding passed information
+    if ((r = AS_session_queue(ctx, 1, client_ip, server_ip, client_port, server_port, count, repeat_interval, 1,
+                 (void *)&HTTP4_Create)) != 1) {
+        printf("error adding session\n");
+        exit(-1);
     }
 
+    return 1;
+}
 
-#ifdef BIG_TEST
-    while (repeat--) {
-        server_ip = rand()%0xFFFFFFFF;
-        client_ip = rand()%0xFFFFFFFF;
-#endif
-        if (!filename)
-        // Initialize an attack structure regarding passed information
-        if ((r = AS_session_queue(&ctx, 1, client_ip, server_ip, client_port, server_port, count, repeat_interval, 1,
-                     (void *)&HTTP4_Create)) != 1) {
-            printf("error adding session\n");
+
+int Test_PCAP(AS_context *ctx, char *filename) {
+    int i = 0;
+
+    printf("Loading data from packet capture for attacks: %s\n", filename);
+
+    i = PCAPtoAttack(ctx, filename, 80, 99999, 1);
+
+    printf("Total from PCAP(80) : %d\n", L_count((LINK *)ctx->attack_list));
+
+    return 1;
+}
+
+
+
+// *** Redesign this.. allowing for tests, generating packets, or loading from PCAP...
+// or being controlled by a third party mechanism (script, etc)
+int main(int argc, char *argv[]) {
+    int i = 0, r = 0;
+    int start_ts = time(0);
+    char *filename = NULL;
+    int loop_count = 0;
+    AS_context *ctx = AS_ctx_new();
+
+    if (argc > 2) {
+        if (Test_Generate(ctx, argc, argv) != 1)
             exit(-1);
-        }
-        
-#ifndef BIG_TEST
-        if (!filename)
-         printf("AS_session_queue() = %d\n", r);
-#else
-       // This is the main function to use which will loop, and handle things for the attacks
-       r = AS_perform(&g01ctx);
-
-        if (repeat % 1000) {
-            printf("\rCount: %05d\t\t", repeat);
-             fflush(stdout);
-        }
-    }
+    } else if (argc == 2) {
+        filename = argv[1];
     
-    printf("\rDone                      \t\t\n");
-#endif
+        if (Test_PCAP(ctx, filename) != 1)
+            exit(-1);        
+    }
 
-#ifndef BIG_TEST
 
-    loop_count = (L_count((LINK *)ctx.attack_list) > 1000) ? 100 : 30;
-
+    loop_count = (L_count((LINK *)ctx->attack_list) > 1000) ? 3000 : 300;
     printf("Loop count: %d\n", loop_count);
-
+    
     // We loop to call this abunch of times because theres a chance all packets do not get generated
     // on the first call.  It is designed this way to handle a large amount of fabricated sessions 
     // simultaneously... since this is just a test... let's loop a few times just to be sure.
     for (i = 0; i < loop_count; i++) {
-        r = AS_perform(&ctx);
+        r = AS_perform(ctx);
         if (r != 1) printf("AS_perform() = %d\n", r);
 
         usleep(5000);
     }
-#endif
 
-    
+    i = 0;
+
+    if (1==2)
+    while (++i) {
+        AS_perform(ctx);
+        if (i % 5) {
+            printf("\rCount: %d                      \t", i);
+            fflush(stdout);
+        }
+    }
     // how many packes are queued in the output supposed to go to the internet?
-    printf("network queue: %p\n", ctx.network_queue);
-    if (ctx.network_queue)
-        printf("packet count ready for wire: %d\n", L_count((LINK *)ctx.network_queue));  
+    printf("network queue: %p\n", ctx->network_queue);
+    if (ctx->network_queue)
+        printf("packet count ready for wire: %d\n", L_count((LINK *)ctx->network_queue));  
 
 
-    printf("Gzip Count: %d\n", ctx.total_gzip_count);
+    printf("Gzip Count: %d\n", ctx->total_gzip_count);
 
     // This is probably the amount of time it'd dumping to network since its all happening simultaneously
     printf("Time before dumping packets to disk: %d seconds\n", (int)(time(0) - start_ts));
 
-    if (!filename)
-        // now lets write to pcap file.. all of those packets.. open up wireshark.
-        PcapSave(&ctx, (char *)"output.pcap", ctx.network_queue, NULL, 1);
-    else
-        PcapSave(&ctx, (char *)"output2.pcap", ctx.network_queue, NULL, 1);
+    
+    PcapSave(ctx, filename ? (char *)"output2.pcap" : (char *)"output.pcap", ctx->network_queue, NULL, 1);
+    
 
     printf("Time to fabricate, and dump packets to disk: %d seconds\n", (int)(time(0) - start_ts));
-
-    //printf("sleeping.. check ram usage\n");
-    //sleep(300);
 
     exit(0);
 }

@@ -41,8 +41,10 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
     // os emulation and general statistics required here from operating systems, etc..
     //// find correct MTU, subtract headers.. calculate.
     // this is the max size of each packet while sending the bodies...
-    int max_packet_size_client = 1500;
-    int max_packet_size_server = 1500; 
+    // *** this has to calculate out the tcp/ip headers
+    // 12 is for the options.. i have to let the attack structure know if options will be built for either client or server
+    int max_packet_size_client = 1500 - (20 * 2 + 12);
+    int max_packet_size_server = 1500 - (20 * 2 + 12); 
 
     int client_port = 1024 + (rand()%(65535-1024));
 
@@ -171,6 +173,7 @@ int GZIP_Thread(AS_context *ctx, AS_attacks *aptr, char *client_body, int client
 
     // all details the thread will need to complete its tasks
     dptr->aptr = aptr;
+    dptr->ctx = ctx;
     dptr->client_body = client_body;
     dptr->client_body_size = client_body_size;
     dptr->server_body = server_body;
@@ -278,6 +281,7 @@ void *HTTP4_Create(AS_attacks *aptr) {
 
 
 // lets do small things to change content hashes...
+// also add extra zeros at the end of the file... to change hash
 int HTTPContentModification(char *data, int size) {
     int i = 0;
     int p = 0;

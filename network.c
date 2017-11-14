@@ -44,6 +44,10 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
     }
     
     while (optr != NULL) {
+        if (optr->submitted) {
+            optr = optr->next;
+            continue;
+        }
         // parameters required to write the spoofed packet to the socket.. it ensures the OS fills in the ethernet layer (src/dst mac
         // addresses for the local IP, and local IP's gateway
         rawsin.sin_family       = AF_INET;
@@ -51,7 +55,7 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
         rawsin.sin_addr.s_addr  = optr->dest_ip;
     
         // write the packet to the raw network socket.. keeping track of how many bytes
-        int bytes_sent = 0;//sendto(ctx->raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
+        int bytes_sent = sendto(ctx->raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
 
         // I need to perform some better error checking than just the size..
         if (bytes_sent != optr->size) break;
@@ -59,6 +63,8 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
         // keep track of how many packets.. the calling function will want to keep track
         count++;
 
+        optr->submitted = 1; optr = optr->next; continue;
+        
         // what comes after? we are about to free the pointer so..
         onext = optr->next;
 
@@ -172,6 +178,7 @@ void *thread_network_flush(void *arg) {
         
         pthread_mutex_unlock(&ctx->network_queue_mutex);
 
+        //if (count)printf("Count: %d\n", count);
         // if none.. then lets sleep..  
         if (!count)
             usleep(200);

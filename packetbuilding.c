@@ -19,7 +19,6 @@ todo: put packet types, and pointers to the functions for building them into a s
 #include "attacks.h"
 #include "packetbuilding.h"
 #include "adjust.h"
-
 #include "utils.h"
 
 // calculate checksum
@@ -389,7 +388,7 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
             return;
 
         // derement the count..
-        aptr->count--;
+        //aptr->count--;
 
         // aptr->ts is only set if it was already used once..
         if (aptr->ts.tv_sec) {

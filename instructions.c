@@ -67,7 +67,7 @@ void FilterPrepare(FilterInformation *fptr, int type, uint32_t value) {
 int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
     int ret = 0;
 
-    return 1;
+    //return 1;
 
     // if the filter is empty... its allowed
     if (fptr->flags == 0 || fptr->init != 0xAABBCCDD) return 1;
@@ -259,8 +259,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
         if (DataPrepare(&bptr->data, data_ptr, packet_size) != 1) goto err;
         bptr->data_size = packet_size;
-        bptr->header_identifier = (*src_identifier)++;
-        
+        bptr->header_identifier = *src_identifier; *src_identifier += 1;
         bptr->client = from_client;
         bptr->ack = *remote_seq;
         bptr->seq = *my_seq;
@@ -273,7 +272,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
         packet_ttl = from_client ? cptr->server_ttl : cptr->client_ttl;
         if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl)) == NULL) goto err;
-        bptr->header_identifier = (*dst_identifier)++;
+        bptr->header_identifier = *dst_identifier; *dst_identifier += 1;
         bptr->ack = *my_seq;
         bptr->seq = *remote_seq;
         bptr->client = !from_client;
@@ -334,9 +333,10 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
     if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
     bptr->client = from_client;
-    bptr->header_identifier =  (*src_identifier)++;
+    bptr->header_identifier =  *src_identifier; *src_identifier += 1;
     bptr->ack = *remote_seq;
-    bptr->seq = (*my_seq)++;
+    bptr->seq = *my_seq;
+    *my_seq += 1;
     
     
     // other side needs to respond..adds its own FIN with its ACK
@@ -344,9 +344,10 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_ttl = from_client ? cptr->server_ttl : cptr->client_ttl;
     if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl)) == NULL) goto err;
     bptr->client = !from_client;
-    bptr->header_identifier = (*dst_identifier)++;
+    bptr->header_identifier = *dst_identifier; *dst_identifier += 1;
     bptr->ack = *my_seq;
-    bptr->seq = (*remote_seq)++;
+    bptr->seq = *remote_seq;
+    *remote_seq += 1;
     
 
 
@@ -355,7 +356,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
     if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
     bptr->client = from_client;
-    bptr->header_identifier = (*src_identifier)++;
+    bptr->header_identifier = *src_identifier; *src_identifier += 1;
     bptr->ack = *remote_seq;
     bptr->seq = *my_seq;
     
@@ -465,7 +466,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                     }
 
                     // pointer to where the data starts in this packet being analyzed
-                    sptr = (char *)(pptr->buf + ((p->ip.ihl << 2) + (p->tcp.doff << 2)));
+                    sptr = (char *)(pptr->buf + (pptr->size - data_size));
 
                     // copy into the newly allocated buffer the tcp/ip data..
                     memcpy(data, sptr, data_size);
@@ -495,7 +496,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
                 // start checksum...
                 // get tcp header size (so we know if it has options, or not)
-                tcp_header_size = (p->tcp.doff << 2);
+                tcp_header_size = p->tcp.doff << 2;
         
                 // start of packet checksum verifications
                 // set a temporary buffer to the packets IP header checksum
@@ -506,12 +507,11 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
                 // calculate what it should be
                 p->ip.check = (unsigned short)in_cksum((unsigned short *)&p->ip, IPHSIZE);
-
                 // verify its OK.. if not mark this packet as bad (so we can verify how many bad/good and decide
                 // on discarding or not)
 
                 // this is failing! fix!
-                //if (p->ip.check != pkt_chk) iptr->ok = 0;
+                if (p->ip.check != pkt_chk) iptr->ok = 0;
 
                 // lets put the IP header checksum back
                 p->ip.check = pkt_chk;
@@ -524,7 +524,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                 p->tcp.check = 0;
 
                 // it needs to be calculated with a special pseudo structure..
-                checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp) + tcp_header_size + iptr->data_size);
+                checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp) + tcp_header_size + iptr->data_size + iptr->options_size);
                 if (checkbuf == NULL) goto end;
 
                 // code taken from ipv4 tcp packet building function
@@ -545,8 +545,10 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                     memcpy(checkbuf + sizeof(struct pseudo_tcp), iptr->options, iptr->options_size);
 
                 // now copy the data itself of the packet
-                if (iptr->data_size)
+                if (iptr->data_size) {
+                    //printf("has data header %d opt %d data %p data size %d\n",tcp_header_size, iptr->options_size, iptr->data, iptr->data_size);
                     memcpy(checkbuf + sizeof(struct pseudo_tcp) + iptr->options_size, iptr->data, iptr->data_size);        
+                }
         
                 // put the checksum into the correct location inside of the header
                 p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, tcp_header_size + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
@@ -556,7 +558,10 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
                 // TCP header verification failed
                 // *** this is failing!
-                //if (p->tcp.check != pkt_chk) iptr->ok = 0;
+                if (p->tcp.check != pkt_chk) {
+                    printf("TCP checksum failed!\n");
+                    //iptr->ok = 0;
+                }
 
                 // put the original value back
                 p->tcp.check = pkt_chk;
@@ -615,9 +620,8 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
     PacketBuildInstructions *packets = NULL;
     PacketBuildInstructions *ret = NULL;
     FilterInformation fptr;
-    int count = 0, ccount = 0, fcount = 0;
-    struct in_addr src, dst;
-    char Asrc[16], Adst[16];
+    int got_fin_ack = 0;
+    //int count = 0, ccount = 0, fcount = 0;
 
     //printf("InstructionsFindConnection count of incoming packets: %d\n", L_count((LINK *)iptr));
 
@@ -630,18 +634,13 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
     while (iptr != NULL) {
         //count++;
 
-        //printf("iptr ok %d\n", iptr->ok);
         // no point in replaying bad checksum packets...
         if (iptr->ok != 0) {
-
-            src.s_addr = iptr->source_ip;
-            dst.s_addr = iptr->destination_ip;
-
             // make sure it matches our filter (right now hard coded for www)
             if (FilterCheck(flt ? flt : &fptr, iptr)) {
-                fcount++; // filter couont..
+                //fcount++; // filter couont..
             
-                printf("passed filter %d:%d -> %d:%d data %p data size %d\n", src.s_addr, iptr->source_port, dst.s_addr, iptr->destination_port, iptr->data, iptr->data_size);
+                //printf("passed pass filter  %d:%d -> %d:%d data %p data size %d %X %X flags\n", src.s_addr, iptr->source_port, dst.s_addr, iptr->destination_port, iptr->data, iptr->data_size, iptr->header_identifier, iptr->flags);
 
                 // a SYN packet with an ACK of 0 should be the first connecting packet
                 if (!src_ip && !dst_ip && !src_port && !dst_port) {
@@ -657,7 +656,7 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                 // is it the same connection?
                 if (((src_port == iptr->source_port) && (dst_port == iptr->destination_port)) ||
                     ((src_port == iptr->destination_port) && (dst_port == iptr->source_port))) {
-                        printf("%d:%d -> %d:%d data %p data size %d\n", src.s_addr, iptr->source_port, dst.s_addr, iptr->destination_port, iptr->data, iptr->data_size);
+                        //printf("%d:%d -> %d:%d data %p data size %d\n", src.s_addr, iptr->source_port, dst.s_addr, iptr->destination_port, iptr->data, iptr->data_size);
                         // if its coming from the source IP we found as an initial SYN.. its the client
                         if (iptr->source_port == src_port) {
                             //ccount++;
@@ -681,22 +680,32 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                         L_link_ordered((LINK **)&packets, (LINK *)iptr);
 
                         // RST + ACK = last packet.. in the millions of packets it was slow-er without this...
-                        if ((iptr->flags & TCP_FLAG_FIN) && (iptr->flags & TCP_FLAG_ACK)) {
-                            printf("Found last packet.. FIN|ACK\n");
-                            break;
-                        }
+                        // turned this off.. it was leaving 2 more packets.. rewrite
 
+                        // this got messy fast.. rewrite (have another func to look into future packets for the final)
+                        if (got_fin_ack == 0) {
+                            if ((iptr->flags & TCP_FLAG_FIN) && (iptr->flags & TCP_FLAG_ACK)) {
+                                got_fin_ack = 1;
+                                //printf("Found last packet.. FIN|ACK\n");
+                                //break;
+                            }
+                        } else if (got_fin_ack == 1) {
+                                if ((iptr->flags & TCP_FLAG_ACK)) {
+                                    got_fin_ack++;
+                                }
+                        } else if (got_fin_ack == 2) break;
+                            
                         // time to process the next
                         iptr = inext;
 
-                        ccount++;
+                        //ccount++;
 
                         continue;
                     }
                 }
-            } else {
-                printf("Didnt pass filter  %d:%d -> %d:%d data %p data size %d\n", src.s_addr, iptr->source_port, dst.s_addr, iptr->destination_port, iptr->data, iptr->data_size);
-            }
+            } /*else {
+                printf("Didnt pass filter  %d:%d -> %d:%d data %p data size %d %X\n", src.s_addr, iptr->source_port, dst.s_addr, iptr->destination_port, iptr->data, iptr->data_size, iptr->header_identifier);
+            }*/
 
         // set this packet as the last.. so in future the connections can be unlinked from their original list
         ilast = iptr;
@@ -706,11 +715,11 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
     }
 
     ret = packets;
-
+/*
     printf("-----------------\n");
     printf("done func %d client count %d filter count %d\n", count, ccount, fcount);
     printf("-----------------\n");
-
+*/
     return ret;
 }
 
@@ -845,9 +854,6 @@ PacketBuildInstructions *ThreadedInstructionsFindConnection(AS_context *ctx, Pac
         }
     }
 
-
-
-
     // We need to loop a second time waiting for each thread to complete...
     // This COULD be threeaded off itself, and merge into the attack list later..
     // Update this later once scripting is completed.. to allow control from
@@ -866,7 +872,7 @@ PacketBuildInstructions *ThreadedInstructionsFindConnection(AS_context *ctx, Pac
         if (ThreadAnalysisDetails[i].completed == 1) {
             // Add attacks if any connections were found...
             if (ThreadAnalysisDetails[i].attacks != NULL) {
-                L_link_ordered((LINK **)&ret, (LINK *)ThreadAnalysisDetails[i].attacks);
+                L_link_ordered((LINK **)&ctx->attack_list, (LINK *)ThreadAnalysisDetails[i].attacks);
             }
         }
 
