@@ -81,7 +81,7 @@ void PacketAdjustments(AS_attacks *aptr) {
 
         // do we modify the data? lets try.. changes hashes.. uses more resources on the surveillance platforms
         if (buildptr->data != NULL && buildptr->data_size > 0) {
-            HTTPContentModification(buildptr->data, buildptr->data_size);
+            HTTPContentModification(aptr, buildptr->data, buildptr->data_size);
         }
 
         // move to the next packet

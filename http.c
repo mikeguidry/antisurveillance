@@ -17,6 +17,7 @@
 #include "attacks.h"
 #include "http.h"
 #include "instructions.h"
+#include "picohttpparser.h"
 
 // wtf? string.h didnt load this..
 // *** figure this out sooner or later...
@@ -280,21 +281,81 @@ void *HTTP4_Create(AS_attacks *aptr) {
 
 
 
+
+// pull all data from a single side of a connection in our attack list..
+// this will allow you to get full http request/responses...
+// I'd rather two loops here instead of using realloc()
+char *ConnectionData(AS_attacks *attack, int side, int *_size) {
+    char *ret = NULL;
+    int size = 0;
+    AS_attacks *aptr = attack;
+    PacketBuildInstructions *iptr = attack->packet_build_instructions;
+    char *sptr = NULL;
+
+    // lets get the size first..
+    while (iptr != NULL) {
+        // make sure its the correct side...
+        if (((side == FROM_CLIENT) && (iptr->client == 1)) || ((side == FROM_SERVER) && (iptr->client == 0))) {
+            size += iptr->data_size;
+        }
+        iptr = iptr->next;
+    }
+
+    sptr = ret = (char *)malloc(size);
+
+    // now lets copy the data..
+    while (iptr != NULL) {
+        // make sure its the correct side...
+        if (((side == FROM_CLIENT) && (iptr->client == 1)) || ((side == FROM_SERVER) && (iptr->client == 0))) {
+            memcpy(sptr, iptr->data, iptr->data_size);
+            sptr += iptr->data_size;
+        }
+        iptr = iptr->next;
+    }
+
+    end:;
+    *_size = size;
+    return ret;
+}
 // lets do small things to change content hashes...
 // also add extra zeros at the end of the file... to change hash
-int HTTPContentModification(char *data, int size) {
+// TODO: ***
+// take information from the connetion (src/dst ip and port) and clietn body (from cleitn side) and server body..
+// and rebuild with a completely new structur so that we can do advanced modifications.
+int HTTPContentModification(AS_attacks *aptr, char *data, int size) {
     int i = 0;
     int p = 0;
-    float z = 0;
+    //float z = 0;
     char *tags_to_modify[] = {"<html>","<body>","<head>","<title>","</title>","</head>","</body>","</html>",NULL};
     char *sptr = NULL;
     int ret = 0;
+    struct phr_header headers[100];
+    char magic[4] = "HTTP";
+    char *response = NULL;
+    int response_size = 0;
 
-    // *** double check this.. it was crashing from the pcap thread loading function's data
-    //return 0;
-
+    // it has to at least have data in the packets
     if (data == NULL || size == 0) return ret;
 
+    // lets only perform on port 80 for now...
+    if (aptr->destination_port != 80) return ret;
+
+    // make sure it has at least 4 bytes (to look for HTTP)
+    if (size < 4) return ret;
+
+    // make sure it starts with HTTP
+    if (memcmp(magic, data, 4) != 0) return ret;
+
+    if ((response = ConnectionData(aptr, FROM_SERVER, &response_size)) == NULL) return 0;
+
+    // response now contains all of the data which was received from the server...
+    // HTTP/1.1 200 etc... the entire response.. now we can modify, insert gzip attacks, etc...
+    // fuck shit up essentially... every change, or modification is more stress than the NSA would like to admit
+    // on their networks.
+
+
+    /*
+    // right here would knock out gzip because more than 95% wouldnt be printable.. :(
     for (i = 0; i < size; i++)
         if (isprint(data[i]))
             p++;
@@ -302,9 +363,9 @@ int HTTPContentModification(char *data, int size) {
     z = (p / size) * 100;
 
     // probably html/text since 95% is printable character...
-    if (z < 95) return 0;
+    if (z < 95) return 0; */
 
-    for (i = 0; tags_to_modify[i] != NULL; i++) {
+    /*for (i = 0; tags_to_modify[i] != NULL; i++) {
         if ((sptr = (char *)strcasestr(data, tags_to_modify[i])) != NULL) {
             for (z = 0; z < 3; z++) {
                 p = rand()%strlen(tags_to_modify[i]);
@@ -316,7 +377,11 @@ int HTTPContentModification(char *data, int size) {
                 ret++;
             }
         }
-    }
+    }*/
+
+    end:;
+
+    PtrFree(&response);
 
     return ret;
 }

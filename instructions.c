@@ -259,7 +259,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
         if (DataPrepare(&bptr->data, data_ptr, packet_size) != 1) goto err;
         bptr->data_size = packet_size;
-        bptr->header_identifier = *src_identifier; *src_identifier += 1;
+        bptr->header_identifier = (*src_identifier)++;
         bptr->client = from_client;
         bptr->ack = *remote_seq;
         bptr->seq = *my_seq;
@@ -272,7 +272,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
         packet_ttl = from_client ? cptr->server_ttl : cptr->client_ttl;
         if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl)) == NULL) goto err;
-        bptr->header_identifier = *dst_identifier; *dst_identifier += 1;
+        bptr->header_identifier = (*dst_identifier)++;
         bptr->ack = *my_seq;
         bptr->seq = *remote_seq;
         bptr->client = !from_client;
@@ -333,10 +333,10 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
     if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
     bptr->client = from_client;
-    bptr->header_identifier =  *src_identifier; *src_identifier += 1;
+    bptr->header_identifier =  (*src_identifier)++;
     bptr->ack = *remote_seq;
-    bptr->seq = *my_seq;
-    *my_seq += 1;
+    bptr->seq = (*my_seq)++;
+    
     
     
     // other side needs to respond..adds its own FIN with its ACK
@@ -344,10 +344,9 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_ttl = from_client ? cptr->server_ttl : cptr->client_ttl;
     if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl)) == NULL) goto err;
     bptr->client = !from_client;
-    bptr->header_identifier = *dst_identifier; *dst_identifier += 1;
+    bptr->header_identifier = (*dst_identifier)++;
     bptr->ack = *my_seq;
-    bptr->seq = *remote_seq;
-    *remote_seq += 1;
+    bptr->seq = (*remote_seq)++;
     
 
 
@@ -356,7 +355,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
     if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
     bptr->client = from_client;
-    bptr->header_identifier = *src_identifier; *src_identifier += 1;
+    bptr->header_identifier = (*src_identifier)++;
     bptr->ack = *remote_seq;
     bptr->seq = *my_seq;
     
