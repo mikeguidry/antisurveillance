@@ -5,6 +5,7 @@
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
 #include "http.h"
@@ -17,27 +18,30 @@
 // which are intended to show other differences..) It could even load other messages in some cases.
 // it depends on how your attacks are targeted.
 void PacketAdjustments(AS_attacks *aptr) {
-    // our new source port must be above 1024 and below 65536
-    // lets get this correct for each emulated operating system later as well
+    // our new source port must be above 1024 and below 65536 (generally acceptable on all OS) <1024 is privileged
     int client_port = (1024 + rand()%(65535 - 1024));
+    // the identifier portion of the packets..
     int client_identifier = rand()%0xFFFFFFFF;
     int server_identifier = rand()%0xFFFFFFFF;
-    
+
+    // our new SEQ base for each side of the connection.. it will replace all packets current sequence numbers
     int client_new_seq = rand()%0xFFFFFFFF;
     int server_new_seq = rand()%0xFFFFFFFF;
 
+    // it picks new  IPs randomly right now.. it needs a context for the current configuration for picking them (w historic information)
     uint32_t src_ip = rand()%0xFFFFFFFF;
     uint32_t dst_ip = rand()%0xFFFFFFFF;
 
+    // used to change the SEQ.. it calculates the difference between the old, and new so that the rest is compatible
     uint32_t client_seq_diff = 0;
     uint32_t server_seq_diff = 0;
 
+    // loop through each packet instruction in memory for this attack
     PacketBuildInstructions *buildptr = aptr->packet_build_instructions;
-
     while (buildptr != NULL) {
-        // set ports for correct side of the packet..
+        // we can determine which side of the connection by this variable we had set during analysis
         if (buildptr->client) {
-
+            // set our new IP addresses for this packet
             buildptr->source_ip = src_ip;
             buildptr->destination_ip = dst_ip;
 
@@ -50,13 +54,13 @@ void PacketAdjustments(AS_attacks *aptr) {
             client_seq_diff = buildptr->seq - aptr->client_base_seq;
             buildptr->seq = client_new_seq + client_seq_diff;
 
+            // we do not wish to replace an ACK of 0.. (the initial syn packet)
             if (buildptr->ack != 0) {
                 server_seq_diff = buildptr->ack - aptr->server_base_seq;
                 buildptr->ack = server_new_seq + server_seq_diff;
             }
-
         } else  {
-
+            // set it using opposite information for a packet from the server side
             buildptr->source_ip = dst_ip;
             buildptr->destination_ip = src_ip;
             
@@ -65,6 +69,7 @@ void PacketAdjustments(AS_attacks *aptr) {
             // The header identifier is changed here (and we use the server side)
             buildptr->header_identifier = server_identifier++;
 
+            // replace w our new base seqs for server side packets.. (and if we are ACK'ing client packet)
             server_seq_diff = buildptr->seq - aptr->server_base_seq;
             buildptr->seq = server_new_seq + server_seq_diff;
 
@@ -74,8 +79,8 @@ void PacketAdjustments(AS_attacks *aptr) {
             }
         }
 
-        // do we modify the data? lets try.. changes hashes.. uses more resources
-        if (buildptr->data && buildptr->data_size) {
+        // do we modify the data? lets try.. changes hashes.. uses more resources on the surveillance platforms
+        if (buildptr->data != NULL && buildptr->data_size > 0) {
             HTTPContentModification(buildptr->data, buildptr->data_size);
         }
 

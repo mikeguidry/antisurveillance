@@ -5,7 +5,7 @@
 
 
 void PacketBuildInstructionsFree(PacketBuildInstructions **list);
-AS_attacks *InstructionsToAttack(PacketBuildInstructions *instructions, int count, int interval);
+AS_attacks *InstructionsToAttack(AS_context *, PacketBuildInstructions *instructions, int count, int interval);
 PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **instructions, FilterInformation *flt);
 PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets);
 int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list, int from_client);
@@ -15,3 +15,4 @@ PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, ui
 int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr);
 void FilterPrepare(FilterInformation *fptr, int type, uint32_t value);
 
+PacketBuildInstructions *ThreadedInstructionsFindConnection(AS_context *, PacketBuildInstructions **instructions, FilterInformation *flt, int threads, int replay_count, int interval);

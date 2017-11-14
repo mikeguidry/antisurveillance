@@ -4,6 +4,8 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <sys/time.h>
+#include <stdint.h>
+#include "network.h"
 #include "antisurveillance.h"
 #include "utils.h"
 

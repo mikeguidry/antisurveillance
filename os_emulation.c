@@ -1,6 +1,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/*
+I want this information to get automatically populated using live pcaps, or wire.  It can monitor port 80, and pull this information
+out of HTTP headers in real time.  It would mean there is no reason to update the technology for the future.  I want this entire
+system to be completely automated forever.
+*/
+typedef struct _operating_system {
+    int id;
+    int ttl;
+    int window_size;
+    int residential;
+    int commercial;
+
+    int percentage_residential;
+    int percentage_commercial;
+
+    void *custom_data;
+    int custom_size;
+} OperatingSystemParameters;
 // parameters required for emulation of operating systems
 struct _operating_system_emulation_parameters {
     int id;

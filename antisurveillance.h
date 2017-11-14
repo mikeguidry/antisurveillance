@@ -5,6 +5,7 @@ struct _packet_info;
 struct _tcp_packet_instructions;
 //typedef struct _packet_info PacketInfo;
 
+
 // general attack structure...
 // should support everything from syn packets, to virtual connections
 typedef struct _as_attacks {
@@ -68,6 +69,9 @@ typedef struct _as_attacks {
     // than general.. to enable gzip and decide what % of packets it would inject into
     // also the option to pthread off the gzip to another thread, or process (using sockets)
     void *extra_attack_parameters;
+
+    AS_context *ctx;
+    
 } AS_attacks;
 
 
@@ -94,6 +98,41 @@ typedef struct _connection_properties {
     int client_emulated_operating_system;
     int server_emulated_operating_system;
 } ConnectionProperties;
+
+// lets contain all 'global' variables inside of a context structure
+// this will allow compiling as a library and including in other applications
+typedef struct _antisurveillance_context {
+    // start time
+    int start_ts;
+
+    // socket for writing to the ethernet device
+    int raw_socket;
+
+    // list of attacks
+    AS_attacks *attack_list;
+
+    // global parameters being used (http client/server body)
+    char *G_client_body;
+    char *G_server_body;
+    int G_client_body_size;
+    int G_server_body_size;
+
+    // GZIP attack parameters
+    int total_gzip_count;
+    char *gzip_cache;
+    int gzip_cache_size;
+    int gzip_initialized;
+    int gzip_cache_count;
+
+    pthread_mutex_t gzip_cache_mutex;
+
+    // network queue
+    AttackOutgoingQueue *network_queue;
+    AttackOutgoingQueue *network_queue_last;
+    pthread_mutex_t network_queue_mutex;
+    pthread_t network_thread;
+} AS_context;
+
 
 
 

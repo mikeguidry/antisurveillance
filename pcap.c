@@ -25,25 +25,29 @@
 #include <netinet/tcp.h>
 #include <netinet/ether.h>
 #include <net/ethernet.h>
+#include "network.h"
 #include "antisurveillance.h"
 #include "attacks.h"
 #include "pcap.h"
-#include "network.h"
 #include "packetbuilding.h"
 #include "instructions.h"
 #include "utils.h"
 
 
+// How many packets before we use pthreads to load the sessions?
+#define MAX_SINGLE_THREADED 100000
 
-extern AS_attacks *attack_list;
 
-
-    
 
 // dump all outgoing queued network packets to a pcap file (to be viewed/analyzed, or played directly to the Internet)
-int PcapSave(char *filename, AttackOutgoingQueue *packets) {    
+// Changing to support PacketInfo (which will be raw packets from wire when we capture soon for quantum insert protection,
+// etc)
+int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, PacketInfo *ipackets, int free_when_done) {    
     AttackOutgoingQueue *ptr = packets;
     AttackOutgoingQueue *qnext = NULL;
+
+    PacketInfo *pptr = NULL;
+    PacketInfo *pnext = NULL;
     pcap_hdr_t hdr;
     pcaprec_hdr_t packet_hdr;
     FILE *fd;
@@ -85,10 +89,11 @@ int PcapSave(char *filename, AttackOutgoingQueue *packets) {
 
     // for each packet we have in the outgoing queue.. write it to disk
     while (ptr != NULL) {
-
         packet_hdr.ts_sec = ts;
+
         //packet_hdr.ts_usec += 200; 
         //packet_hdr.ts_sec = 0;
+
         packet_hdr.incl_len = ptr->size + sizeof(struct ether_header);
         packet_hdr.orig_len = ptr->size + sizeof(struct ether_header);
 
@@ -96,15 +101,43 @@ int PcapSave(char *filename, AttackOutgoingQueue *packets) {
         fwrite((void *)&ethhdr, 1, sizeof(struct ether_header), fd);
         fwrite((void *)ptr->buf, 1, ptr->size, fd);
 
-        PtrFree(&ptr->buf);
+        if (free_when_done) {
+            PtrFree(&ptr->buf);
 
-        qnext = ptr->next;
-        
-        PtrFree((char **)&ptr);
+            qnext = ptr->next;
+            
+            PtrFree((char **)&ptr);
 
-        ptr = qnext;
+            ptr = qnext;
+        } else {
+            ptr = ptr->next;
+        }
 
         //if (out_count++ > 1000) break;
+    }
+
+    while (pptr != NULL) {
+        packet_hdr.ts_sec = ts;
+        
+        packet_hdr.incl_len = pptr->size + sizeof(struct ether_header);
+        packet_hdr.orig_len = pptr->size + sizeof(struct ether_header);
+
+        fwrite((void *)&packet_hdr, 1, sizeof(pcaprec_hdr_t), fd);
+        fwrite((void *)&ethhdr, 1, sizeof(struct ether_header), fd);
+        fwrite((void *)pptr->buf, 1, ptr->size, fd);
+
+        if (free_when_done) {
+            PtrFree(&pptr->buf);
+
+            pnext = pptr->next;
+            
+            PtrFree((char **)&pptr);
+
+            pptr = qnext;
+        } else {
+            pptr = pptr->next;
+        }
+                
     }
 
     fclose(fd);
@@ -142,7 +175,7 @@ PacketInfo *PcapLoad(char *filename) {
     }
     // check a few things w the header to ensure its processable
     if ((hdr.magic_number != 0xa1b2c3d4) || (hdr.network != 1)) {
-        printf("magic fail %X on pcap file\n", hdr.magic_number);
+        //printf("magic fail %X on pcap file\n", hdr.magic_number);
         goto end;
     }
 
@@ -195,46 +228,58 @@ PacketInfo *PcapLoad(char *filename) {
 
 // Loads a PCAP file looking for a particular destination port (for example, www/80)
 // and sets some attack parameters after it completes the process of importing it
-int PCAPtoAttack(char *filename, int dest_port, int count, int interval) {
+int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int interval) {
     PacketInfo *packets = NULL;
     PacketBuildInstructions *packetinstructions = NULL;
     PacketBuildInstructions *final_instructions = NULL;
     FilterInformation flt;
     AS_attacks *aptr = NULL;
     AS_attacks *ret = NULL;
-    int i = 1;
     int total = 0;
     //int start_ts = time(0);
 
     // load pcap file into packet information structures
     if ((packets = PcapLoad(filename)) == NULL) return 0;
     
-    // turn those packet structures `into packet building instructions via analysis, etc
+    // turn those packet structures into packet building instructions via analysis, etc
     if ((packetinstructions = PacketsToInstructions(packets)) == NULL) goto end;
-        
+
+    printf("count: %d\n", L_count((LINK *)packetinstructions));
+    
     // prepare the filter for detination port
     FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
     
-    // loop and load as many of this type of connection as possible..
-    while (i) {
-        final_instructions = NULL;
-        // find the connection for some last minute things required for building an attack
-        // from the connection
-        if ((final_instructions = InstructionsFindConnection(&packetinstructions, &flt)) == NULL) goto end;
+    // If its more than 100k lets use multiple threads to complete it faster
+    if (L_count((LINK *)packetinstructions) > MAX_SINGLE_THREADED) {
+        // for high amounts of connections.. we want to use pthreads..
+        if ((aptr = ThreadedInstructionsFindConnection(ctx, &packetinstructions, &flt, 16, count, interval)) == NULL) goto end;
     
-        if (final_instructions == NULL) break;
+        total += L_count((LINK *)aptr);
 
-        // create the attack structure w the most recent filtered packet building parameters
-        if ((aptr = InstructionsToAttack(final_instructions, count, interval)) == NULL) goto end;
+        // it needs to be add ordered.. if we add it first in the list then it will cut off packets 2 -> end
+        L_link_ordered((LINK **)&ctx->attack_list,(LINK *) aptr);
+    } else {
+        // loop and load as many of this type of connection as possible..
+        while (1) {
+            final_instructions = NULL;
 
-        // add to the attack list being executed now
-        aptr->next = attack_list;
-        attack_list = aptr;
+            // find the connection for some last minute things required for building an attack
+            // from the connection
+            if ((final_instructions = InstructionsFindConnection(&packetinstructions, &flt)) == NULL) goto end;
+        
+            if (final_instructions == NULL) break;
 
-        total++;
-        //printf("\rTotal: %05d     \t\t", total);
+            // create the attack structure w the most recent filtered packet building parameters
+            if ((aptr = InstructionsToAttack(ctx, final_instructions, count, interval)) == NULL) goto end;
+
+            // add to the attack list being executed now
+            aptr->next = ctx->attack_list;
+            ctx->attack_list = aptr;
+
+            total++;
+        }
     }
-    
+
     // if it all worked out...
     ret = aptr;
 
@@ -242,6 +287,7 @@ int PCAPtoAttack(char *filename, int dest_port, int count, int interval) {
     end:;
     //printf("\r\nTime to load full file: %d\n", time(0) - start_ts);
     PacketsFree(&packets);
+
     PacketBuildInstructionsFree(&packetinstructions);
 
     if (ret == NULL)

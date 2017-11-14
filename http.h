@@ -25,8 +25,8 @@ typedef struct _http_extra_attack_parameters {
 
 int HTTPContentModification(char *data, int size);
 void *HTTP4_Create(AS_attacks *aptr);
-int GZIP_Thread(AS_attacks *aptr, char *client_body, int client_body_size, char *server_body, int server_body_size);
+int GZIP_Thread(AS_context *, AS_attacks *aptr, char *client_body, int client_body_size, char *server_body, int server_body_size);
 void *thread_gzip_attack(void *arg);
-void gzip_init();
+void gzip_init(AS_context *);
 int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, uint32_t server_port,  char *client_body,
     int client_size, char *server_body, int server_size);

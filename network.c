@@ -1,3 +1,11 @@
+/*
+*** since we have packet analysis already developed.. I'll add some raw capturing code in here.  It will allow Quantum Insert
+protection to be developed, and this can become the 'third party server' for hundreds of thousands of clients..
+-- all in one fuck you to nsa -- this is for rape.
+
+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -6,21 +14,10 @@
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
-#include "network.h"
 #include "utils.h"
-
-
-extern AS_attacks *attack_list;
-
-// The outgoing queue which gets wrote directly to the Internet wire.
-AttackOutgoingQueue *network_queue = NULL, *network_queue_last = NULL;
-pthread_mutex_t network_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_t network_thread;
-
-// The raw socket file descriptor for writing the spoofed packets
-int raw_socket = 0;
 
 
 
@@ -36,14 +33,14 @@ int raw_socket = 0;
 // we arent always sure the queues will flush.. so.. we should allow checking, and ensuring some packets can stay in queue
 // itd be nice to get them out as quickly as possible since AS_perform() or other commands handle timings
 // timings needs to be moved from seconds to milliseconds (for advanced protocol emulation)
-int FlushAttackOutgoingQueueToNetwork() {
+int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
     int count = 0;
-    AttackOutgoingQueue *optr = network_queue, *onext = NULL;
+    AttackOutgoingQueue *optr = ctx->network_queue, *onext = NULL;
     struct sockaddr_in rawsin;
 
     // we need some raw sockets.
-    if (raw_socket <= 0) {
-        if (prepare_socket() <= 0) return -1;
+    if (ctx->raw_socket <= 0) {
+        if (prepare_socket(ctx) <= 0) return -1;
     }
     
     while (optr != NULL) {
@@ -54,7 +51,7 @@ int FlushAttackOutgoingQueueToNetwork() {
         rawsin.sin_addr.s_addr  = optr->dest_ip;
     
         // write the packet to the raw network socket.. keeping track of how many bytes
-        int bytes_sent = sendto(raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
+        int bytes_sent = 0;//sendto(ctx->raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
 
         // I need to perform some better error checking than just the size..
         if (bytes_sent != optr->size) break;
@@ -72,11 +69,11 @@ int FlushAttackOutgoingQueueToNetwork() {
         free(optr);
 
         // fix up the linked lists
-        if (network_queue == optr)
-            network_queue = onext;
+        if (ctx->network_queue == optr)
+            ctx->network_queue = onext;
 
-        if (network_queue_last == optr)
-            network_queue_last = NULL;
+        if (ctx->network_queue_last == optr)
+            ctx->network_queue_last = NULL;
 
         // move to the next link
         optr = onext;
@@ -86,27 +83,28 @@ int FlushAttackOutgoingQueueToNetwork() {
     return count;
 }
 
+
 // Adds a queue to outgoing packet list which is protected by a thread.. try means return if it fails
 // This is so we can attempt to add the packet to the outgoing list, and if it would block then we can
 // create a thread... if thread fails for some reason (memory, etc) then itll block for its last call here
-int AttackQueueAdd(AttackOutgoingQueue *optr, int only_try) {
+int AttackQueueAdd(AS_context *ctx, AttackOutgoingQueue *optr, int only_try) {
     if (only_try) {
-        if (pthread_mutex_trylock(&network_queue_mutex) != 0)
+        if (pthread_mutex_trylock(&ctx->network_queue_mutex) != 0)
             return 0;
     } else {
-        pthread_mutex_lock(&network_queue_mutex);
+        pthread_mutex_lock(&ctx->network_queue_mutex);
     }
     
-    if (network_queue == NULL) {
-        network_queue = network_queue_last = optr;
+    if (ctx->network_queue == NULL) {
+        ctx->network_queue = ctx->network_queue_last = optr;
     } else {
-        if (network_queue_last != NULL) {
-            network_queue_last->next = optr;
-            network_queue_last = optr;
+        if (ctx->network_queue_last != NULL) {
+            ctx->network_queue_last->next = optr;
+            ctx->network_queue_last = optr;
         }
     }
 
-    pthread_mutex_unlock(&network_queue_mutex);
+    pthread_mutex_unlock(&ctx->network_queue_mutex);
 
     return 1;
 }
@@ -114,15 +112,16 @@ int AttackQueueAdd(AttackOutgoingQueue *optr, int only_try) {
 // thread for queueing into outgoing attack queue.. just to ensure the software doesnt pause from generation of new sessions
 void *AS_queue_threaded(void *arg) {
     AttackOutgoingQueue *optr = (AttackOutgoingQueue *)arg;
+    AS_context *ctx = optr->ctx;
 
-    AttackQueueAdd(optr, 0);
+    AttackQueueAdd(ctx, optr, 0);
 
     pthread_exit(NULL);
 }
 
 // It will move a packet from its PacketInfo (from low level network packet builder) into the
 // over all attack structure queue going to the Internet.
-int AS_queue(AS_attacks *attack, PacketInfo *qptr) {
+int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     AttackOutgoingQueue *optr = NULL;
 
     if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) == NULL)
@@ -144,12 +143,14 @@ int AS_queue(AS_attacks *attack, PacketInfo *qptr) {
     // Just in case some function later (during flush) will want to know which attack the buffer was generated for
     optr->attack_info = attack;
 
+    optr->ctx = ctx;
+
     // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-    if (AttackQueueAdd(optr, 1) == 0) {
+    if (AttackQueueAdd(ctx, optr, 0) == 0) {
         // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
         if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
             // if we for some reason cannot pthread (prob memory).. lets do it blocking
-            AttackQueueAdd(optr, 0);
+            AttackQueueAdd(ctx, optr, 0);
         }
     }
 
@@ -160,14 +161,16 @@ int AS_queue(AS_attacks *attack, PacketInfo *qptr) {
 
 // another thread for dumping from queue to the network
 void *thread_network_flush(void *arg) {
+    AS_context *ctx = (AS_context *)arg;
     int count = 0;
+
     while (1) {
-        pthread_mutex_lock(&network_queue_mutex);
+        pthread_mutex_lock(&ctx->network_queue_mutex);
 
         // how many packets are successful?
-        count = FlushAttackOutgoingQueueToNetwork();
+        count = FlushAttackOutgoingQueueToNetwork(ctx);
         
-        pthread_mutex_unlock(&network_queue_mutex);
+        pthread_mutex_unlock(&ctx->network_queue_mutex);
 
         // if none.. then lets sleep..  
         if (!count)
@@ -176,7 +179,7 @@ void *thread_network_flush(void *arg) {
 }
 
 // Open a raw socket and use the global variable to store it
-int prepare_socket() {
+int prepare_socket(AS_context *ctx) {
     int rawsocket = 0;
     int one = 1;
     
@@ -186,7 +189,7 @@ int prepare_socket() {
     if (setsockopt(rawsocket, IPPROTO_IP,IP_HDRINCL, (char *)&one, sizeof(one)) < 0)
         return -1;
 
-    raw_socket = rawsocket;
+    ctx->raw_socket = rawsocket;
 
     return rawsocket;
 }

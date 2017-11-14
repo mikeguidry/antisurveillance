@@ -1,0 +1,23 @@
+
+/*
+notes for using pcaps, etc....
+
+someone can start wireshark, and browse a site that they want to add to the attack
+if they used macros such as fabricated name, address.. orr other informatin
+that could be automatically found, and modified then it would be the simplest
+way to append more sessions for attacking
+
+if put into a database.. it could have a list of sites
+w management (IE: perform some basic actions using a browser addon
+such as clearing things (cookies, etc, ,etc)) and then it can
+prepare to spoof somme other useragents...
+
+it would allow people who dont undertand technology to easily inisert 
+new sites to fabricate transmissions towards
+
+be sure to save as PCAP not PCAPNG
+*/
+
+
+
+

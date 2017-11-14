@@ -1,4 +1,9 @@
+/*
 
+todo: put packet types, and pointers to the functions for building them into a structure so its cleaner
+
+
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -9,11 +14,12 @@
 #include <netinet/udp.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include "network.h"
 #include "antisurveillance.h"
 #include "attacks.h"
 #include "packetbuilding.h"
 #include "adjust.h"
-#include "network.h"
+
 #include "utils.h"
 
 // calculate checksum
@@ -53,10 +59,9 @@ unsigned short in_cksum(unsigned short *addr,int len) {
 /* took some packet forging stuff I found online, and modified it...
    It was better than my wireshark -> C array dumping w memcpy... trying to hack this together as quickly as possible isnt fun :)
 
- * 	\Brief Generate TCP packets
- * 	\Author jve
- * 	\Date  sept. 2008
+   "Generate TCP packets by jve Dated sept 2008"
 */
+
 // Takes build instructions from things like HTTP Session generation, and creates the final network ready
 // data buffers which will flow across the Internet
 int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
@@ -183,6 +188,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 //https://tools.ietf.org/html/rfc1323
 // Incomplete but within 1 day it should emulate Linux, Windows, and Mac...
 // we need access to the attack structure due to the timestampp generator having a response portion from the opposide sides packets
+// *** finish building tcp options data for the header
 int PacketTCP4BuildOptions(AS_attacks *aptr, PacketBuildInstructions *iptr) {
     // need to see what kind of packet by the flags....
     // then determine which options are necessaray...
@@ -225,6 +231,8 @@ int PacketTCP4BuildOptions(AS_attacks *aptr, PacketBuildInstructions *iptr) {
 
 // This function takes the linked list of build instructions, and loops to build out each packet
 // preparing it to be wrote to the Internet.
+// This will return on failure.  It is meant to generate packets for an entire sessions instructions.  If you need
+// a packet build without some context (such as a connection) then perform it using that types function.
 void BuildTCP4Packets(AS_attacks *aptr) {
     PacketBuildInstructions *ptr = aptr->packet_build_instructions;
     PacketInfo *qptr = NULL;
@@ -236,12 +244,15 @@ void BuildTCP4Packets(AS_attacks *aptr) {
 
     while (ptr != NULL) {
         // Build the options, single packet, and verify it worked out alright.
-        if ((PacketTCP4BuildOptions(aptr, ptr) != 1) || (BuildSingleTCP4Packet(ptr) != 1) ||
-                 (ptr->packet == NULL) || (ptr->packet_size <= 0)) {
-            // Mark for deletion otherwise
-            aptr->completed = 1;
+        if (ptr->type == PACKET_TYPE_TCP_4) {
+            // Build a sessions TCP packets
+            if ((PacketTCP4BuildOptions(aptr, ptr) != 1) || (BuildSingleTCP4Packet(ptr) != 1) ||
+                    (ptr->packet == NULL) || (ptr->packet_size <= 0)) {
+                // Mark for deletion otherwise
+                aptr->completed = 1;
 
-            return;
+                return;
+            }
         }
 
         // everything went well...
@@ -250,7 +261,7 @@ void BuildTCP4Packets(AS_attacks *aptr) {
         ptr = ptr->next;
     }
 
-    // All packets were successful.. lets move them to a different PacketInfo structure..
+    // All packets were successful.. lets move them to a different structure..
     // PacketInfo is the structure used to put into the outgoing network buffer..
     // this mightt be possible to remove.. but i wanted to give some room for additional
     // protocols later.. so i decided to keep for now...
@@ -270,7 +281,8 @@ void BuildTCP4Packets(AS_attacks *aptr) {
         qptr->dest_ip = ptr->destination_ip;
         qptr->dest_port = ptr->destination_port;
 
-        // We should decide wait times soon.  30-200milliseconds will suffice
+        // This should really only matter later.. once they begin 'attempting' to process out
+        // false packets.. Doubtfully going to work in any capacity.
         qptr->wait_time = 0;
 
         // so we dont double free.. lets just keep in the new structure..
@@ -326,7 +338,7 @@ void PacketsFree(PacketInfo **packets) {
 
 // This is one of the main logic functions.  It handles sessions which are to be replayed many times, along with the timing 
 // logic, and it calls other functions to queue into the network outgoing queue
-void PacketQueue(AS_attacks *aptr) {
+void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
     PacketInfo *pkt = NULL;
     struct timeval tv;
     struct timeval time_diff;
@@ -372,17 +384,15 @@ void PacketQueue(AS_attacks *aptr) {
         // if we are about to replay this attack again from the first packet due to a repeat count.. then
         // verify enough time has elapsed to match our repeat interval (IN seconds)
         timeval_subtract(&time_diff, &aptr->ts, &tv);
-        if (time_diff.tv_usec < aptr->repeat_interval) {
+        if (time_diff.tv_usec < aptr->repeat_interval)
             // we are on the first packet and it has NOT been long enough...
             return;
-        }
 
         // derement the count..
         aptr->count--;
 
         // aptr->ts is only set if it was already used once..
         if (aptr->ts.tv_sec) {
-
             // free older packets since we will rebuild
             PacketsFree(&aptr->packets);
             // we wanna start fresh..
@@ -407,12 +417,91 @@ void PacketQueue(AS_attacks *aptr) {
     }
 
     // Queue this packet into the outgoing queue for the network wire
-    AS_queue(aptr, pkt);
+    AS_queue(ctx, aptr, pkt);
 
     // We set this pointer to the next packet for next iteration of AS_perform()
     aptr->current_packet = pkt->next;
 
-    gettimeofday(&aptr->ts, NULL);
+    // time couldnt have changed that much.. lets just copy it over
+    memcpy(&aptr->ts, &tv, sizeof(struct timeval)); 
 
     return;
 }
+
+
+
+int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
+    int ret = -1;
+
+    // this is only for ipv4 tcp
+    if (iptr->type != PACKET_TYPE_UDP_4) return ret;
+
+    // calculate full length of packet.. before we allocate memory for storage
+    int final_packet_size = sizeof(struct iphdr) + sizeof(struct udphdr) + iptr->data_size;
+    unsigned char *final_packet = (unsigned char *)calloc(1, final_packet_size);
+    struct packetudp4 *p = (struct packetudp4 *)final_packet;
+
+    // ensure the final packet was allocated correctly
+    if (final_packet == NULL) return ret;
+
+    // IP header below
+    p->ip.version       = 4;
+    p->ip.ihl   	    = IPHSIZE >> 2;
+    p->ip.tos   	    = 0;    
+    p->ip.frag_off 	    = 0;
+    p->ip.protocol 	    = IPPROTO_UDP;
+    p->ip.tot_len       = htons(final_packet_size);
+
+    //p->udp
+
+}
+
+
+
+int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
+    int ret = -1;
+
+    // this is only for ipv4 tcp
+    if (iptr->type != PACKET_TYPE_ICMP_4) return ret;
+
+    /*
+     //ip header
+    struct iphdr *ip = (struct iphdr *) packet;
+    struct icmphdr *icmp = (struct icmphdr *) (packet + sizeof (struct iphdr));
+     
+    //zero out the packet buffer
+    memset (packet, 0, packet_size);
+ 
+    ip->version = 4;
+    ip->ihl = 5;
+    ip->tos = 0;
+    ip->tot_len = htons (packet_size);
+    ip->id = rand ();
+    ip->frag_off = 0;
+    ip->ttl = 255;
+    ip->protocol = IPPROTO_ICMP;
+    ip->saddr = saddr;
+    ip->daddr = daddr;
+    //ip->check = in_cksum ((u16 *) ip, sizeof (struct iphdr));
+ 
+    icmp->type = ICMP_ECHO;
+    icmp->code = 0;
+    icmp->un.echo.sequence = rand();
+    icmp->un.echo.id = rand();
+    //checksum
+    icmp->checksum = 0;
+    */
+}
+
+/*
+coming soon:
+int BuildSingleTCP6Packet(PacketBuildInstructions *iptr);
+int BuildSingleUDP6Packet(PacketBuildInstructions *iptr);
+int BuildSingleICMP6Packet(PacketBuildInstructions *iptr);
+
+
+need a sniffer which can use filters to find particular sessions
+should have heuristics to find somme gzip http, dns, etc.. 
+
+so the tool can get executed, and automatically populate & initiate
+*/

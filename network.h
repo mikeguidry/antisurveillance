@@ -1,3 +1,14 @@
+
+struct _as_attacks;
+typedef struct _as_attacks AS_attacks;
+
+struct _pkt_info;
+typedef struct _pkt_info PacketInfo;
+
+struct _antisurveillance_context;
+typedef struct _antisurveillance_context AS_context;
+
+
 // this is the queue which shouldnt have anything to do with processing, or other functions.. its where
 // all attacks go to get submitted directly to the wire.. 
 typedef struct _attack_outgoing_queue {
@@ -14,12 +25,14 @@ typedef struct _attack_outgoing_queue {
 
     pthread_t thread;
 
+    AS_context *ctx;
+
 } AttackOutgoingQueue;
 
 
 int prepare_socket();
 void *thread_network_flush(void *arg);
-int AS_queue(AS_attacks *attack, PacketInfo *qptr);
+int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr);
 void *AS_queue_threaded(void *arg);
-int AttackQueueAdd(AttackOutgoingQueue *optr, int only_try);
-int FlushAttackOutgoingQueueToNetwork();
+int AttackQueueAdd(AS_context *,AttackOutgoingQueue *optr, int only_try);
+int FlushAttackOutgoingQueueToNetwork(AS_context *);

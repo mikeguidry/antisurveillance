@@ -29,6 +29,6 @@ typedef struct pcaprec_hdr_s {
 
 
 
-int PCAPtoAttack(char *filename, int dest_port, int count, int interval);
+int PCAPtoAttack(AS_context *, char *filename, int dest_port, int count, int interval);
 PacketInfo *PcapLoad(char *filename);
-int PcapSave(char *filename, AttackOutgoingQueue *packets);
+int PcapSave(AS_context *, char *filename, AttackOutgoingQueue *packets, PacketInfo *iptr, int free_when_done);
