@@ -304,6 +304,8 @@ char *ConnectionData(AS_attacks *attack, int side, int *_size) {
     sptr = ret = (char *)malloc(size);
     if (ret == NULL) return NULL;
 
+    iptr = attack->packet_build_instructions;
+
     // now lets copy the data..
     while (iptr != NULL) {
         // make sure its the correct side...
@@ -339,9 +341,10 @@ int HTTPContentModification(AS_attacks *aptr) {
     struct phr_header headers[100];
     size_t buflen = 0, prevbuflen = 0, method_len = 0, path_len = 0, num_headers = 0;
     ssize_t rret = 0;
+    char *hptr = NULL;
 
     return 0;
-    
+
     // lets only perform on port 80 for now...
     if (aptr->destination_port != 80) return ret;
 
@@ -349,14 +352,21 @@ int HTTPContentModification(AS_attacks *aptr) {
 
     printf("\n\n\n---------------------------\nData: %s\n---------------\n\n\n\n", response);
 
+    hptr = strstr(response, "\r\n\r\n");
+
+    if (hptr == NULL) goto end;
+
     num_headers = sizeof(headers) / sizeof(headers[0]);
-    pret = phr_parse_request(response, response_size, &method, &method_len, &path, &path_len, &minor_version, headers, &num_headers, prevbuflen);
+    pret = phr_parse_headers(response, response_size, &headers, &num_headers, 0);
 
 
     // response now contains all of the data which was received from the server...
     // HTTP/1.1 200 etc... the entire response.. now we can modify, insert gzip attacks, etc...
     // fuck shit up essentially... every change, or modification is more stress than the NSA would like to admit
     // on their networks.
+
+    printf("pret %d\n", pret);
+    if (pret == -1) goto end;
 
     printf("request is %d bytes long\n", pret);
     printf("method is %.*s\n", (int)method_len, method);

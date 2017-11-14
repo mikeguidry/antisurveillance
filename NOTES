@@ -24,3 +24,14 @@ be sure to save as PCAP not PCAPNG
 Would you like to find the NSA's signal intelligence capturing server within your network?  You can use this tool, and monitor traffic
 changes as you use it.  It will allow you to sniff out NSA infections on your network.  boom.. shit gets worse everyday.
 
+I mean monitor for increases in traffic obviously directly proportional to this tools injections of traffic.  .. Any decent network admin
+should be able to work it out.  If you are worried about real sites obtaining traffic then use specific internal routes in your network
+with an array of IPs in the source.  It will allow you to control it further if you are worried about the test in that sort of way.
+
+I have some very interesting tricks that will be released shortly in code which will allow major corporations to use this tool without
+worrying about those types of situations.  In the meantime.. I doubt any small business, or individual would create enough traffic to merrit
+any real issues on websites whom you are spoofing traffic towards.  The operating systems behind the load balancers to begin with will probably
+filter out the majority.  It all depends on where in your network your applyinng this tool, and exactly what kind of intervals.  I wouldn't
+personally worry unless your giving the tool 1Tbps.  If that is the case then you should wait for the crafty shit to come.
+
+

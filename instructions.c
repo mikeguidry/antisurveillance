@@ -465,7 +465,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                     }
 
                     // pointer to where the data starts in this packet being analyzed
-                    sptr = (char *)(pptr->buf + (pptr->size - data_size));
+                    sptr = (char *)(pptr->buf + ((p->ip.ihl << 2) + (p->tcp.doff << 2)));
 
                     // copy into the newly allocated buffer the tcp/ip data..
                     memcpy(data, sptr, data_size);
