@@ -97,7 +97,7 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
     aptr->packet_build_instructions = build_list;
 
     // now lets build the low level packets for writing to the network interface
-    BuildTCP4Packets(aptr);
+    BuildPackets(aptr);
 
     // all packets done! good to go!
     ret = 1;

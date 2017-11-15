@@ -1,3 +1,9 @@
+/*
+
+Adjustments which need to take place so that the packets, and sessions cannot easily be filtered.  HTTP modifications are done within
+http.c because it will likely rely on other functions.
+
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -18,7 +24,6 @@
 // which are intended to show other differences..) It could even load other messages in some cases.
 // it depends on how your attacks are targeted.
 void PacketAdjustments(AS_attacks *aptr) {
-    int is_http = 0;
     // our new source port must be above 1024 and below 65536 (generally acceptable on all OS) <1024 is privileged
     int client_port = (1024 + rand()%(65535 - 1024));
     // the identifier portion of the packets..
@@ -30,8 +35,8 @@ void PacketAdjustments(AS_attacks *aptr) {
     int server_new_seq = rand()%0xFFFFFFFF;
 
     // it picks new  IPs randomly right now.. it needs a context for the current configuration for picking them (w historic information)
-    uint32_t src_ip = inet_addr("10.0.0.4");//rand()%0xFFFFFFFF;
-    uint32_t dst_ip = inet_addr("10.0.0.3");//rand()%0xFFFFFFFF;
+    uint32_t src_ip = rand()%0xFFFFFFFF;
+    uint32_t dst_ip = rand()%0xFFFFFFFF;
 
     // used to change the SEQ.. it calculates the difference between the old, and new so that the rest is compatible
     uint32_t client_seq_diff = 0;
@@ -63,9 +68,6 @@ void PacketAdjustments(AS_attacks *aptr) {
 
             aptr->destination_port = buildptr->destination_port;
             aptr->source_port = buildptr->source_port;
-
-            // Is it more than likely a web requests? TCP port 80
-            if (aptr->destination_port == 80) is_http = 1;
         } else  {
             // set it using opposite information for a packet from the server side
             buildptr->source_ip = dst_ip;
@@ -96,10 +98,10 @@ void PacketAdjustments(AS_attacks *aptr) {
     aptr->server_base_seq = server_new_seq;
 
     // We would like to manipulate HTTP sessions to increase resources, etc on mass surveillance platforms.
-    if (is_http) HTTPContentModification(aptr);
+    if (aptr->destination_port == 80) HTTPContentModification(aptr);
 
     // Rebuild all packets using the modified instructions
-    BuildTCP4Packets(aptr);
+    BuildPackets(aptr);
 
     return;
 }

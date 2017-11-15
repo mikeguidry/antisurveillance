@@ -88,6 +88,8 @@ typedef struct _tcp_packet_instructions {
     // if all is welll?... if not.. every instruction with the same session id
     // will get disqualified
     int ok;
+
+    AS_attacks *aptr;
 } PacketBuildInstructions;
 
 
@@ -99,13 +101,24 @@ typedef struct _tcp_packet_instructions {
 
 #pragma pack(push,1)
 // pseudo structure for calculating checksum
-struct pseudo_tcp
+struct pseudo_tcp4
 {
 	unsigned saddr, daddr;
 	unsigned char mbz;
 	unsigned char ptcl;
 	unsigned short tcpl;
 	struct tcphdr tcp;
+};
+
+
+//http://www.binarytides.com/raw-udp-sockets-c-linux/
+struct pseudo_header_udp4
+{
+    u_int32_t source_address;
+    u_int32_t destination_address;
+    u_int8_t placeholder;
+    u_int8_t protocol;
+    u_int16_t len;
 };
 
 
@@ -125,9 +138,6 @@ struct packetudp4 {
 #pragma pack(pop)
 
 enum {
-    TCP_WANT_CONNECT=1,
-    TCP_CONNECT_OK=2,
-    //TCP_ESTABLISHED=4,
     TCP_TRANSFER=8,
     TCP_FLAG_NS=16,
     TCP_FLAG_CWR=32,
@@ -188,7 +198,9 @@ typedef struct _filter_information {
 
 void PacketQueue(AS_context *, AS_attacks *aptr);
 void PacketsFree(PacketInfo **packets);
-void BuildTCP4Packets(AS_attacks *aptr);
+void BuildPackets(AS_attacks *aptr);
 int PacketTCP4BuildOptions(AS_attacks *aptr, PacketBuildInstructions *iptr);
 int BuildSingleTCP4Packet(PacketBuildInstructions *iptr);
+int BuildSingleUDP4Packet(PacketBuildInstructions *iptr);
+int BuildSingleICMP4Packet(PacketBuildInstructions *iptr);
 unsigned short in_cksum(unsigned short *addr,int len);

@@ -1,9 +1,3 @@
-/*
-
-todo: put packet types, and pointers to the functions for building them into a structure so its cleaner
-
-
-*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -66,6 +60,8 @@ unsigned short in_cksum(unsigned short *addr,int len) {
 int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
+
+    if (PacketTCP4BuildOptions(iptr->aptr, iptr) != 1) return -1;
 
     // this is only for ipv4 tcp
     if (iptr->type != PACKET_TYPE_TCP_4) return ret;
@@ -130,6 +126,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     // IP header checksum
     p->ip.check	    = (unsigned short)in_cksum((unsigned short *)&p->ip, IPHSIZE);
 
+
     /*
     // Lets make sure we cover all header variables.. just to be sure it wont be computationally possible
     // to filter out all packets....
@@ -142,12 +139,12 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
     // TCP header checksum
     if (p->tcp.check == 0) {
-        struct pseudo_tcp *p_tcp = NULL;
-        char *checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp) + TCPHSIZE + iptr->data_size);
+        struct pseudo_tcp4 *p_tcp = NULL;
+        char *checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp4) + TCPHSIZE + iptr->data_size);
 
         if (checkbuf == NULL) return -1;
 
-        p_tcp = (struct pseudo_tcp *)checkbuf;
+        p_tcp = (struct pseudo_tcp4 *)checkbuf;
 
         p_tcp->saddr 	= p->ip.saddr;
         p_tcp->daddr 	= p->ip.daddr;
@@ -156,22 +153,29 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
         p_tcp->tcpl 	= htons(TCPHSIZE + iptr->data_size);
 
         memcpy(&p_tcp->tcp, &p->tcp, TCPHSIZE);
-        memcpy(checkbuf + sizeof(struct pseudo_tcp), iptr->options, iptr->options_size);
-        memcpy(checkbuf + sizeof(struct pseudo_tcp) + iptr->options_size, iptr->data, iptr->data_size);        
+        memcpy(checkbuf + sizeof(struct pseudo_tcp4), iptr->options, iptr->options_size);
+        memcpy(checkbuf + sizeof(struct pseudo_tcp4) + iptr->options_size, iptr->data, iptr->data_size);        
 
         // put the checksum into the correct location inside of the header
         p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
-
+        //printf("-3 %d %d %d %d\n",TCPHSIZE, PSEUDOTCPHSIZE, iptr->data_size, iptr->options_size);
+        //md5hash((char *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
+        //printf("-\n");
+    
         free(checkbuf);
     }
+
+    
 
     // copy the TCP options to the final packet
     if (iptr->options_size)
         memcpy(final_packet + sizeof(struct packet), iptr->options, iptr->options_size);
 
     // copy the data to the final packet
-    if (iptr->data_size)
+    if (iptr->data_size) {
+        //md5hash(iptr->data, iptr->data_size);
         memcpy(final_packet + sizeof(struct packet) + iptr->options_size, iptr->data, iptr->data_size);
+    }
     
 
     // put the final packet into the build instruction structure as completed..
@@ -229,29 +233,39 @@ int PacketTCP4BuildOptions(AS_attacks *aptr, PacketBuildInstructions *iptr) {
 
 
 // This function takes the linked list of build instructions, and loops to build out each packet
-// preparing it to be wrote to the Internet.
-// This will return on failure.  It is meant to generate packets for an entire sessions instructions.  If you need
-// a packet build without some context (such as a connection) then perform it using that types function.
-void BuildTCP4Packets(AS_attacks *aptr) {
+// preparing it to be wrote to the Internet.  It will mark an attack structure as completed on
+// failure.
+void BuildPackets(AS_attacks *aptr) {
     PacketBuildInstructions *ptr = aptr->packet_build_instructions;
     PacketInfo *qptr = NULL;
+    int i = 0;
+
+    // Structure containing each packet type, and their functions for building
+    // The type must diretly correlate to the  enum {} list.. in order
+    struct _packet_builders {
+        int type;
+        int (*func)(PacketBuildInstructions *);
+    } PacketBuilders[] = {
+        { PACKET_TYPE_TCP_4, &BuildSingleTCP4Packet },
+        { PACKET_TYPE_UDP_4, &BuildSingleUDP4Packet },
+        { PACKET_TYPE_ICMP_4, &BuildSingleICMP4Packet },
+        { 0, NULL }
+    };
 
     if (ptr == NULL) {
         aptr->completed = 1;
         return;
     }
 
+    // process each packet using its particular function for building
     while (ptr != NULL) {
-        // Build the options, single packet, and verify it worked out alright.
-        if (ptr->type == PACKET_TYPE_TCP_4) {
-            // Build a sessions TCP packets
-            if ((PacketTCP4BuildOptions(aptr, ptr) != 1) || (BuildSingleTCP4Packet(ptr) != 1) ||
-                    (ptr->packet == NULL) || (ptr->packet_size <= 0)) {
-                // Mark for deletion otherwise
-                aptr->completed = 1;
+        // use the structure containing the function required for building this type of packet
+        i = PacketBuilders[ptr->type].func(ptr);
+        // if building this packet fails.. lets mark this attack for deletion
+        if (i != 1) {
+            aptr->completed = 1;
 
-                return;
-            }
+            return;
         }
 
         // everything went well...
@@ -273,7 +287,7 @@ void BuildTCP4Packets(AS_attacks *aptr) {
             return;
         }
 
-        qptr->type = PACKET_TYPE_TCP_4;
+        qptr->type = ptr->type;
         qptr->buf = ptr->packet;
         qptr->size = ptr->packet_size;
         // These are required for sending the packet out on the raw socket.. so lets pass it
@@ -388,7 +402,7 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
             return;
 
         // derement the count..
-        //aptr->count--;
+        aptr->count--;
 
         // aptr->ts is only set if it was already used once..
         if (aptr->ts.tv_sec) {
@@ -431,14 +445,19 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
 
 int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
+    unsigned char *final_packet = NULL;
+    struct packetudp4 *p = NULL;
+    int final_packet_size = 0;
+    struct pseudo_header_udp4 *udp_chk_hdr = NULL;
+    char *checkbuf = NULL;
 
     // this is only for ipv4 tcp
     if (iptr->type != PACKET_TYPE_UDP_4) return ret;
 
     // calculate full length of packet.. before we allocate memory for storage
-    int final_packet_size = sizeof(struct iphdr) + sizeof(struct udphdr) + iptr->data_size;
-    unsigned char *final_packet = (unsigned char *)calloc(1, final_packet_size);
-    struct packetudp4 *p = (struct packetudp4 *)final_packet;
+    final_packet_size = sizeof(struct iphdr) + sizeof(struct udphdr) + iptr->data_size;
+    final_packet = (unsigned char *)calloc(1, final_packet_size);
+    p = (struct packetudp4 *)final_packet;
 
     // ensure the final packet was allocated correctly
     if (final_packet == NULL) return ret;
@@ -451,8 +470,48 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     p->ip.protocol 	    = IPPROTO_UDP;
     p->ip.tot_len       = htons(final_packet_size);
 
-    //p->udp
+    p->ip.saddr         = iptr->source_ip;
+    p->ip.daddr         = iptr->destination_ip;
 
+    // IP header checksum
+    p->ip.check         = (unsigned short)in_cksum((unsigned short *)&p->ip, sizeof(struct iphdr));
+
+    p->udp.source       = htons(iptr->source_port);
+    p->udp.dest         = htons(iptr->destination_port);
+    p->udp.len          = iptr->data_size;
+    p->udp.check        = 0;
+
+    memcpy((void *)(final_packet + sizeof(struct udphdr) + sizeof(struct iphdr)), iptr->data, iptr->data_size);
+    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
+
+    udp_chk_hdr = (struct pseudo_header_udp4 *)checkbuf;
+
+    // im pretty sure all udp packets require at least 1 byte of data..
+    // will chek soon ***
+    if (iptr->data_size)
+        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), iptr->data, iptr->data_size);
+
+    udp_chk_hdr->source_address = iptr->source_ip;
+    udp_chk_hdr->destination_address = iptr->destination_ip;
+    udp_chk_hdr->placeholder = 0; // in case we arent using calloc if we copy/paste later..
+    
+    // *** get accurate (using sizeof struct) here... 
+    udp_chk_hdr->len = htons(8 + iptr->data_size);
+
+    udp_chk_hdr->protocol = IPPROTO_UDP;
+    udp_chk_hdr->len = sizeof(struct udphdr) + iptr->data_size;
+
+    p->udp.check = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);   
+
+    free(checkbuf);
+
+    iptr->packet = (char *)final_packet;
+    iptr->packet_size = final_packet_size;
+
+    ret = 1;
+
+    end:;
+    return ret;
 }
 
 
@@ -490,6 +549,7 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     //checksum
     icmp->checksum = 0;
     */
+    return -1;
 }
 
 /*

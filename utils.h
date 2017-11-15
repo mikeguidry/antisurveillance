@@ -15,3 +15,5 @@ void PtrFree(char **ptr);
 void L_link_ordered(LINK **list, LINK *ele);
 LINK *L_last(LINK *list);
 int L_count(LINK *ele);
+
+void md5hash(char *data, int size);

@@ -172,6 +172,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     bptr->client = 1; // so it can generate source port again later... for pushing same messages w out full reconstruction
     bptr->ack = 0;
     bptr->seq = cptr->client_seq++;  
+    bptr->aptr = cptr->aptr;
 
     // then nthe server needs to respond acknowledgng it
     packet_flags = TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW;
@@ -180,6 +181,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     bptr->header_identifier = cptr->server_identifier++;
     bptr->ack = cptr->client_seq;
     bptr->seq = cptr->server_seq++;
+    bptr->aptr = cptr->aptr;
 
     // then the client must respond acknowledging that servers response..
     packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
@@ -189,6 +191,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     bptr->client = 1;
     bptr->ack = cptr->server_seq;
     bptr->seq = cptr->client_seq;
+    bptr->aptr = cptr->aptr;
 
     L_link_ordered((LINK **)final_build_list, (LINK *)build_list);
 
@@ -263,7 +266,8 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         bptr->client = from_client;
         bptr->ack = *remote_seq;
         bptr->seq = *my_seq;
-    
+        bptr->aptr = cptr->aptr;
+
         *my_seq += packet_size;
         data_size -= packet_size;
         data_ptr += packet_size;
@@ -276,6 +280,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         bptr->ack = *my_seq;
         bptr->seq = *remote_seq;
         bptr->client = !from_client;
+        bptr->aptr = cptr->aptr;
 
     }
 
@@ -336,7 +341,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     bptr->header_identifier =  (*src_identifier)++;
     bptr->ack = *remote_seq;
     bptr->seq = (*my_seq)++;
-    
+    bptr->aptr = cptr->aptr;
     
     
     // other side needs to respond..adds its own FIN with its ACK
@@ -347,7 +352,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     bptr->header_identifier = (*dst_identifier)++;
     bptr->ack = *my_seq;
     bptr->seq = (*remote_seq)++;
-    
+    bptr->aptr = cptr->aptr;
 
 
     // source (client or server) sends the final ACK packet...
@@ -358,7 +363,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     bptr->header_identifier = (*src_identifier)++;
     bptr->ack = *remote_seq;
     bptr->seq = *my_seq;
-    
+    bptr->aptr = cptr->aptr;
 
     L_link_ordered((LINK **)final_build_list, (LINK *)build_list);
 
@@ -368,213 +373,332 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
 }
 
 
-
-
-
-// Process sessions from a pcap packet capture into building instructions to replicate, and massively replay
-// those sessions :) BUT with new IPs, and everything else required to fuck shit up.
-PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
-    PacketBuildInstructions *ret = NULL;
-    PacketBuildInstructions *list = NULL, *llast = NULL;
+PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
-    PacketInfo *pptr = NULL;
+    struct packetudp4 *p = NULL;
+    char *data = NULL;
+    int data_size = 0;
+    char *checkbuf = NULL;
+    struct pseudo_header_udp4 *udp_hdr_chk = NULL;
+    uint32_t pkt_chk = 0, our_chk = 0;
+
+    p = (struct packetudp4 *)pptr->buf;
+
+    // Lets do this here.. so we can append it to the list using a jump pointer so its faster
+    // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+    
+    // ensure the type is set
+    iptr->type = PACKET_TYPE_UDP_4;
+
+    // start out OK.. might fail it later during checksum
+    iptr->ok = 1;
+
+    // source IP, and port from the IP/TCP headers
+    iptr->source_ip = p->ip.saddr;
+    iptr->source_port = ntohs(p->udp.source);
+
+    // destination IP, and port from the TCP/IP headers
+    iptr->destination_ip = p->ip.daddr;
+    iptr->destination_port = ntohs(p->udp.dest);
+
+    // how much data is present in this packet?
+    data_size = ntohs(p->udp.len) - 8; // *** calc correctly
+
+    if (data_size > 0) {
+        if ((data = (char *)malloc(data_size)) == NULL) goto end;
+
+        memcpy((void *)data, (void *)(pptr->buf + sizeof(struct packetudp4)), data_size);
+    }
+
+    // ensure the structure will always have access to this data
+    iptr->data = data;
+    iptr->data_size = data_size;
+
+    // Keep note of the packets checksum..
+    pkt_chk = p->udp.check;
+
+    // Set it to 0 now so we can verify ourselves..
+    p->udp.check = 0;
+    
+    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct packetudp4) + iptr->data_size)) == NULL) goto end;
+
+    // *** finish checksum here
+
+    if (pkt_chk != our_chk) iptr->ok = 0;
+        
+    // put the original checksum back regardless
+    p->udp.check = pkt_chk;
+
+    // free the buffer we allocated for the checksum
+    free(checkbuf);
+    
+
+    // Lets link the original data to this new structure..
+    iptr->packet = pptr->buf;
+    iptr->packet_size = pptr->size;
+
+    // Lets remove the pointer from the original structure so it doesnt get freed
+    pptr->buf = NULL;
+    pptr->size = 0;
+
+    end:;
+    
+    return iptr;
+}
+
+PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
+    PacketBuildInstructions *iptr = NULL;
+
+    return iptr;
+}
+
+// IPv4 TCP/IP packet processor
+PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
+    PacketBuildInstructions *iptr = NULL;
     struct packet *p = NULL;
     int flags = 0;
     int data_size = 0;
     char *data = NULL;
     char *sptr = NULL;
     uint16_t pkt_chk = 0;
-    struct pseudo_tcp *p_tcp = NULL;
+    struct pseudo_tcp4 *p_tcp = NULL;
     char *checkbuf = NULL;
     int tcp_header_size = 0;
 
+    p = (struct packet *)pptr->buf;
+
+    // Determine which TCP flags are set in this packet
+    flags = 0;
+    if (p->tcp.syn) flags |= TCP_FLAG_SYN;
+    if (p->tcp.ack) flags |= TCP_FLAG_ACK;
+    if (p->tcp.psh) flags |= TCP_FLAG_PSH;
+    if (p->tcp.fin) flags |= TCP_FLAG_FIN;
+    if (p->tcp.rst) flags |= TCP_FLAG_RST;
+
+    // Lets do this here.. so we can append it to the list using a jump pointer so its faster
+    // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+
+    // ensure the type is set
+    iptr->type = PACKET_TYPE_TCP_4;
+
+    // source IP, and port from the IP/TCP headers
+    iptr->source_ip = p->ip.saddr;
+    iptr->source_port = ntohs(p->tcp.source);
+    
+    // destination IP, and port from the TCP/IP headers
+    iptr->destination_ip = p->ip.daddr;
+    iptr->destination_port = ntohs(p->tcp.dest);
+    
+    // Ensure this new structure has the proper flags which were set in this packet
+    iptr->flags = flags;
+
+    // IP packet TTL (time to live)..  (OS emu)
+    iptr->ttl = p->ip.ttl;
+
+    // TCP window size (OS emu)
+    iptr->tcp_window_size = ntohs(p->tcp.window);
+
+    // start OK.. until checksum.. or disqualify for other reasons
+    iptr->ok = 1;
+
+    // total size from IPv4 header
+    data_size = ntohs(p->ip.tot_len);
+
+    // subtract header size from total packet size to get data size..
+    data_size -= (p->ip.ihl << 2) + (p->tcp.doff << 2);
+
+    if (data_size > 0) {
+        // allocate memory for the data
+        if ((data = (char *)malloc(data_size + 1)) == NULL) {
+            goto end;
+        }
+
+        // pointer to where the data starts in this packet being analyzed
+        sptr = (char *)(pptr->buf + (pptr->size - data_size));
+
+        // copy into the newly allocated buffer the tcp/ip data..
+        memcpy(data, sptr, data_size);
+
+        // ensure the instructions structure has this new pointer containing the data
+        iptr->data = data;
+        data = NULL; // so we dont free it below..
+        iptr->data_size = data_size;
+
+        
+    }
+
+    // lets move the packet buffer into this new instruction structure as well
+    // *** if we have no use for this later.. remove it (or let it get freed inside of the packetinfo structure)
+    iptr->packet = pptr->buf;
+    pptr->buf = NULL;
+    iptr->packet_size = pptr->size;
+    pptr->size = 0;
+
+    // header identifier from IP header
+    iptr->header_identifier = ntohs(p->ip.id);
+
+    // ack/seq are important for tcp/ip (used to transmit lost packets, etc)
+    // in future for quantum insert protection it will be important as well...
+    iptr->seq = ntohl(p->tcp.seq);
+    iptr->ack = ntohl(p->tcp.ack_seq);
+
+    // start checksum...
+    // get tcp header size (so we know if it has options, or not)
+    tcp_header_size = (p->tcp.doff << 2);
+
+    // start of packet checksum verifications
+    // set a temporary buffer to the packets IP header checksum
+    pkt_chk = p->ip.check;
+
+    // set packets IP checksum to 0 so we can calculate and verify here
+    p->ip.check = 0;
+
+    // calculate what it should be
+    p->ip.check = (unsigned short)in_cksum((unsigned short *)&p->ip, IPHSIZE);
+    //printf("-\n");
+    //md5hash((char *)&p->ip, IPHSIZE);
+    //printf("-\n");
+    // verify its OK.. if not mark this packet as bad (so we can verify how many bad/good and decide
+    // on discarding or not)
+
+    // this is failing! fix!
+    if (p->ip.check != pkt_chk) iptr->ok = 0;
+
+    // lets put the IP header checksum back
+    p->ip.check = pkt_chk;
+
+    // now lets verify TCP header..
+    // copy the packets header..
+    pkt_chk = p->tcp.check;
+
+    // set the packet header to 0 so we can calculate it like an operatinng system would
+    p->tcp.check = 0;
+
+    // it needs to be calculated with a special pseudo structure..
+    checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp4) + tcp_header_size + iptr->data_size + iptr->options_size);
+    if (checkbuf == NULL) goto end;
+
+    // code taken from ipv4 tcp packet building function
+    p_tcp = (struct pseudo_tcp4 *)checkbuf;
+    
+    // set psuedo header parameters for calculating checksum
+    p_tcp->saddr 	= p->ip.saddr;
+    p_tcp->daddr 	= p->ip.daddr;
+    p_tcp->mbz      = 0;
+    p_tcp->ptcl 	= IPPROTO_TCP;
+    p_tcp->tcpl 	= htons(tcp_header_size + iptr->data_size);
+
+    // copy tcp header into the psuedo structure
+    memcpy(&p_tcp->tcp, &p->tcp, tcp_header_size);
+
+    // copy tcp/ip options into its buffer
+    if (iptr->options_size)
+        memcpy(checkbuf + sizeof(struct pseudo_tcp4), iptr->options, iptr->options_size);
+
+    // now copy the data itself of the packet
+    if (iptr->data_size) {
+        //md5hash(iptr->data, iptr->data_size);
+        //printf("has data header %d opt %d data %p data size %d\n",tcp_header_size, iptr->options_size, iptr->data, iptr->data_size);
+        memcpy(checkbuf + sizeof(struct pseudo_tcp4) + iptr->options_size, iptr->data, iptr->data_size);        
+    }
+
+    // put the checksum into the correct location inside of the header
+    p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, tcp_header_size + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
+    //printf("-2 %d %d %d %d\n", tcp_header_size, PSEUDOTCPHSIZE, iptr->data_size, iptr->options_size);
+    //md5hash((char *)checkbuf, tcp_header_size + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
+    //printf("-\n");
+
+    // free that buffer
+    free(checkbuf);
+
+    // TCP header verification failed
+    // *** this is failing!
+    if (p->tcp.check != pkt_chk) {
+        // *** *** ***
+        //printf("TCP checksum failed!\n");
+        //iptr->ok = 0;
+    }
+
+    // put the original value back
+    p->tcp.check = pkt_chk;
+    // done w checksums..
+
+    // moved other analysis to the next function which builds the attack structure
+    end:;
+
+    return iptr;
+}
+
+
+typedef PacketBuildInstructions *(*ProcessFunc)(PacketInfo *);
+
+// Find the function which will process this packet type correctly from the network wire, or a PCAP
+ProcessFunc Processor_Find(int ip_version, int protocol) {
+    int i = 0;
+    struct _packet_processors {
+        int ip_version;
+        int protocol;
+        ProcessFunc Processor;
+    } PacketProcessors[] = {
+        { 4, IPPROTO_TCP, &ProcessTCP4Packet },
+        { 4, IPPROTO_UDP, &ProcessUDP4Packet },
+        { 4, IPPROTO_ICMP, &ProcessICMP4Packet },
+        { 0, 0, NULL}
+    };
+
+    for (i = 0; PacketProcessors[i].ip_version != 0; i++) {
+        if (PacketProcessors[i].ip_version == ip_version) {
+            if (PacketProcessors[i].protocol == protocol) {
+                return PacketProcessors[i].Processor;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+// Process sessions from a pcap packet capture into building instructions to replicate, and massively replay
+// those sessions :) BUT with new IPs, and everything else required to fuck shit up.
+PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
+    ProcessFunc Processor;
+    PacketInfo *pptr = NULL;
+    struct packet *p = NULL;
+    PacketBuildInstructions *iptr = NULL;
+    PacketBuildInstructions *list = NULL, *llast = NULL;
+    PacketBuildInstructions *ret = NULL;
+    
+    // Enumerate for all packets in the list
     pptr = packets;
 
     while (pptr != NULL) {
         // set structure for reading information from this packet
         p = (struct packet *)pptr->buf;
 
-        // be sure its ipv4..
-        if (p->ip.version == 4) {
+        // Find the function which will process this type of packet
+        Processor = Processor_Find(p->ip.version, p->ip.protocol);
 
-            /*
+        // If the processor exist, then lets call it
+        if (Processor != NULL) {
 
-            if (p->ip.protocol == IPPROTO_ICMP) {
+            if ((iptr = Processor(pptr)) != NULL) {
 
-            }
-
-            if (p->ip.protocol == IPPROTO_UDP) {
-
-            }
-
-            */
-
-            // for processing IPv4 TCP
-            if (p->ip.protocol == IPPROTO_TCP) {
-                flags = 0;
-                if (p->tcp.syn) flags |= TCP_FLAG_SYN;
-                if (p->tcp.ack) flags |= TCP_FLAG_ACK;
-                if (p->tcp.psh) flags |= TCP_FLAG_PSH;
-                if (p->tcp.fin) flags |= TCP_FLAG_FIN;
-                if (p->tcp.rst) flags |= TCP_FLAG_RST;
-
-                // Lets do this here.. so we can append it to the list using a jump pointer so its faster
-                // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
-                if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
-
-                // ensure the type is set
-                iptr->type = PACKET_TYPE_TCP_4;
-
+                // If it processed OK, then lets add it to the list
                 if (llast == NULL)
                     list = llast = iptr;
                 else {
                     llast->next = iptr;
                     llast = iptr;
                 }
-
-                // source IP, and port from the IP/TCP headers
-                iptr->source_ip = p->ip.saddr;
-                iptr->source_port = ntohs(p->tcp.source);
-                
-                // destination IP, and port from the TCP/IP headers
-                iptr->destination_ip = p->ip.daddr;
-                iptr->destination_port = ntohs(p->tcp.dest);
-                
-                // TCP/IP flags..
-                iptr->flags = flags;
-
-                // IP packet TTL (time to live)..  (OS emu)
-                iptr->ttl = p->ip.ttl;
-
-                // TCP window size (OS emu)
-                iptr->tcp_window_size = ntohs(p->tcp.window);
-
-                // start OK.. until checksum.. or disqualify for other reasons
-                iptr->ok = 1;
-
-                // total size from IPv4 header
-                data_size = ntohs(p->ip.tot_len);
-
-                // subtract header size from total packet size to get data size..
-                data_size -= (p->ip.ihl << 2) + (p->tcp.doff << 2);
-
-                if (data_size > 0) {
-                    // allocate memory for the data
-                    if ((data = (char *)malloc(data_size + 1)) == NULL) {
-                        goto end;
-                    }
-
-                    // pointer to where the data starts in this packet being analyzed
-                    sptr = (char *)(pptr->buf + ((p->ip.ihl << 2) + (p->tcp.doff << 2)));
-
-                    // copy into the newly allocated buffer the tcp/ip data..
-                    memcpy(data, sptr, data_size);
-
-                    // ensure the instructions structure has this new pointer containing the data
-                    iptr->data = data;
-                    data = NULL; // so we dont free it below..
-                    iptr->data_size = data_size;
-
-                    
-                }
-
-                // lets move the packet buffer into this new instruction structure as well
-                // *** if we have no use for this later.. remove it (or let it get freed inside of the packetinfo structure)
-                iptr->packet = pptr->buf;
-                pptr->buf = NULL;
-                iptr->packet_size = pptr->size;
-                pptr->size = 0;
-
-                // header identifier from IP header
-                iptr->header_identifier = ntohs(p->ip.id);
-
-                // ack/seq are important for tcp/ip (used to transmit lost packets, etc)
-                // in future for quantum insert protection it will be important as well...
-                iptr->seq = ntohl(p->tcp.seq);
-                iptr->ack = ntohl(p->tcp.ack_seq);
-
-                // start checksum...
-                // get tcp header size (so we know if it has options, or not)
-                tcp_header_size = p->tcp.doff << 2;
-        
-                // start of packet checksum verifications
-                // set a temporary buffer to the packets IP header checksum
-                pkt_chk = p->ip.check;
-
-                // set packets IP checksum to 0 so we can calculate and verify here
-                p->ip.check = 0;
-
-                // calculate what it should be
-                p->ip.check = (unsigned short)in_cksum((unsigned short *)&p->ip, IPHSIZE);
-                // verify its OK.. if not mark this packet as bad (so we can verify how many bad/good and decide
-                // on discarding or not)
-
-                // this is failing! fix!
-                if (p->ip.check != pkt_chk) iptr->ok = 0;
-
-                // lets put the IP header checksum back
-                p->ip.check = pkt_chk;
-
-                // now lets verify TCP header..
-                // copy the packets header..
-                pkt_chk = p->tcp.check;
-
-                // set the packet header to 0 so we can calculate it like an operatinng system would
-                p->tcp.check = 0;
-
-                // it needs to be calculated with a special pseudo structure..
-                checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp) + tcp_header_size + iptr->data_size + iptr->options_size);
-                if (checkbuf == NULL) goto end;
-
-                // code taken from ipv4 tcp packet building function
-                p_tcp = (struct pseudo_tcp *)checkbuf;
-                
-                // set psuedo header parameters for calculating checksum
-                p_tcp->saddr 	= p->ip.saddr;
-                p_tcp->daddr 	= p->ip.daddr;
-                p_tcp->mbz      = 0;
-                p_tcp->ptcl 	= IPPROTO_TCP;
-                p_tcp->tcpl 	= htons(tcp_header_size + iptr->data_size);
-        
-                // copy tcp header into the psuedo structure
-                memcpy(&p_tcp->tcp, &p->tcp, tcp_header_size);
-
-                // copy tcp/ip options into its buffer
-                if (iptr->options_size)
-                    memcpy(checkbuf + sizeof(struct pseudo_tcp), iptr->options, iptr->options_size);
-
-                // now copy the data itself of the packet
-                if (iptr->data_size) {
-                    //printf("has data header %d opt %d data %p data size %d\n",tcp_header_size, iptr->options_size, iptr->data, iptr->data_size);
-                    memcpy(checkbuf + sizeof(struct pseudo_tcp) + iptr->options_size, iptr->data, iptr->data_size);        
-                }
-        
-                // put the checksum into the correct location inside of the header
-                p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, tcp_header_size + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
-        
-                // free that buffer
-                free(checkbuf);
-
-                // TCP header verification failed
-                // *** this is failing!
-                if (p->tcp.check != pkt_chk) {
-                    printf("TCP checksum failed!\n");
-                    //iptr->ok = 0;
-                }
-
-                // put the original value back
-                p->tcp.check = pkt_chk;
-                // done w checksums..
-
-                // moved other analysis to the next function which builds the attack structure
             }
-            
         }
 
         // move on to the next element in the list of packets
         pptr = pptr->next;
     }
 
+    // Things are completed.. lets return the list
     ret = list;
 
     /*
@@ -587,15 +711,10 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
     }*/
 
 
-    end:;
-
-
     // if something got us here without ret, and some list.. remove it
     if (ret == NULL && list != NULL) {
         PacketBuildInstructionsFree(&list);
     }
-
-    PtrFree(&data);
 
     // this gets freed on calling function.. since a pointer to the pointer (to mark as freed) wasnt passed
     //PacketsFree(&packets);
