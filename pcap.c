@@ -25,6 +25,7 @@
 #include <netinet/tcp.h>
 #include <netinet/ether.h>
 #include <net/ethernet.h>
+#include <netinet/ip_icmp.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "attacks.h"
@@ -133,7 +134,7 @@ int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, Pack
             
             PtrFree((char **)&pptr);
 
-            pptr = qnext;
+            pptr = pnext;
         } else {
             pptr = pptr->next;
         }

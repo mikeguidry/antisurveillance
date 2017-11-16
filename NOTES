@@ -35,3 +35,18 @@ filter out the majority.  It all depends on where in your network your applyinng
 personally worry unless your giving the tool 1Tbps.  If that is the case then you should wait for the crafty shit to come.
 
 
+---
+
+
+need a sniffer which can use filters to find particular sessions
+should have heuristics to find somme gzip http, dns, etc.. 
+
+so the tool can get executed, and automatically populate & initiate
+
+Code is almost ready to read directly from the wire.  i just need to be sure it wont have much packet loss so it will need another pthread,
+or it can happen on the thread designed for flushing to the network
+
+-------------
+
+Surveillance platforms probably have limited, or incorrect fragmentation mechanisms.  These attacks are probably two fold resource expensive,
+and could hinder operations.

@@ -7,6 +7,7 @@
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
 #include <pthread.h>
 #include <sys/time.h>
 #include <ctype.h>

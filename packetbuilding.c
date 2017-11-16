@@ -6,6 +6,7 @@
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
 #include <sys/time.h>
 #include <pthread.h>
 #include "network.h"
@@ -71,7 +72,6 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
     // calculate full length of packet.. before we allocate memory for storage
     int final_packet_size = IPHSIZE + TCPHSIZE + iptr->data_size;
-
     unsigned char *final_packet = (unsigned char *)calloc(1, final_packet_size);
     struct packet *p = (struct packet *)final_packet;
 
@@ -246,9 +246,14 @@ void BuildPackets(AS_attacks *aptr) {
         int type;
         int (*func)(PacketBuildInstructions *);
     } PacketBuilders[] = {
-        { PACKET_TYPE_TCP_4, &BuildSingleTCP4Packet },
-        { PACKET_TYPE_UDP_4, &BuildSingleUDP4Packet },
-        { PACKET_TYPE_ICMP_4, &BuildSingleICMP4Packet },
+        { PACKET_TYPE_TCP_4,    &BuildSingleTCP4Packet },
+        { PACKET_TYPE_UDP_4,    &BuildSingleUDP4Packet },
+        { PACKET_TYPE_ICMP_4,   &BuildSingleICMP4Packet },
+        /*
+        { PACKET_TYPE_TCP_6,    &BuildSingleTCP6Packet },
+        { PACKET_TYPE_UDP_6,    &BuildSingleUDP6Packet },
+        { PACKET_TYPE_ICMP_6,   &BuildSingleICMP6Packet },
+        */
         { 0, NULL }
     };
 
@@ -482,6 +487,7 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     p->udp.check        = 0;
 
     memcpy((void *)(final_packet + sizeof(struct udphdr) + sizeof(struct iphdr)), iptr->data, iptr->data_size);
+
     if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
 
     udp_chk_hdr = (struct pseudo_header_udp4 *)checkbuf;
@@ -518,38 +524,69 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
 
 int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
+    char *final_packet = NULL;
+    int final_packet_size = 0;
+    struct packeticmp4 *p = NULL;
+    char *checkbuf = NULL;
+    uint32_t pkt_chk = 0;
 
     // this is only for ipv4 tcp
     if (iptr->type != PACKET_TYPE_ICMP_4) return ret;
 
-    /*
-     //ip header
-    struct iphdr *ip = (struct iphdr *) packet;
-    struct icmphdr *icmp = (struct icmphdr *) (packet + sizeof (struct iphdr));
-     
-    //zero out the packet buffer
-    memset (packet, 0, packet_size);
+    // calculate size of complete packet
+    final_packet_size = sizeof(struct packeticmp4) + iptr->data_size;
+
+    // allocate space for this packet
+    if ((final_packet = (char *)calloc(1, final_packet_size)) == NULL) goto end;
+
+    p = (struct packeticmp4 *)final_packet;
+
+    // prepare IP header
+    p->ip.version = 4;
+    p->ip.ihl = 5;
+    p->ip.tos = 0;
+    p->ip.tot_len = htons(final_packet_size);
+
+    // *** verify this id for all packets (udp)
+    p->ip.id = rand ();
+
+    p->ip.frag_off = 0;
+    p->ip.ttl = 255;
+    p->ip.protocol = IPPROTO_ICMP;
+    p->ip.saddr = iptr->source_ip;
+    p->ip.daddr = iptr->destination_ip;
+    p->ip.check = in_cksum((unsigned short *)final_packet, sizeof (struct iphdr));
  
-    ip->version = 4;
-    ip->ihl = 5;
-    ip->tos = 0;
-    ip->tot_len = htons (packet_size);
-    ip->id = rand ();
-    ip->frag_off = 0;
-    ip->ttl = 255;
-    ip->protocol = IPPROTO_ICMP;
-    ip->saddr = saddr;
-    ip->daddr = daddr;
-    //ip->check = in_cksum ((u16 *) ip, sizeof (struct iphdr));
- 
-    icmp->type = ICMP_ECHO;
-    icmp->code = 0;
-    icmp->un.echo.sequence = rand();
-    icmp->un.echo.id = rand();
+    // prepare ICMP header
+    p->icmp.type = ICMP_ECHO;
+    p->icmp.code = 0;
+    p->icmp.un.echo.sequence = rand();
+    p->icmp.un.echo.id = rand();
     //checksum
-    icmp->checksum = 0;
-    */
-    return -1;
+    p->icmp.checksum = 0;
+
+    if (iptr->data_size) {
+        memcpy((void *)(final_packet + sizeof(struct packeticmp4)), iptr->data, iptr->data_size);
+    }
+
+    if ((checkbuf = (char *)calloc(1, sizeof(struct icmphdr) + iptr->data_size)) == NULL) goto end;
+
+
+    p->icmp.checksum = pkt_chk;
+
+    iptr->packet = final_packet;
+    iptr->packet_size = final_packet_size;
+
+    final_packet = NULL;
+    final_packet_size = 0;
+
+    ret = 1;
+
+    end:;
+
+    PtrFree(&final_packet);
+
+    return ret;
 }
 
 /*
@@ -558,9 +595,4 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr);
 int BuildSingleUDP6Packet(PacketBuildInstructions *iptr);
 int BuildSingleICMP6Packet(PacketBuildInstructions *iptr);
 
-
-need a sniffer which can use filters to find particular sessions
-should have heuristics to find somme gzip http, dns, etc.. 
-
-so the tool can get executed, and automatically populate & initiate
 */

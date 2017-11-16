@@ -5,6 +5,7 @@
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
 #include <string.h>
 #include <errno.h>  
 #include "network.h"
@@ -373,13 +374,14 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
 }
 
 
+// Process an IPv4 UDP packet from the wire, or a PCAP
 PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
     struct packetudp4 *p = NULL;
     char *data = NULL;
     int data_size = 0;
     char *checkbuf = NULL;
-    struct pseudo_header_udp4 *udp_hdr_chk = NULL;
+    //struct pseudo_header_udp4 *udp_hdr_chk = NULL;
     uint32_t pkt_chk = 0, our_chk = 0;
 
     p = (struct packetudp4 *)pptr->buf;
@@ -433,7 +435,6 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     // free the buffer we allocated for the checksum
     free(checkbuf);
     
-
     // Lets link the original data to this new structure..
     iptr->packet = pptr->buf;
     iptr->packet_size = pptr->size;
@@ -447,13 +448,108 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     return iptr;
 }
 
+
+// Process an IPv4 ICMP packet from the wire, or a PCAP
 PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
+    struct packeticmp4 *p = (struct packeticmp4 *)pptr->buf;
+    unsigned short pkt_chk = 0;
+    char *data = NULL;
+    int data_size = 0;
+
+    // Lets do this here.. so we can append it to the list using a jump pointer so its faster
+    // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+    
+    // ensure the type is set
+    iptr->type = PACKET_TYPE_ICMP_4;
+
+    // get IP addreses out of the packet
+    iptr->source_ip = p->ip.saddr;
+    iptr->destination_ip = p->ip.daddr;
+
+    // how much data is present in this packet?
+    data_size = 0;//ntohs(p->udp.len) - 8; // *** calc correctly
+
+    // set packet as OK (can disqualify from checksum)
+    iptr->ok = 1;
+
+    // use packet checksum from the packet
+    pkt_chk = p->icmp.checksum;
+
+    // copy data from the original packet
+    if (data_size) {
+        if ((data = (char *)malloc(data_size)) == NULL) goto end;
+        memcpy(data, (void *)(pptr->buf + sizeof(struct iphdr) + sizeof(struct icmphdr)), data_size);
+
+        iptr->data = data;
+        iptr->data_size = data_size;
+    }
+
+    // set to 0 in packet so we can  calculate correctly..
+    p->icmp.checksum = 0;
+
+    // ICMP checksum
+    p->icmp.checksum = in_cksum((unsigned short *)(pptr->buf + sizeof(struct iphdr)), sizeof(struct icmphdr) + iptr->data_size);
+
+    if (pkt_chk != p->icmp.checksum) {
+        printf("ICMP checksum fail\n");
+        iptr->ok = 0;
+    }
+
+    // set back the original checksum we used to verify against
+    p->icmp.checksum = pkt_chk;
+    /*
+
+    // we need to hold ICMP parameters in a clever wy in the structure..
+_
+type <<8
+code <<16
+checksum << 24
+
+_
+
+
+    // set ICMP specific parameters
+    icmp->type = ICMP_ECHO;
+    icmp->code = 0;
+    icmp->un.echo.sequence = rand();
+    icmp->un.echo.id = rand();
+    
+    struct icmphdr {
+    u_int8_t type;
+    u_int8_t code;
+    u_int16_t checksum;
+    union {
+        struct {
+            u_int16_t	id;
+            u_int16_t	sequence;
+        } echo;
+        u_int32_t	gateway;
+        struct {
+            u_int16_t	__unused;
+            u_int16_t	mtu;
+        } frag;	
+    } un;
+    };
+*/
+
+
+    // move original packet to this new structure
+    iptr->packet = pptr->buf;
+    iptr->packet_size = pptr->size;
+
+    //and unlink from original so it doesnt get freed
+    pptr->buf = NULL;
+    pptr->size = 0;
+
+    end:;
 
     return iptr;
 }
 
-// IPv4 TCP/IP packet processor
+
+// Process an IPv4 TCP/IP packet from wire or PCAP
 PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
     struct packet *p = NULL;
@@ -524,9 +620,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
         // ensure the instructions structure has this new pointer containing the data
         iptr->data = data;
         data = NULL; // so we dont free it below..
-        iptr->data_size = data_size;
-
-        
+        iptr->data_size = data_size;  
     }
 
     // lets move the packet buffer into this new instruction structure as well
@@ -564,6 +658,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     // on discarding or not)
 
     // this is failing! fix!
+    // 
     if (p->ip.check != pkt_chk) iptr->ok = 0;
 
     // lets put the IP header checksum back
@@ -616,6 +711,9 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     // TCP header verification failed
     // *** this is failing!
     if (p->tcp.check != pkt_chk) {
+        // This broke whenever I moved this project from clockwork repository as a module to this new configuration.  I am unsure what I changed
+        // and haven't spent much time debugging yet.  I've only listed hashes, and they are wrong for the IP/TCP headers.  The data is intact,
+        // and validated as identical.  I'll get back to this shortly.  I assume after UDP/ICMP is when I get back to this right before IPv6.
         // *** *** ***
         //printf("TCP checksum failed!\n");
         //iptr->ok = 0;
@@ -635,6 +733,9 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 typedef PacketBuildInstructions *(*ProcessFunc)(PacketInfo *);
 
 // Find the function which will process this packet type correctly from the network wire, or a PCAP
+// *** Todo: i don't like this loop.. I'd like to perform this action without a loop later..
+// Seems I cannot use an exact jump table w original values IPPROTO_TCP/UDP are equal to 0
+// https://www.google.com/search?q=define+ipproto_tcp&oq=define+ipproto_tcp&aqs=chrome..69i57.2845j0j7&sourceid=chrome&ie=UTF-8
 ProcessFunc Processor_Find(int ip_version, int protocol) {
     int i = 0;
     struct _packet_processors {
@@ -642,18 +743,20 @@ ProcessFunc Processor_Find(int ip_version, int protocol) {
         int protocol;
         ProcessFunc Processor;
     } PacketProcessors[] = {
-        { 4, IPPROTO_TCP, &ProcessTCP4Packet },
-        { 4, IPPROTO_UDP, &ProcessUDP4Packet },
-        { 4, IPPROTO_ICMP, &ProcessICMP4Packet },
+        // This is where you would put new types of packet which need to be analyzed
+        // It is where IPv6 functions get linked into the application to append analysis capabilities
+        { 4, IPPROTO_TCP,   &ProcessTCP4Packet },
+        { 4, IPPROTO_UDP,   &ProcessUDP4Packet },
+        { 4, IPPROTO_ICMP,  &ProcessICMP4Packet },
+
         { 0, 0, NULL}
     };
 
-    for (i = 0; PacketProcessors[i].ip_version != 0; i++) {
-        if (PacketProcessors[i].ip_version == ip_version) {
-            if (PacketProcessors[i].protocol == protocol) {
+    while (PacketProcessors[i].ip_version) {
+        if ((PacketProcessors[i].ip_version == ip_version) && (PacketProcessors[i].protocol == protocol))
                 return PacketProcessors[i].Processor;
-            }
-        }
+
+        i++;
     }
 
     return NULL;
@@ -676,15 +779,14 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
         // set structure for reading information from this packet
         p = (struct packet *)pptr->buf;
 
-        // Find the function which will process this type of packet
-        Processor = Processor_Find(p->ip.version, p->ip.protocol);
-
-        // If the processor exist, then lets call it
-        if (Processor != NULL) {
-
+        // Analysis capabilities are limited so use this function to determine
+        // if this packet type has been developed yet
+        if ((Processor = Processor_Find(p->ip.version, p->ip.protocol)) != NULL)
             if ((iptr = Processor(pptr)) != NULL) {
-
                 // If it processed OK, then lets add it to the list
+                // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
+                // rather than L_link_ordered()
+                // not as pretty although it was required whenever incoming packet counts go into the millions..
                 if (llast == NULL)
                     list = llast = iptr;
                 else {
@@ -692,7 +794,6 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                     llast = iptr;
                 }
             }
-        }
 
         // move on to the next element in the list of packets
         pptr = pptr->next;
@@ -727,9 +828,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 // This will filter the main list of information from PacketsToInstructions() by ports, or IPs and then
 // return those connections separately..
 // It is loopable, and it used to load an entire PCAP in a different function.
-// However.. when given millions of packets.. I believe its too slow.
-// In progress: divide & conquer.. ill create several threads (which could easily be branched into processes)
-// which could only return packets whiich can be verified last.. for example if 2 threads have packets from a session
+// There is another threaded function for use with high packet counts.
 PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **instructions, FilterInformation *flt) {
     PacketBuildInstructions *iptr = *instructions;
     PacketBuildInstructions *ilast = NULL, *inext = NULL;
@@ -1079,7 +1178,7 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
                 // we want to find the other before it!
                 pptr = Packets[(Current_Packet - 1) % 16];
                 // scan at most prior 16 packets looking for ACK/SEQ
-                for (i = 1; i < 15; i++) {
+                for (i = 1; i < 16; i++) {
                     pptr = Packets[i % 16];
                     if (pptr != NULL) {
                         // be sure its the same connection

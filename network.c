@@ -1,4 +1,9 @@
 /*
+
+This is where functionality for writing information directly to the networking device is located.  It will also contain
+functions for sniffing the network interface for information.  The information can be used as new attack parameters, or
+a few other things I must add which will require call back events after passing a filter.
+
 *** since we have packet analysis already developed.. I'll add some raw capturing code in here.  It will allow Quantum Insert
 protection to be developed, and this can become the 'third party server' for hundreds of thousands of clients..
 -- all in one fuck you to nsa -- this is for rape.
@@ -14,6 +19,8 @@ protection to be developed, and this can become the 'third party server' for hun
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
+#include <sys/ioctl.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
@@ -44,10 +51,12 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
     }
     
     while (optr != NULL) {
+#ifdef TESTING_DONT_FREE_OUTGOING
         if (optr->submitted) {
             optr = optr->next;
             continue;
         }
+#endif
         // parameters required to write the spoofed packet to the socket.. it ensures the OS fills in the ethernet layer (src/dst mac
         // addresses for the local IP, and local IP's gateway
         rawsin.sin_family       = AF_INET;
@@ -62,9 +71,9 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
 
         // keep track of how many packets.. the calling function will want to keep track
         count++;
-
+#ifdef TESTING_DONT_FREE_OUTGOING
         optr->submitted = 1; optr = optr->next; continue;
-        
+#endif
         // what comes after? we are about to free the pointer so..
         onext = optr->next;
 
@@ -169,6 +178,7 @@ int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
 void *thread_network_flush(void *arg) {
     AS_context *ctx = (AS_context *)arg;
     int count = 0;
+    int i = 0;
 
     while (1) {
         pthread_mutex_lock(&ctx->network_queue_mutex);
@@ -181,7 +191,14 @@ void *thread_network_flush(void *arg) {
         //if (count)printf("Count: %d\n", count);
         // if none.. then lets sleep..  
         if (!count)
-            usleep(200);
+            sleep(1);
+        else {
+            i = 150000 - (10000 * i);
+            if (i < 50000   ) i = 50000;
+            if (i > 150000) i = 150000;
+            
+            usleep(i);
+        }
     }
 }
 
@@ -189,15 +206,69 @@ void *thread_network_flush(void *arg) {
 int prepare_socket(AS_context *ctx) {
     int rawsocket = 0;
     int one = 1;
+
+    if (ctx->raw_socket > 0) {
+        // If we cannot use setsockopt.. there must be trouble!
+        if (setsockopt(ctx->raw_socket, IPPROTO_IP,IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
+            close(ctx->raw_socket);
+            ctx->raw_socket = 0;
+        }
+    }
     
+    // open raw socket
     if ((rawsocket = socket(PF_INET, SOCK_RAW, IPPROTO_TCP)) <= 0)
         return -1;
 
+    // ensure the operating system knows that we will include the IP header within our data buffer
     if (setsockopt(rawsocket, IPPROTO_IP,IP_HDRINCL, (char *)&one, sizeof(one)) < 0)
         return -1;
 
+    // set it for later in the overall context
     ctx->raw_socket = rawsocket;
 
     return rawsocket;
 }
+/*
+// http://yusufonlinux.blogspot.com/2010/11/data-link-access-and-zero-copy.html
+int prepare_read_socket(AS_context *ctx) {
+    int sockfd = 0;
+    struct ifreq ifr;
+    struct sockaddr_ll sll;
 
+    memset (&ifr, 0, sizeof (struct ifreq));
+
+    if (ctx->read_socket != 0) {
+        // if this works properly.. it should already have been initialized
+        if (ioctl (ctx->read_socket, SIOCGIFINDEX, &ifr) == 0) goto end;
+        close(ctx->read_socket);
+        ctx->read_socket = 0;
+    }
+
+    if ((sockfd = socket(PF_PACKET, SOCK_RAW, htons(ETHER_TYPE))) == -1) goto end;
+    
+    strncpy ((char *) ifr.ifr_name, interface.c_str (), IFNAMSIZ);
+    if (ioctl (sockfd, SIOCGIFINDEX, &ifr) != 0) goto end;
+
+    
+    sll.sll_family = AF_PACKET;
+    sll.sll_ifindex = ifr.ifr_ifindex;
+    sll.sll_protocol = htons (protocol);
+
+    if (bind(sockfd, (struct sockaddr *) &sll, sizeof(sll)) != 0) goto end;
+
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof sockopt) == -1) goto end;
+    
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, ifName, IFNAMSIZ-1) == -1) goto end;
+
+    ctx->read_socket = sockfd;
+
+    end:;
+    
+
+    // if it failed for any reason...
+    if (ctx->read_socket == 0 && sockfd) close(sockfd);
+
+    // return if it was successful
+    return (ctx->read_socket != 0);
+}
+*/

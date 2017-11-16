@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 struct _packet_info;
-struct _tcp_packet_instructions;
+struct _packet_instructions;
 //typedef struct _packet_info PacketInfo;
 
 
@@ -28,7 +28,7 @@ typedef struct _as_attacks {
     int recv_state;
 
     // instructions for building raw packets..
-    struct _tcp_packet_instructions *packet_build_instructions;
+    struct _packet_instructions *packet_build_instructions;
 
     uint32_t client_base_seq;
     uint32_t server_base_seq;
@@ -108,6 +108,9 @@ typedef struct _antisurveillance_context {
     // socket for writing to the ethernet device
     int raw_socket;
 
+    // promisc read socket for incoming packet events
+    int read_socket;
+
     // list of attacks
     AS_attacks *attack_list;
 
@@ -132,6 +135,8 @@ typedef struct _antisurveillance_context {
     pthread_mutex_t network_queue_mutex;
     pthread_t network_thread;
     int network_threaded;
+
+    int aggressive;
 } AS_context;
 
 

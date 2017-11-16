@@ -19,6 +19,7 @@ NSA: This is for rape.  I think you guys get it now.  Really thought I'd sit by 
 #include <netinet/tcp.h>
 #include <netinet/ether.h>
 #include <netinet/in.h>
+#include <netinet/ip_icmp.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -237,6 +238,24 @@ int main(int argc, char *argv[]) {
     char *filename = NULL;
     int loop_count = 0;
     AS_context *ctx = AS_ctx_new();
+    int aggressive = 140000;
+    char *Eaggressive = NULL;
+
+    if ((Eaggressive = getenv("AGGRESSIVE")) != NULL) {
+        i = atoi(Eaggressive);
+        if (i > 10) i = 10;
+        if (i < 0) i = 0;
+        aggressive -= (20000 * i);
+        
+        printf("Aggressive: %d [%d]\n", i, aggressive);
+
+        ctx->aggressive = i;
+    } else {
+        ctx->aggressive = 0;
+    }
+
+    
+
 
     if (argc > 2) {
         if (Test_Generate(ctx, argc, argv) != 1)
@@ -255,22 +274,25 @@ int main(int argc, char *argv[]) {
     // We loop to call this abunch of times because theres a chance all packets do not get generated
     // on the first call.  It is designed this way to handle a large amount of fabricated sessions 
     // simultaneously... since this is just a test... let's loop a few times just to be sure.
+
+    /*
     for (i = 0; i < loop_count; i++) {
         r = AS_perform(ctx);
         if (r != 1) printf("AS_perform() = %d\n", r);
 
-        usleep(5000);
+        usleep(500);
     }
-
+*/
     i = 0;
 
-    if (1==2)
+    if (1==1)
     while (++i) {
         AS_perform(ctx);
-        if (i % 5) {
+        if ((i % 5)==0) {
             printf("\rCount: %d                      \t", i);
             fflush(stdout);
         }
+        usleep(700000);
     }
     // how many packes are queued in the output supposed to go to the internet?
     printf("network queue: %p\n", ctx->network_queue);

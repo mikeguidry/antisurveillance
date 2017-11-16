@@ -20,3 +20,9 @@ https://github.com/mikeguidry/clockwork/tree/antisurveillance/modules/anti_surve
 
 
 Funny enough.. It could be turned into a surveillance platform with the correct filters, and some external application preparing to analyze the data... LOL
+
+
+The base code is pretty tough on these surveillance platforms therefore directly rough on the NSA.  The upcoming code is a cherry, icing, and
+lesson to the NSA.  I gave them 3 days.  It isn't the first time I have set an amount of time to stop fucking with my life.  Oh well.  
+
+IDFWU - https://www.youtube.com/watch?v=cZaJYDPY-YQ

@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7 -I/usr/include/x86_64-linux-gnu/python2.7
+CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7 -I/usr/include/x86_64-linux-gnu/python2.7 
 DEPS = antisurveillance.h
 ODIR=obj
 LIBS=-lz -lpthread -ggdb -lpython2.7 -ldl -lm -lutil -lmhash
@@ -13,6 +13,9 @@ $(ODIR)/%.o: %.c $(DEPS)
 
 anti: $(OBJ)
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+
+anti_static: $(OBJ)
+	gcc -static -o $@ $^ $(CFLAGS) $(LIBS)
 
 clean:
 	rm -f anti $(ODIR)/*.o *~ core $(INCDIR)/*~ 

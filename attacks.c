@@ -37,7 +37,7 @@ TCP protocol attacks - (causes traffic disruption)
         uLong    total_out; // total number of bytes output so far 
 
         z_const char *msg;  // last error message, NULL if no error 
-        struct internal_state FAR *state; /* not visible by applications 
+        struct internal_state FAR *state; //not visible by applications 
 
         alloc_func zalloc;  // used to allocate the internal state 
         free_func  zfree;   // used to free the internal state 
@@ -81,6 +81,7 @@ TCP protocol attacks - (causes traffic disruption)
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
 #include <string.h>
 #include "network.h"
 #include "antisurveillance.h"
@@ -511,3 +512,30 @@ int AS_pause(AS_attacks *attack, int id, int resume) {
 
     return 1;
 }
+
+
+/*
+typedef struct _blackhole_context {
+    struct _blackhole_context;
+
+    int start_ts;
+    int last_ts;
+
+    int total;
+
+    uint32_t ip;
+    uint32_t **familiars;
+
+    struct in6_addr ip6;
+    struct in6_addr **ip6_familiars;
+} BlackholeCTX;
+
+
+int blackhole_add(uint32_t ip, int minutes) {
+    int ret = -1;
+
+
+    end:;
+    return ret;
+}
+*/

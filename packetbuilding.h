@@ -1,13 +1,8 @@
 
 
-//struct _as_attacks;
-//typedef struct _as_attacks *AS_attacks;
-
-// this is where the packet is held after the attack type's functin generates it.. so that function will be called only once
-// per packetinfo depending on the count, and intervals...
-// its possible to free the packet after from that structure after usage thus allowing it to get regenerated for continous use
-// this allows threading by way of many different attack structures, thus seperate session structures
-// wide scale manipulation of mass surveillance platforms ;)
+// PacketInfo is the first structure packets get prepared into being read either from the wire, or from a PCAP.
+// It is also the last structure outgoing buffers will be contained within before being added to the final outgoing
+// queue which flushes directly to the network.  It is also where you could save to a PCAP rather than flush to the network.
 typedef struct _pkt_info {
     struct _pkt_info *next;
 
@@ -16,6 +11,7 @@ typedef struct _pkt_info {
 
     // ipv4 tcp/udp/icmp? ipv6...?
     int type;
+
 
     uint32_t dest_ip;
     uint16_t dest_port;
@@ -32,40 +28,43 @@ typedef struct _pkt_info {
 
 
 
+// This structure is used to contain analysis information after processing incoming PacketInfo packets.
+// It is also kept around to allow easy modifications to attack structures packets to ensure that they
+// are continously different, or have other adjustments.
+typedef struct _packet_instructions {
+    struct _packet_instructions *next;
 
-// allows preparing full session, and then building the packets immediately..
-// resulting in this linked list going directly into a function for addition
-// into the queue....
-// i cannot think of any better way at the moment considering there are so many varibles
-// and soon there will be functions being built around generalization of traffic statistics
-// to ensure these connections cannot be singled out
-// this is one method which allows expanding easily..
-typedef struct _tcp_packet_instructions {
-    struct _tcp_packet_instructions *next;
-
+    // What IP protocol? 4/6?  What type of packet? TCP/UDP/ICMP...
     int type;
     
+    // Is this packet considered to be from the client side? (The system opening outgoing connection to a server)
     int client;
 
-    int session_id;
-    
+    // Packets time to live setting
     int ttl;
-    
-
+    // Packets identifier for the header
     uint32_t header_identifier;
     
+    // how to hold the IP addresses?
+    // IPv4
     uint32_t source_ip;
-    int source_port;
-
     uint32_t destination_ip;
+    // IPv6
+    struct in6_addr source_ip6;
+    struct in6_addr destination_ip6;
+
+    // Ports for this packet (TCP/UDP)
+    int source_port;
     int destination_port;
 
+    // Flags.. it gets converted into TCP/IP flags but could contain other things
     int flags;
 
+    // TCP header additional information
     char *options;
     int options_size;
 
-    // this is for the 
+    // Window size for the header (and controls amount of bytes for data flow each packet)
     unsigned short tcp_window_size;
 
     // data goes here.. but it'd be nice to have it as an array..
@@ -135,6 +134,11 @@ struct packetudp4 {
     struct udphdr udp;
 };
 
+struct packeticmp4 {
+    struct iphdr ip;
+    struct icmphdr icmp;
+};
+
 #pragma pack(pop)
 
 enum {
@@ -160,6 +164,8 @@ enum {
 };
 
 
+// Packet types that are supported.  The order does matter because it is used in two different linked lists.  One is for
+// building packets, and the other is for analysis of incoming packets.
 enum {
     PACKET_TYPE_TCP_4,
     PACKET_TYPE_UDP_4,
@@ -171,8 +177,9 @@ enum {
 
 
 
-// types of filtering we can perform..
-// FAMILIAR means it will match client/server sides of the connection
+// The filter is used to load sessions from PCAP, or the raw network interface.  It allows you to easily
+// find connections of interest.  The *_FAMILIAR flag is used to allow finding both sides of the connection
+// within the same filter.
 enum {
     FILTER_CLIENT_IP=1,
     FILTER_SERVER_IP=2,
@@ -182,6 +189,7 @@ enum {
     FILTER_PACKET_FAMILIAR=32
 };
 
+// This is the structure used to pass around filter information internally.
 typedef struct _filter_information {
     int flags;
     int packet_flags;

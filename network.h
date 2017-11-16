@@ -26,11 +26,16 @@ typedef struct _attack_outgoing_queue {
     pthread_t thread;
 
     AS_context *ctx;
-
+#ifdef TESTING_DONT_FREE_OUTGOING
     int submitted;
+#endif
 
 } AttackOutgoingQueue;
 
+typedef struct _incoming_packet_queue {
+    struct _incoming_packet_queue *next;
+
+} IncomingPacketQueue;
 
 int prepare_socket();
 void *thread_network_flush(void *arg);
