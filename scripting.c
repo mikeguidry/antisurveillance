@@ -1,3 +1,11 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdint.h>
+#include "network.h"
+#include "antisurveillance.h"
+#include "scripting.h"
+
 /*
 
 This should contain glue functions for being able to use scripting.  I'll use code I have from other projects but Python, LUA, maybe JavaScript,
@@ -216,3 +224,20 @@ int PythonModuleExecute(Modules *eptr, char *script_file, char *func_name, PyObj
     }
 
     */
+
+
+    int Scripting_Perform(AS_context *ctx) {
+        int ret = -1;
+
+        end:;
+        return ret;
+    }
+
+    int Scripting_Init(AS_context *ctx) {
+        int ret = -1;
+        
+        end:;
+        return ret;
+                
+    }
+

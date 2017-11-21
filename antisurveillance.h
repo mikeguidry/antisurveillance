@@ -154,7 +154,6 @@ typedef struct _antisurveillance_context {
 
 
 
-
 typedef void *(*attack_func)(AS_attacks *aptr);
 
 
@@ -163,3 +162,5 @@ void AS_remove_completed();
 
 
 
+
+int Subsystems_Perform(AS_context *);

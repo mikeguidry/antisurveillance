@@ -36,4 +36,4 @@ void AttackFreeStructures(AS_attacks *aptr);
 int GZipAttack(AS_context *, AS_attacks *aptr, int *size, char **server_body);
 void attacks_init();
 int AS_session_queue(AS_context *, int id, uint32_t src, uint32_t dst, int src_port, int dst_port, int count, int interval, int depth, void *function);
-
+int BH_Perform(AS_context *ctx);

@@ -336,11 +336,13 @@ int HTTPContentModification(AS_attacks *aptr) {
     ssize_t rret = 0;
     char *hptr = NULL;
 
+    // work in progress
     return 0;
 
     // lets only perform on port 80 for now...
     if (aptr->destination_port != 80) return ret;
 
+    // call a function which will return all data from a particular side of the TCP connection (inn this case we want to modify the server's response)
     if ((response = ConnectionData(aptr, FROM_SERVER, &response_size)) == NULL) return 0;
 
     // the data iis here but the library below didnt work as expected... =/

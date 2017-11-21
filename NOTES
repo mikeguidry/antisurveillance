@@ -284,3 +284,28 @@ sys     10m3.313s
 mike@reprisal:~/code/antisurveillance$ du -h output2.pcap
 23G     output2.pcap
 mike@reprisal:~/code/antisurveillance$
+
+
+-------------------
+
+need to look into minimal support for unicode etc.. we want chinese names/characters to be fine and used in those regions (under their routes,
+or surveillance taps) .. china is an example.. anyone who requiires unicode, and uses some non USA/english charset
+
+it shouldnt mattter how it is in C but pulling/giving information to python, and other scriptinng languages then itmight
+might need decode/recode functions for conversion before, or after usinng these scriptinng languages
+
+
+
+
+------------------
+
+BGP research (to pair with traceroute, etc)
+it will help with strategies in research.c
+http://www.team-cymru.org/IP-ASN-mapping.html
+
+ftp.arin.net/pub/stats/arin/delegated-arin-extended-latest
+ftp.ripe.net/ripe/stats/delegated-ripencc-latest
+ftp.afrinic.net/pub/stats/afrinic/delegated-afrinic-latest
+ftp.apnic.net/pub/stats/apnic/delegated-apnic-latest
+ftp.lacnic.net/pub/stats/lacnic/delegated-lacnic-latest
+

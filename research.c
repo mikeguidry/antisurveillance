@@ -8,7 +8,7 @@
 
 /*
 
-Research is everything related to stragegy choices.  For example, which sites do we wish to spend the majority
+Research is everything related to strategy choices.  For example, which sites do we wish to spend the majority
 of our bandwidth falsifying connections towards?  It will perform DNS lookups, traceroutes, and BGP analysis to
 determine the best IP 4/6 addresses to use for attacks.
 
@@ -121,7 +121,90 @@ int Traceroute_Compare(TracerouteQueue *first, TracerouteQueue *second) {
 
 
     // we have other information such as leaks which will help us propagate the initial strategy
+
+    // first we verify if any routes are the same
+    // then we count the distance between them (first from the highest TTL)
+    // we need to know if they are more than likely in the same region
+    // then we can cross that information with other traceroutes which share some of the same routes
+    // the point is to keep in memory all traceroutes to ensure we can reuse them..
+    // for generatinng IPs it will be  important to attack particular countries, etc
+    // especially when identities get involded (which would be better to keep particular to the region)..
+    // especially chinese characters etc
+
     end:;
 
+    return ret;
+}
+
+
+// OK ICMP/UDP is finished.. time for the real fun.. this will def catch some eyes once people realize how you can programmatically
+// target mass surveillance platforms ... without that much effort really.
+// while coding this im using ipv4 .. will change later.... still need to add ipv6 anyways
+int Traceroute_Queue(AS_context *ctx, uint32_t target_node) {
+    TracerouteQueue *tptr = NULL;
+    int ret = -1;
+
+    // allocate memory for this new traceroute target we wish to add into the system
+    if ((tptr = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) goto end;
+
+    // which IP are we performing traceroutes on
+    tptr->ipv4 = target_node;
+
+    // we start at ttl 1.. itll inncrement to that when processing
+    tptr->current_ttl = 0;
+
+    // later we wish to allow this to be set by scripting, or this function
+    // for example: if we wish to find close routes later to share... we can set to max = 5-6
+    // and share with p2p nodes when mixing/matching sides of the taps (when they decide to secure them more)
+    tptr->max_ttl = MAX_TTL;
+
+    // current timestamp stating it was added at this time
+    tptr->ts = time(0);
+
+    // add to traceroute queue...
+    tptr->next = ctx->traceroute_queue;
+    ctx->traceroute_queue = tptr;
+
+    end:;
+    return ret;
+}
+
+// if we have active traceroutes, then this function should take the incoming packet
+// analyze it,  and determine if it relates to any active traceroute missions
+// It should handle all types of packets... id say UDP/ICMP... 
+// its a good thing since it wont have to analyze ALL tcp connections ;)
+int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr) {
+    int ret = 0;
+
+    end:;
+    return ret;
+}
+
+
+// iterate through all current queued traceroutes handling whatever circumstances have surfaced for them individually
+int Traceroute_Perform(AS_context *ctx) {
+    TracerouteQueue *tptr = ctx->traceroute_queue;
+    int ret = 0;
+    // timestamp required for various states of traceroute functionality
+    int ts = time(0);
+
+    // if the list is empty.. then we are done here
+    if (tptr == NULL) goto end;
+
+    // loop until we run out of elements
+    while (tptr != NULL) {
+
+        // lets increase TTL every 5 seconds
+        if ((ts - tptr->ts_activity) > 5) {
+            tptr->current_ttl++;
+            // make packet, or call funnction to handle that..
+            // mark some identifier in tptr for Traceroute_Incoming()
+        }
+
+        tptr = tptr->next;
+    }
+
+
+    end:;
     return ret;
 }

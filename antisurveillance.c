@@ -76,7 +76,6 @@ int AS_perform(AS_context *ctx) {
                     if ((aptr->current_packet != NULL) || (aptr->packets != NULL)) {
                         PacketQueue(ctx, aptr);
                     } else {
-                        printf("marked as commpleted for no packets\n");
                         // otherwise we mark as completed to just free the structure
                         aptr->completed = 1;
                     }
@@ -98,6 +97,9 @@ int AS_perform(AS_context *ctx) {
     if (!ctx->network_threaded)
         FlushAttackOutgoingQueueToNetwork(ctx);
 
+    // traceroute, blackhole, scripting?, timers?
+    Subsystems_Perform(ctx);
+
     return 1;
 }
 
@@ -110,12 +112,10 @@ void AS_remove_completed(AS_context *ctx) {
 
     // enumerate through all attacks looking for completed ones to remove
     while (aptr != NULL) {
+        // try to lock this mutex
         if (pthread_mutex_trylock(&aptr->pause_mutex) == 0) {
-
+            // is this attack structure completed?
             if (aptr->completed == 1) {
-                printf("kiling completed %p\n", aptr);
-                // try to lock this mutex
-                
                     // we arent using a normal for loop because
                     // it'd have an issue with ->next after free
                     anext = aptr->next;
@@ -165,10 +165,16 @@ AS_context *AS_ctx_new() {
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
     // start network queue thread
-    //if (pthread_create(&ctx->network_thread, NULL, thread_network_flush, (void *)ctx) == 0)
-        //ctx->network_threaded = 1;
+    if (pthread_create(&ctx->network_thread, NULL, thread_network_flush, (void *)ctx) == 0)
+        ctx->network_threaded = 1;
 
     return ctx;
+}
+
+// perform iterations of other subsystems...
+int Subsystems_Perform(AS_context *ctx) {
+    Traceroute_Perform(ctx);
+    BH_Perform(ctx);
 }
 
 int Test_Generate(AS_context *ctx, int argc, char *argv[]) {
@@ -292,9 +298,7 @@ int main(int argc, char *argv[]) {
     
     // We loop to call this abunch of times because theres a chance all packets do not get generated
     // on the first call.  It is designed this way to handle a large amount of fabricated sessions 
-    // simultaneously... since this is just a test... let's loop a few times just to be sure.
-
-    
+    // simultaneously... since this is just a test... let's loop a few times just to be sure
     for (i = 0; i < loop_count; i++) {
         r = AS_perform(ctx);
         if (r != 1) printf("AS_perform() = %d\n", r);

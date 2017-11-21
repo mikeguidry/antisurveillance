@@ -66,6 +66,12 @@ typedef struct _traceroute_queue {
     uint32_t ipv4;
     //struct in6_addr ipv6;
 
+    //timestamp added
+    int ts;
+
+    // last time we noticed activity.. for timeouts, and next ttl
+    int ts_activity;
+
     // ttl (starts at 1 and goes up)
     int current_ttl;
     int max_ttl;
@@ -81,3 +87,8 @@ typedef struct _traceroute_queue {
 } TracerouteQueue;
 
 
+
+
+
+int Traceroute_Perform(AS_context *ctx);
+int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr);

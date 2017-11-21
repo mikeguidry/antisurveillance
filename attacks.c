@@ -541,7 +541,7 @@ int BH_add_CIDR(AS_context *ctx, int a, int b, int c, int d, int mask) {
 // This is the main function which  is to built the packets for BH tactics
 // It is meant to be called every iteration similar to AS_perform() but it'll get linked
 // in as an attack structure, and using its own custom function like HTTP_Create()
-int BH_perform() {
+int BH_Perform(AS_context *ctx) {
     int ret = -1;
 
     end:;
