@@ -4,7 +4,7 @@ DEPS = antisurveillance.h
 ODIR=obj
 LIBS=-lz -lpthread -ggdb -lpython2.7 -ldl -lm -lutil -lmhash
 
-_OBJ = os_emulation.o packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o picohttpparser.o
+_OBJ = os_emulation.o packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o 
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 

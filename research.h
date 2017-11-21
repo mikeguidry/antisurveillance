@@ -12,11 +12,12 @@ typedef struct _dns_record {
     unsigned char type; // enums from before
 
     uint32_t ipv4;
-    struct in6_addr ipv6;
+    //struct in6_addr ipv6;
 
     // ts of last lookup
     int ts;
 
+    // this is necessary for different strageies which will be developed
     int country_id;
 } DNSRecord;
 
@@ -40,7 +41,7 @@ typedef struct _lookup_queue {
     int complete;
 
     uint32_t ipv4;
-    struct in6_addr ipv6;
+    //struct in6_addr ipv6;
 
     // how many responses? (different geos, etc)
     int count;
@@ -48,4 +49,35 @@ typedef struct _lookup_queue {
 
     DNSRecord **responses;
 } DNSQueue;
+
+
+// this is pretty standard...
+#define MAX_TTL 30
+
+/*
+
+Traceroute queue which is used to determine the best IPs for manipulation of fiber cables
+
+*/
+typedef struct _traceroute_queue {
+    struct _traceroute_queue *next;
+
+    // IPv4 or 6 address
+    uint32_t ipv4;
+    //struct in6_addr ipv6;
+
+    // ttl (starts at 1 and goes up)
+    int current_ttl;
+    int max_ttl;
+
+    // amount of IPv4 responses for this traceroute (total)
+    int traceroute_responses_count_v4;
+    // now we want to know each response and the TTL it responded at...some wont but we still wanna keep it in this order
+    uint32_t traceroute_responses_v4[MAX_TTL];
+
+    // amount of IPv6 responses for this traceroute
+    //int traceroute_responses_count_v6;
+    //struct inn6_addr *traceroute_responses_v6;
+} TracerouteQueue;
+
 

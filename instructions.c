@@ -70,12 +70,37 @@ void FilterPrepare(FilterInformation *fptr, int type, uint32_t value) {
         fptr->flags |= FILTER_CLIENT_PORT;
         fptr->source_port = value;
     }
+
+    // filter by TCP packets
+    if (type & FILTER_PACKET_TCP)
+        fptr->flags |= FILTER_PACKET_TCP;
+    
+    // filter by UDP packets
+    if (type & FILTER_PACKET_UDP)
+        fptr->flags |= FILTER_PACKET_UDP;
+
+    // filter by ICMP packets
+    if (type & FILTER_PACKET_ICMP)
+        fptr->flags |= FILTER_PACKET_ICMP;
+
+    // filter by IPv4 packets
+    if (type & FILTER_PACKET_IPV4)
+        fptr->flags |= FILTER_PACKET_IPV4;
+
+    // filter by ipv6 packets
+    if (type & FILTER_PACKET_IPV6)
+        fptr->flags |= FILTER_PACKET_IPV6;
+
 }
 
 
 // Filters through packets ensuring that it matches a criteria of something being looked for..
 int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
     int ret = 0;
+    struct iphdr *ip = (struct iphdr *)iptr->packet;
+    struct tcphdr *tcp = NULL;
+    struct icmphdr *icmp = NULL;
+    struct udphdr *udp = NULL;
 
     //return 1;
 
@@ -123,6 +148,49 @@ int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
         if (fptr->packet_flags & TCP_FLAG_RST)
             if (!(iptr->flags & TCP_FLAG_RST)) goto end;
     }
+
+    if (fptr->flags & FILTER_PACKET_TCP) {
+        // make sure the packet is big enough to contain the IP header
+        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
+
+        // ensure it is TCP
+        if (ip->protocol != IPPROTO_TCP) goto end;
+    }
+
+    if (fptr->flags & FILTER_PACKET_UDP) {
+        // make sure the packet is big enough to contain the IP header
+        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
+        
+        // ensure it is UDP
+        if (ip->protocol != IPPROTO_UDP) goto end;
+    }
+
+    if (fptr->flags & FILTER_PACKET_ICMP) {
+        // make sure the packet is big enough to contain the IP header
+        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
+
+        // ensure it is ICMP
+        if (ip->protocol != IPPROTO_ICMP) goto end;
+    }
+
+    if (fptr->flags & FILTER_PACKET_IPV4) {
+        // make sure the packet is big enough to contain the IP header
+        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
+
+        if (ip->version != 4) goto end;
+    }
+
+    if (fptr->flags & FILTER_PACKET_IPV6) {
+        // make sure the packet is big enough to contain the IP header
+        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
+
+        if (ip->version != 6) goto end;
+    }
+
+    /*
+    if (fptr->flags & FILTER_PACKET_DNS) {
+        if (iptr->size < (sizeof(struct iphdr) + sizeof(struct udphdr)) goto end;
+    }*/
 
     ret = 1;
 
@@ -398,6 +466,8 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     //struct pseudo_header_udp4 *udp_hdr_chk = NULL;
     uint32_t pkt_chk = 0, our_chk = 0;
 
+    printf("Process UDP4\n");
+
     p = (struct packetudp4 *)pptr->buf;
 
     // Lets do this here.. so we can append it to the list using a jump pointer so its faster
@@ -442,7 +512,10 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
 
     // *** finish checksum here
 
-    //if (pkt_chk != our_chk) iptr->ok = 0;
+    if (pkt_chk != our_chk) {
+        printf("UDP checksum failed\n");
+        iptr->ok = 0;
+    }
         
     // put the original checksum back regardless
     p->udp.check = pkt_chk;
@@ -471,6 +544,8 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     unsigned short pkt_chk = 0;
     char *data = NULL;
     int data_size = 0;
+
+    printf("Process ICMP4\n");
 
     // Lets do this here.. so we can append it to the list using a jump pointer so its faster
     // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
@@ -912,19 +987,17 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                         // put to linked list in order
                         L_link_ordered((LINK **)&packets, (LINK *)iptr);
 
-                        // RST + ACK = last packet.. in the millions of packets it was slow-er without this...
-                        // turned this off.. it was leaving 2 more packets.. rewrite
-
-                        // final ACK is from the client to the server 
-                        // *** todo: need to keep IP info when we see fin/ack so we know which side will send the last ACK
+                        // FIN/ACK show start of 3way connection close...
+                        // 1st packet
                         if (got_fin_ack == 0) {
                             if ((iptr->flags & TCP_FLAG_FIN) && (iptr->flags & TCP_FLAG_ACK)) {
                                 got_fin_ack = iptr->source_ip;
-                                //printf("Found last packet.. FIN|ACK\n");
-                                //break;
                             }
+
+                        // 2nd packet in the middle here is a ACK/FIN from the other side..
+                            
                         } else if (got_fin_ack != 0) {
-                                // final is client side to server side sending ACK (after a FIN/ACK)
+                                // 3rd packet the final is an ACK from the side which initiated closing the TCP connection
                                 if ((iptr->flags & TCP_FLAG_ACK) && iptr->source_ip == got_fin_ack) {
                                     break;
                                 }

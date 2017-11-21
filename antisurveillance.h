@@ -7,6 +7,9 @@ struct _packet_instructions;
 struct _bh_queue;
 typedef struct _bh_queue BH_Queue;
 
+struct _traceroute_queue;
+typedef struct _traceroute_queue TracerouteQueue;
+
 
 // general attack structure...
 // should support everything from syn packets, to virtual connections
@@ -146,6 +149,7 @@ typedef struct _antisurveillance_context {
 
     BH_Queue *blackhole_queue;
 
+    TracerouteQueue *traceroute_queue;
 } AS_context;
 
 

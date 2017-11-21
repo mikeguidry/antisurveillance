@@ -26,7 +26,6 @@ surveillance platforms, although it would be good to have in general.
 #include "attacks.h"
 #include "http.h"
 #include "instructions.h"
-#include "picohttpparser.h"
 
 // wtf? string.h didnt load this..
 // *** figure this out sooner or later...
@@ -333,7 +332,6 @@ int HTTPContentModification(AS_attacks *aptr) {
     // https://github.com/h2o/picohttpparser starting with their example...
     char buf[4096], *method = NULL, *path = NULL;
     int pret = 0, minor_version = 0;
-    struct phr_header headers[100];
     size_t buflen = 0, prevbuflen = 0, method_len = 0, path_len = 0, num_headers = 0;
     ssize_t rret = 0;
     char *hptr = NULL;

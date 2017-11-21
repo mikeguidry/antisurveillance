@@ -247,7 +247,8 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
     if ((packetinstructions = PacketsToInstructions(packets)) == NULL) goto end;
 
     // prepare the filter for detination port
-    FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
+    //FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
+    FilterPrepare(&flt, 0, 0);
     
     pcount = L_count((LINK *)packetinstructions);
     // If its more than 100k lets use multiple threads to complete it faster

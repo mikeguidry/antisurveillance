@@ -1,0 +1,31 @@
+python
+site id
+traffic id (pcap ID? live capture ID)
+size
+ts created, last used
+
+
+
+create server body (for http fabrication)
+create client body (same)
+
+get identity
+replace identity
+
+generate messages
+
+blackhole get list
+blackhole set list
+blackhole attack start/stop (timers, etc, campaign ids 1 ip list = 1 campaign, another = a diff) since some will have different
+timers required to continously keep all traffic offline
+
+
+----
+manage:
+turn on/off ID (attack structure)
+load file
+save to file (ability to generate, ,and do other thingss in a new context, and then save instead of dumping to network) .. or save fromm live captures
+
+
+all scripting/python needs ability to control the system, and also be used on callbacks for certain things... 
+

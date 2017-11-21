@@ -1,3 +1,10 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdint.h>
+#include "network.h"
+#include "antisurveillance.h"
+#include "research.h"
 
 /*
 
@@ -81,3 +88,40 @@ int pdiff(int x, int y) {
 
 */
 
+
+
+
+
+// traceroutes are necessary to ensure a single nonde running this code can affect all mass surveillance programs worldwide
+// it allows us to ensure we cover all places we expect them to be.. in the world today: if we expect it to be there.. then it
+// probably is (for mass surveillance programs)
+//https://www.information.dk/udland/2014/06/nsa-third-party-partners-tap-the-internet-backbone-in-global-surveillance-program
+// we want to go through asa many routes as possible which means we are innjecting information into each surveillance tap along the way
+// the other strategy will be using two nodes running this code which will be on diff parts of the world so we ca ensure eah side of the packets
+// get processed correctly.. in the begininng (before they modify) it wont matter.. later once they attempt to filter out, and procecss
+// it might matter but it'll make the entire job/technology that much more difficult
+int Traceroute_Compare(TracerouteQueue *first, TracerouteQueue *second) {
+    int ret = 0;
+
+    // if there arent enough responses to compare.. then we are finished..
+    // its not an error since it might just be queued with thousands of other sites/nodes
+    if (!first->traceroute_responses_count_v4 || !second->traceroute_responses_count_v4)
+        return ret;
+
+
+    // we need to verify how close two nodes are in the world..
+    // and if they go through the same fiber routers..
+    // this will ensure that the taps get both sides of the connection
+    // so we can be sure the attack is successful
+
+    // need to know how many match, annd how close they are to the nodes themselves
+    // if they are both within 1-2 of the nondes then we can assume same area, or DC
+
+    // if they go through the same fiber taps in the middle its fine as well
+
+
+    // we have other information such as leaks which will help us propagate the initial strategy
+    end:;
+
+    return ret;
+}
