@@ -495,7 +495,7 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
 
     p->udp.source       = htons(iptr->source_port);
     p->udp.dest         = htons(iptr->destination_port);
-    p->udp.len          = iptr->data_size;
+    p->udp.len          = htons(sizeof(struct udphdr) + iptr->data_size);
     p->udp.check        = 0;
 
     // copy the UDP data after the IP, and UDP header
@@ -647,9 +647,8 @@ int test_udp4(AS_context *ctx) {
     if (iptr == NULL) goto end;
 
 
-    iptr->destination_ip = inet_addr("10.0.0.4");
-
     iptr->source_ip = inet_addr("10.0.0.1");
+    iptr->destination_ip = inet_addr("10.0.0.4");
 
     iptr->source_port = 31337;
     iptr->destination_port = 1025;

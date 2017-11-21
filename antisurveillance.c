@@ -248,6 +248,7 @@ int main(int argc, char *argv[]) {
     int aggressive = 140000;
     char *Eaggressive = NULL;
 
+    // *** redo this.. and allow it to call AggressionSleep() where needed.. set 0-10 in ctx
     if ((Eaggressive = getenv("AGGRESSIVE")) != NULL) {
         i = atoi(Eaggressive);
         if (i > 10) i = 10;
@@ -260,7 +261,7 @@ int main(int argc, char *argv[]) {
     } else {
         ctx->aggressive = 0;
     }
-/*
+
     {
         test_udp4(ctx);
         for (i = 0; i < 1000; i++) {
@@ -271,7 +272,7 @@ int main(int argc, char *argv[]) {
         
         
         exit(-1);
-    } */
+    }
 
 
     if (argc > 2) {
