@@ -50,3 +50,193 @@ or it can happen on the thread designed for flushing to the network
 
 Surveillance platforms probably have limited, or incorrect fragmentation mechanisms.  These attacks are probably two fold resource expensive,
 and could hinder operations.
+
+
+
+notes from other project file before moving here:
+/*
+Michael Guidry
+11/12/17
+This is the actual code related to all attacks I've distributed papers for earlier in 2017.
+------
+A lot of random notes here from various different moments.. Just skip down to the code below it, or don't think too far
+into routines which are either already coded, or changed..
+To the NSA: this is for rape.  I think you guys understand just how much damage this will do.
+And to think.. this is without resources.  What doo you think will happen in the future?
+You people better finish getting rid of everyone now...
+11/12 - NSA: you have 3 days to exit my life.. before things get much much worse.
+11/10 -
+Starting doing some testing/developing on VMware rather than WSL (Ubuntu on Windows 10)
+It takes 32~ seconds to do 1million sessions with 10% injections (150k cached between 1-5 injections at 1megabyta GZIP attacak parameters)
+2.7 billion in a day from a single (slow) machine...
+The same parameters except for the gzip cache reuse being 1500 (instead of 150,000) was 38 seconds. (2.2 billion a day)
+The less cache reuse means itll be less probable for these systems to filter the requests out without actually decompressing each.  Its possible
+the first measure to filter out is to hash, and quickly determine how many other sessions contain the same hash.
+The process will thread for GZIP attacks while pausing the attack structure which initiated it.  I created another thread for dumping
+packets to the network.  I'll try to clean things up, and express how to prepare full blown server responses using external scripts,
+or applications.  The rest should be fairly simple using the base code.
+~2gigabytes for the entire 1million sessions containing 100k GZIP attacks inside of 1million connections (10.3 million packets)
+At 100mbit this would take 3 minutes to transfer online.. 1gbps would take 17 seconds, and 10gbps would take 1 second...
+It doesn't seem like bandwidth will be a limiting factor here...
+Its goiong to get much worse .. this is a building block for something much bigger :)
+*/
+/*
+If you'd like too knnow where to find web server IP addresses then check out censys.  You can get all IPs of HTTP, SSL, etc and even Alexa top 1m.
+It would make it a lot simpler than having to check if hosts are up, or down from each node.  It will however increase the original size of the
+application's data.  If you are preparing to dump 10million packets per second to the Internet from each node per half minute, then you probably
+don't care about the initialization data.. unless this is for a botnet.
+*/
+/*
+Some notes for ISPs:
+If you have an ISP which you think the NSA might be somewhere within your network then you could easily perform tasks like this automated
+using your spare bandwidth to make the effort of grabbing any actionable intelligence much much harder.  If you have so much bandwidth
+in your network available for a certain path.  You could blackhole/unblackhole particular networks, or IP ranges of which aren't used
+by your customer base, or using other algorithms thus allowing you to broadcast packets live 24/7 which would get picked up by these
+surveillance hacks although wouldn't ever reach the real Internet due to the strategy you've decided for the packets.
+It would allow you to take a machine in particular data centers executing these attacks paired with a blackhole controlling mechanism
+which would constantly protect your network.  It wouldn't be full protection but it would require exponential increases in
+resources to obtain information on your network.
+/* this can also be used standalone .. if you select sources, and dest correctly.. you can split up the pcaps by 2 sides
+and also set timestamps to future.. and prepare for attacks at particular times
+notes on binaray protocols:
+the good thing is.. they prob do not accurately represent things like checksums et
+so its possible to get text into their databases regardless of everything being 100%
+so a libpcap replacing text alone might work well for a lot of them
+In other words: if you take a packet capture of MSN messager.. you can probably just overwrite the text, and it should
+make it into their databases.  I highly dobut they would be critical of every protocols internal checksum routines for their
+packets.  Its an assumption but one I believe is justified by time, and CPU resources..
+*/
+
+
+/*
+This application is designed to handle as many different virtual connections, or attacks against
+mass surveillance platforms that you can populate with information.  I was able to generate 8300 full HTTP
+sessions every second without any real optimizations yet. That's 30 million an hour on a single slow laptop I'm developing
+with.  The leaked NSA documents state 40 billion records for 30 days.  If you consider my laptop being able to
+handle this many, then what could a small network perform?  How much would it take to disrupt their networks permanently?
+Obviously it depends on the information you are inserting.  You could also use compression attacks in the middle of
+HTTP TCP/IP sessions to force their machines to have to decompress gigabytes of information using only a few bytes
+in each attack session queue.  I don't think these guys have been paying attention to my papers well enough.
+If so they would have stopped drugging me, or fucking with my life.  It's too late now.
+BTW: I know that you require data to populate these messages, or whatever sites your emulating..
+I just found 950 million e-mail addresses in 20 minutes online from hacked & leaked sites.  Those password dumps
+are more useful than just for cracking.  You can generate hundreds of millions of fabricated connections between
+individuals who have no idea who each other are.   You can also find a list of worldwide government workers on
+another site.  The whole point is that whatever the direction may be itll cause a lot of trouble if done on a mass scale.
+If you were to link worldwide diplomates to tens of millions of random US citizens then thats some trouble
+that wont be easily solved.  I'm not saying you have to do this all in one shot.  It doesn't even have to be the US
+surveillance platforms.  It works on every platform which uses the 'illegal fiber tap' methods.  You can also find
+lists of terrorists worldwide from the past 30 years, and chain tens of millions of people to them.  These mass
+surveillance platforms are vulnerable in design.
+--
+Leaks from hacked sites: (where i found 950mil email addresses)
+https://hacksoc.co.uk/other/dumps
+using torrent..
+dropbox.. cat *.txt|cut -d: -f1 > dropbox_emails
+myspace password: KLub8pT&iU$8oBY(*$NOiu
+need to compreess email addresses - find top domains.. and make a list of the users under them and put into a list like that
+need UDP support for falsifying DNS, and RTSP (sip vvoice)
+CC and BCC are good options because later if they beginn getting better.. itll allow resaons for them to process emails even if it doesnt come from SPF dommains (or domains usually with encrypted email)
+SPF can be bypassed pretty easisly due to how thi works but it also means that on some networks it might not go through correctly
+--
+E-Mail is another story.  Each protocol online which is used by the majority of populations are going to be
+fully supported by most governments mass surveillance platforms.  Step 1 of the software is completed.  It
+has all building blocks required to advance into other protocols.  I'm talking about populating their databases
+with so much false information that they essentially become useless.  CPU/Memory exhaustion to the point to where
+it makes no sense to even risk the illegal surveillance to begin with...
+*/
+
+/*
+Attacking particular things such as chained identities (relationships), etc will require generating sessions of
+random names, or IP addresses towards various websites.  It'd be smart to use real sites which are being scooped up
+so that you can ensure the attack is worth the packets.  The whole goal is to make these fabricated connections seem
+so real that there is no way computationally to separate them.  It decreases the reasoning of supporting the platforms
+to begin with.
+.. below are random notes throughout development.. it'll give an overall concept, but some things have changed, etc, etc
+discovery:
+all major sites (prism related, facebook, those kinds) in a list
+DNS them all.. and begin to reverse their ranges, and analyze traceroutes to find ones with same hops
+to ensure its either in the same datacenter, or closse to it
+for DNS it should randomize between google, and other top providers an dthe local provider (it can attempt to DNS fromm all
+local hosts as a third of its requests)
+generate residential IPs using geoip
+generate business IPs using geoip (and a list of worldwide isp providers)
+https://www.maxmind.com/en/geoip2-isp-database - $100 for all business ip ranges...
+perfect for this.
+https://www.maxmind.com/en/geoip2-enterprise-database - even better...
+covers all non residential
+IANA/whois info could be used (but dont put code to look anything up)
+attack:
+stage 0-1: IPv6 support... can reuse the same logic structures.. it shouldnt be hard to add...
+the main concern iss the IP ranges (harder to scan) but DNS, etc and the same research mechaniss will work
+i just dont know if geoip works the same
+stsage 1 - syn (not virtual connections) floods using alll of the ranges (but we can virtualize a respoonse from the server
+so that it takes up a structure inside of the surveillance platforms)
+their first response will be to count a few packets such as 5 before it prioritizes so this should be variable and increase over time
+(increase suuch as falsifying more packets per connection as months go on fromm release)
+stage 2-  full blown requests using either local network information regarding top sites (non ssl) but with macros being used
+to replace information... most used names can be found easily to be integrated for most languages online (top birth names in countries)
+and then terrorists, or lists of government employees either captured from www or local network (libpcaap on these routers since its ioT)
+could be used to create automatic local lists of macro replacements for the falsifyed connections
+stage 3- doing separate sides of the session using multiple hosts across the globe guaranteed to ensure it is son both sides of the tap
+this is the LAST possible way that the surveillance platforms can attempt to detect the situations..
+and ...its going to be SO CPU intensive, and annoying due to BGP routing and many other factors.. think multicast, anycast,
+and just protocol gibberish... yeah.. but itll be prepared anyhow.
+s------
+at some stage the surveillance systems are going to start randomly accepting connections by some % and only adding them to a permanent
+list if they contain actionable intelligence which means that if you declare enough real connections (full sessions) captured and replayed
+to autheticate host/ips then it will begin to delegate the falsified ones as well
+icmpp messages such as redirect and host not available, ad port not available could also affect these serviecs
+-----
+    // we set the ts to the time of the last packet submission.. this way the separation is by the messages being completed..
+    // this can allow full blown  simulated conversations being pushed directly into intelligence platforms to manipulate them
+    // ie: generate text, neural network verify it seems human vs not, then randomly choose whne the two parties would be online together,
+    // or not.. it can keep context information about parties (even possibly transmitted over p2p to keep on somme remote server for IoT hacked devices
+    // to reload..)
+    // this could allow using simulated messages where two parties arent even online at the same time but send small messages...
+    // all of this couldd be trained, automated and directed to fconfuse manipulate or disrupt intelligence platforms...
+    // thats why this timestamp is extremely impoortant ;)
+*/
+/*
+https://www.privacytools.io/
+Global Mass Surveillance - The Fourteen Eyes (https://www.privacytools.io/)
+1. Australia 
+2. Canada 
+3. New Zealand 
+4. United Kingdom 
+5. United States of America
+Nine Eyes
+6. Denmark 
+7. France 
+8. Netherlands 
+9. Norway 
+Fourteen Eyes
+10. Belgium 
+11. Germany 
+12. Italy 
+13. Spain 
+14. Sweden
+char *fourteen_eyes[] = {"AU","CA","NZ","GB","US","DE","FR","NL","NO","BE","DE","IT","ES","SE",NULL};
+geoip [ 
+    residential finder - generate & verify IPs within particular countries (first world, high intelligene gathering, etc)
+    business IP finders - generate & verify ips in certain industries.. whois/http/dns (dfense, cyber, ads, etc)
+    corporate discovery - generate ips for facebook, google, microsoft, etc (all past prism/major online resources, and expected ones now)
+    (top few thousands websites should be enough)
+]
+geoip = 6megs default
+posssible to extract top countries out of the database and use solely those.. it should lower it to below a megabyte
+and using our own algorithm would help even further
+dns (host -t MX, NS, etc) for top sites (to generate enough connections to overrun their capturing scenarios for mail,etc)
+traceroute (to ensure it goes through enough hops for the hosts that were generated) which meaans itll pass through the fiber
+needss to vereify both sides, source and dest.. then 1 single box can attack and due to rouutinng, bgp and world wide
+itll work just as fine as having two boxes working together on other parts of the world
+picking hosts near the dest/source host might be smart as well..to ensure it doesnt give away information to these systems
+in case they use this tracing scenario to attempt to block or mitigate these attackers
+list of protocols
+http smtp pop ssl vpn smtp ssh dns (each need to be equally hit to ensure it funnctions for all NSA selectors fromm leaks)
+packet generators (lots around)
+syn flood, virtual tcp connections (much eaier now that we do not need both sides of the tap)
+----
+emulation of some packet loss at times may be smart to implement especially over lots of connections (if a score base system
+isnt sure then havinng somme situations like this only helps)
+*/

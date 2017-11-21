@@ -1,3 +1,11 @@
+/*
+
+pipeline is pretty important.. ive noticed most major sites use it.  I don't think its an issue for AJAX messages being forced into
+surveillance platforms, although it would be good to have in general.
+
+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -107,24 +115,6 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
 }
 
 
-// GZIP initialization
-void gzip_init(AS_context *ctx) {
-    pthread_mutexattr_t attr;
-
-    if (!ctx->gzip_initialized) {
-        ctx->gzip_initialized = 1;
-        
-        pthread_mutexattr_setprotocol(&attr, PTHREAD_PRIO_NONE);
-        pthread_mutexattr_setprioceiling(&attr, 0); 
-
-        pthread_mutex_init(&ctx->gzip_cache_mutex, NULL);
-
-        
-    }
-
-    return;
-}
-
 
 
 
@@ -139,6 +129,7 @@ void *thread_gzip_attack(void *arg) {
     // lock mutex so AS_perform() leaves it alone for the time being
     pthread_mutex_lock(&aptr->pause_mutex);
 
+    // pause this attack
     aptr->paused = 1;
 
     // GZIP Attack
@@ -153,7 +144,7 @@ void *thread_gzip_attack(void *arg) {
     PtrFree((char **)&dptr->client_body);
     
 
-    // unpause the thread
+    // unpause the attack
     aptr->paused = 0;
 
     // set so AS_perform() will join.. just in case it causes leaks if you dont perform this..
@@ -321,6 +312,9 @@ char *ConnectionData(AS_attacks *attack, int side, int *_size) {
     *_size = size;
     return ret;
 }
+
+
+
 // lets do small things to change content hashes...
 // also add extra zeros at the end of the file... to change hash
 // TODO: ***
@@ -351,6 +345,14 @@ int HTTPContentModification(AS_attacks *aptr) {
 
     if ((response = ConnectionData(aptr, FROM_SERVER, &response_size)) == NULL) return 0;
 
+    // the data iis here but the library below didnt work as expected... =/
+    // It might be smart to just remove it, and write some of my own code to accomplish...
+    // basic http stuff shhouldnt be too hard.. and if anything fails it can just discard
+    // in reality, anything on the wire is probaby going to be okay to replay..
+    // asa far asa securiyt concerns etc.. itll just be another session in the attack queue
+    // and whats bad for us is bad for the NSA as well.
+
+    /*
     printf("\n\n\n---------------------------\nData: %s\n---------------\n\n\n\n", response);
 
     hptr = strstr(response, "\r\n\r\n");
@@ -380,6 +382,9 @@ int HTTPContentModification(AS_attacks *aptr) {
     }
 
     //exit(-1);
+*/
+
+
 
     /*
     // right here would knock out gzip because more than 95% wouldnt be printable.. :(

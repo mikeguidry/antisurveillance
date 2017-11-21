@@ -514,7 +514,44 @@ int AS_pause(AS_attacks *attack, int id, int resume) {
 }
 
 
-/*
+
+#define  AH_ADD_CIDR(a,b,c,d,mask) { BH_add_CIDR(ctx,a,b,c,d,mask); }
+// adding CIDR type of IP range to affect
+int BH_add_CIDR(AS_context *ctx, int a, int b, int c, int d, int mask) {
+    BH_Queue *qptr = NULL;
+    int ret = -1;
+
+    if ((qptr = (BH_Queue *)calloc(1,sizeof(BH_Queue))) == NULL) goto end;
+
+    qptr->a = a;
+    qptr->b = b;
+    qptr->c = c;
+    qptr->d = d;
+    qptr->netmask = mask;
+
+    // add to blackhole attacks in queue
+    qptr->next = ctx->blackhole_queue;
+    ctx->blackhole_queue = qptr;
+
+    end:;
+    return ret;
+}
+
+
+// This is the main function which  is to built the packets for BH tactics
+// It is meant to be called every iteration similar to AS_perform() but it'll get linked
+// in as an attack structure, and using its own custom function like HTTP_Create()
+int BH_perform() {
+    int ret = -1;
+
+    end:;
+    return ret;
+}
+
+
+/*  
+
+#define  AH_ADD_CIDR(a,b,c,d,mask) BH_add_CIDR(a,b,c,d,mask);
 typedef struct _blackhole_context {
     struct _blackhole_context;
 
@@ -530,6 +567,17 @@ typedef struct _blackhole_context {
     struct in6_addr **ip6_familiars;
 } BlackholeCTX;
 
+// Microsoft Azure goes here
+typedef struct _built_in_attack_hosts {
+    struct _built_in_attack_hosts *next;
+    char *ipv4_cidr;
+
+} BuiltinAttackParameters;
+
+BH_Queue *
+#define AH_ADD_CIDR(a,b,c,d,mask) { }
+
+#include "azure_ips.h"
 
 int blackhole_add(uint32_t ip, int minutes) {
     int ret = -1;
@@ -538,4 +586,48 @@ int blackhole_add(uint32_t ip, int minutes) {
     end:;
     return ret;
 }
+
+int blackhole_build_instructions(AS_context *ctx, BlackholeCTX *bptr, uint32_t destination) {
+    PacketBuildInstructions *iptr = NULL;
+    int ret = -1;
+
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+
+
+    // we wanna create instructions for these blackhole packets so that the engine will change dynamic variables
+
+
+    // need to rebuild with different parameters every few packets.. either we can do an adjustments ay for caling custom functioons
+    // so it doesnt get too messy or a completed function which can trigger building new instructions
+
+
+    ret = 1;
+
+    end:;
+    return ret;
+}
 */
+
+
+
+// initialize any special attacks in this source file
+void attacks_init(AS_context *ctx) {
+    pthread_mutexattr_t attr;
+
+    // GZIP initialization
+    if (!ctx->gzip_initialized) {
+        ctx->gzip_initialized = 1;
+        
+        pthread_mutexattr_setprotocol(&attr, PTHREAD_PRIO_NONE);
+        pthread_mutexattr_setprioceiling(&attr, 0); 
+
+        pthread_mutex_init(&ctx->gzip_cache_mutex, NULL);
+
+        
+    }
+
+    // include ranges we wish to destroy using network 0day
+    #include "azure_ips.h"
+
+    return;
+}

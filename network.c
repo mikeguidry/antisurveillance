@@ -51,6 +51,9 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
     }
     
     while (optr != NULL) {
+        if (optr->buf == NULL) {
+            printf("optr buf NULL\n");  
+        }
 #ifdef TESTING_DONT_FREE_OUTGOING
         if (optr->submitted) {
             optr = optr->next;
@@ -77,6 +80,7 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
         // what comes after? we are about to free the pointer so..
         onext = optr->next;
 
+        printf("optr buf %p\n", optr->buf);
         // clear buffer
         PtrFree(&optr->buf);
 
@@ -138,6 +142,8 @@ void *AS_queue_threaded(void *arg) {
 // over all attack structure queue going to the Internet.
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     AttackOutgoingQueue *optr = NULL;
+
+    if (qptr == NULL || qptr->buf == NULL) return -1;
 
     if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) == NULL)
         return -1;

@@ -1,3 +1,12 @@
+/*
+This deals with anything to do with the instructions structure type.  It either goes from instructions to packet building, or raw packet
+analysis to instructions.  All IPv4/6 core analysis code will be located here.  I attempted to design as modular as possible although developed
+the majority of this system in a weekend on the spot.  I didn't think it through beyond the overall concept of attacks against anti
+surveillance platforms.  I can't at the moment find any reasons to change things drastically.  I will want to work towards more zero
+copy scenarios in the future to increase packets, and sessions per second. (mbufs/etc)  At least until the initial instructions
+are built for on the wire sessions we want to automatically pull and reproduce..
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -22,9 +31,9 @@
 
 
 void FilterPrepare(FilterInformation *fptr, int type, uint32_t value) {
-    if (fptr->init != 0xAABBCCDD) {
+    if (fptr->init != 1) {
         memset((void *)fptr, 0, sizeof(FilterInformation));
-        fptr->init = 0xAABBCCDD;
+        fptr->init = 1;
     }
 
     // does this filter allow looking for specific packet propertieS? like SYN/ACK/PSH/RST
@@ -71,7 +80,7 @@ int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
     //return 1;
 
     // if the filter is empty... its allowed
-    if (fptr->flags == 0 || fptr->init != 0xAABBCCDD) return 1;
+    if (fptr->flags == 0 || fptr->init != 1) return 1;
 
     // verify client IP
     if (fptr->flags & FILTER_CLIENT_IP)
@@ -128,7 +137,7 @@ int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
 
 
 // creates the base structure for instruction to build a for the wire packet..
-PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, uint32_t source_ip, uint32_t destination_ip, int source_port, int dst_port, int flags, int ttl) {
+PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, uint32_t source_ip, uint32_t destination_ip, int source_port, int dst_port, int flags, int ttl, int window_size) {
     PacketBuildInstructions *bptr = NULL;
 
     if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) return NULL;
@@ -140,12 +149,10 @@ PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, ui
     bptr->destination_port = dst_port;
 
     bptr->flags = flags;
-    bptr->ttl = ttl;
 
-    // this relates to operating system emulation.. i'll get the variable here soon
-    // ***
-    // pcap uses its own allocator to be quicker (instead of the ordered below) so this wont affect it..
-    bptr->tcp_window_size = 1500;
+    // OS emulation
+    bptr->ttl = ttl;
+    bptr->tcp_window_size = window_size;
 
     // FIFO ordering
     L_link_ordered((LINK **)list, (LINK *)bptr);
@@ -168,7 +175,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     // first we need to generate a connection syn packet..
     packet_flags = TCP_FLAG_SYN|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW;
     packet_ttl = cptr->client_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, cptr->client_ip, cptr->server_ip, cptr->client_port, cptr->server_port, packet_flags, packet_ttl)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr->client_ip, cptr->server_ip, cptr->client_port, cptr->server_port, packet_flags, packet_ttl, cptr->max_packet_size_client)) == NULL) goto err;
     bptr->header_identifier = cptr->client_identifier++;
     bptr->client = 1; // so it can generate source port again later... for pushing same messages w out full reconstruction
     bptr->ack = 0;
@@ -178,7 +185,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     // then nthe server needs to respond acknowledgng it
     packet_flags = TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW;
     packet_ttl = cptr->server_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, cptr->server_ip, cptr->client_ip, cptr->server_port, cptr->client_port, packet_flags, packet_ttl)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr->server_ip, cptr->client_ip, cptr->server_port, cptr->client_port, packet_flags, packet_ttl, cptr->max_packet_size_server)) == NULL) goto err;
     bptr->header_identifier = cptr->server_identifier++;
     bptr->ack = cptr->client_seq;
     bptr->seq = cptr->server_seq++;
@@ -187,7 +194,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     // then the client must respond acknowledging that servers response..
     packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
     packet_ttl = cptr->client_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, cptr->client_ip, cptr->server_ip, cptr->client_port, cptr->server_port, packet_flags, packet_ttl)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr->client_ip, cptr->server_ip, cptr->client_port, cptr->server_port, packet_flags, packet_ttl, cptr->max_packet_size_client)) == NULL) goto err;
     bptr->header_identifier = cptr->client_identifier++;
     bptr->client = 1;
     bptr->ack = cptr->server_seq;
@@ -227,6 +234,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
     uint32_t *dst_identifier = NULL;
     uint32_t *my_seq = NULL;
     uint32_t *remote_seq = NULL;
+    int window_size = 0;
 
     // prepare variables depending on the side of the that the data is going from -> to
     if (from_client) {
@@ -260,7 +268,8 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         // the client sends its request... split into packets..
         packet_flags = TCP_FLAG_PSH|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
         packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
-        if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
+        window_size = from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server;
+        if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
         if (DataPrepare(&bptr->data, data_ptr, packet_size) != 1) goto err;
         bptr->data_size = packet_size;
         bptr->header_identifier = (*src_identifier)++;
@@ -276,7 +285,8 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         // receiver sends ACK packet for this packet
         packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
         packet_ttl = from_client ? cptr->server_ttl : cptr->client_ttl;
-        if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl)) == NULL) goto err;
+        window_size = from_client ? cptr->max_packet_size_server : cptr->max_packet_size_client;
+        if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
         bptr->header_identifier = (*dst_identifier)++;
         bptr->ack = *my_seq;
         bptr->seq = *remote_seq;
@@ -311,6 +321,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     uint32_t *my_seq = NULL;
     uint32_t *remote_seq = NULL;
     int packet_ttl = 0;
+    int window_size = 0;
 
     // prepare variables depending on the side of the that the data is going from -> to
     if (from_client) {
@@ -337,7 +348,8 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     // source (client or server) sends FIN packet...
     packet_flags = TCP_FLAG_FIN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
     packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
+    window_size = from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server;
+    if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
     bptr->client = from_client;
     bptr->header_identifier =  (*src_identifier)++;
     bptr->ack = *remote_seq;
@@ -348,7 +360,8 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     // other side needs to respond..adds its own FIN with its ACK
     packet_flags = TCP_FLAG_FIN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
     packet_ttl = from_client ? cptr->server_ttl : cptr->client_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl)) == NULL) goto err;
+    window_size = from_client ? cptr->max_packet_size_server : cptr->max_packet_size_client;
+    if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
     bptr->client = !from_client;
     bptr->header_identifier = (*dst_identifier)++;
     bptr->ack = *my_seq;
@@ -359,7 +372,8 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     // source (client or server) sends the final ACK packet...
     packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
     packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl)) == NULL) goto err;
+    window_size = from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server;
+    if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
     bptr->client = from_client;
     bptr->header_identifier = (*src_identifier)++;
     bptr->ack = *remote_seq;
@@ -405,7 +419,8 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     iptr->destination_port = ntohs(p->udp.dest);
 
     // how much data is present in this packet?
-    data_size = ntohs(p->udp.len) - 8; // *** calc correctly
+    // The UDP header portion has the length of everything except IP header or less (ether header), or WIFI...
+    data_size = ntohs(p->udp.len) - sizeof(struct udphdr);
 
     if (data_size > 0) {
         if ((data = (char *)malloc(data_size)) == NULL) goto end;
@@ -427,7 +442,7 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
 
     // *** finish checksum here
 
-    if (pkt_chk != our_chk) iptr->ok = 0;
+    //if (pkt_chk != our_chk) iptr->ok = 0;
         
     // put the original checksum back regardless
     p->udp.check = pkt_chk;
@@ -499,6 +514,8 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
 
     // set back the original checksum we used to verify against
     p->icmp.checksum = pkt_chk;
+
+    
     /*
 
     // we need to hold ICMP parameters in a clever wy in the structure..
@@ -507,6 +524,8 @@ type <<8
 code <<16
 checksum << 24
 
+ack/seq, and tcp flags can be reused (or we can just add a new area for icmp...)
+or ill union them
 _
 
 
@@ -605,14 +624,16 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     // subtract header size from total packet size to get data size..
     data_size -= (p->ip.ihl << 2) + (p->tcp.doff << 2);
 
+    // start checksum...
+    // get tcp header size (so we know if it has options, or not)
+    tcp_header_size = (p->tcp.doff << 2);
+    
     if (data_size > 0) {
         // allocate memory for the data
-        if ((data = (char *)malloc(data_size + 1)) == NULL) {
-            goto end;
-        }
+        if ((data = (char *)malloc(data_size + 1)) == NULL) goto end;
 
         // pointer to where the data starts in this packet being analyzed
-        sptr = (char *)(pptr->buf + (pptr->size - data_size));
+        sptr = (char *)(pptr->buf + ((p->ip.ihl << 2) + (p->tcp.doff << 2)));
 
         // copy into the newly allocated buffer the tcp/ip data..
         memcpy(data, sptr, data_size);
@@ -623,13 +644,6 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
         iptr->data_size = data_size;  
     }
 
-    // lets move the packet buffer into this new instruction structure as well
-    // *** if we have no use for this later.. remove it (or let it get freed inside of the packetinfo structure)
-    iptr->packet = pptr->buf;
-    pptr->buf = NULL;
-    iptr->packet_size = pptr->size;
-    pptr->size = 0;
-
     // header identifier from IP header
     iptr->header_identifier = ntohs(p->ip.id);
 
@@ -638,9 +652,22 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     iptr->seq = ntohl(p->tcp.seq);
     iptr->ack = ntohl(p->tcp.ack_seq);
 
-    // start checksum...
-    // get tcp header size (so we know if it has options, or not)
-    tcp_header_size = (p->tcp.doff << 2);
+    // if it has more than the tcp header structure size.. the rest is TCP/IP options
+    // *** finish this: other parts of the code needs to realize we modified tcp_header_size, etc
+    if (tcp_header_size > sizeof(struct tcphdr) && 1==0) {
+
+        // calculate options size by space remaining after the tcphdr structure
+        iptr->options_size = tcp_header_size - sizeof(struct tcphdr);
+
+        // allocate space for the options in its own separate memory space
+        if ((iptr->options = (char *)malloc(iptr->options_size)) == NULL) goto end;
+
+        // copy the options from the packet into the allocated space
+        memcpy(iptr->options, (void *)(pptr->buf + sizeof(struct packet)), iptr->options_size);
+
+        // calculate actual TCP header size without options
+        tcp_header_size = sizeof(struct tcphdr);
+    }
 
     // start of packet checksum verifications
     // set a temporary buffer to the packets IP header checksum
@@ -651,14 +678,9 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 
     // calculate what it should be
     p->ip.check = (unsigned short)in_cksum((unsigned short *)&p->ip, IPHSIZE);
-    //printf("-\n");
-    //md5hash((char *)&p->ip, IPHSIZE);
-    //printf("-\n");
+
     // verify its OK.. if not mark this packet as bad (so we can verify how many bad/good and decide
     // on discarding or not)
-
-    // this is failing! fix!
-    // 
     if (p->ip.check != pkt_chk) iptr->ok = 0;
 
     // lets put the IP header checksum back
@@ -677,7 +699,10 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 
     // code taken from ipv4 tcp packet building function
     p_tcp = (struct pseudo_tcp4 *)checkbuf;
-    
+
+    // copy tcp header into the psuedo structure
+    memcpy(&p_tcp->tcp, &p->tcp, tcp_header_size);
+        
     // set psuedo header parameters for calculating checksum
     p_tcp->saddr 	= p->ip.saddr;
     p_tcp->daddr 	= p->ip.daddr;
@@ -685,44 +710,35 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     p_tcp->ptcl 	= IPPROTO_TCP;
     p_tcp->tcpl 	= htons(tcp_header_size + iptr->data_size);
 
-    // copy tcp header into the psuedo structure
-    memcpy(&p_tcp->tcp, &p->tcp, tcp_header_size);
 
     // copy tcp/ip options into its buffer
     if (iptr->options_size)
         memcpy(checkbuf + sizeof(struct pseudo_tcp4), iptr->options, iptr->options_size);
 
     // now copy the data itself of the packet
-    if (iptr->data_size) {
-        //md5hash(iptr->data, iptr->data_size);
-        //printf("has data header %d opt %d data %p data size %d\n",tcp_header_size, iptr->options_size, iptr->data, iptr->data_size);
-        memcpy(checkbuf + sizeof(struct pseudo_tcp4) + iptr->options_size, iptr->data, iptr->data_size);        
-    }
+    if (iptr->data_size)
+        memcpy(checkbuf + PSEUDOTCPHSIZE + tcp_header_size + iptr->options_size, iptr->data, iptr->data_size);
 
     // put the checksum into the correct location inside of the header
-    p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, tcp_header_size + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
-    //printf("-2 %d %d %d %d\n", tcp_header_size, PSEUDOTCPHSIZE, iptr->data_size, iptr->options_size);
-    //md5hash((char *)checkbuf, tcp_header_size + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
-    //printf("-\n");
+    p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, tcp_header_size + PSEUDOTCPHSIZE + iptr->data_size);
 
-    // free that buffer
-    free(checkbuf);
 
     // TCP header verification failed
-    // *** this is failing!
-    if (p->tcp.check != pkt_chk) {
-        // This broke whenever I moved this project from clockwork repository as a module to this new configuration.  I am unsure what I changed
-        // and haven't spent much time debugging yet.  I've only listed hashes, and they are wrong for the IP/TCP headers.  The data is intact,
-        // and validated as identical.  I'll get back to this shortly.  I assume after UDP/ICMP is when I get back to this right before IPv6.
-        // *** *** ***
-        //printf("TCP checksum failed!\n");
-        //iptr->ok = 0;
-    }
+    if (p->tcp.check != pkt_chk) iptr->ok = 0;
 
     // put the original value back
     p->tcp.check = pkt_chk;
     // done w checksums..
 
+    // free that buffer we used for checksum calculations
+    free(checkbuf);
+
+    // lets move the packet buffer into this new instruction structure as well
+    iptr->packet = pptr->buf;
+    pptr->buf = NULL;
+    iptr->packet_size = pptr->size;
+    pptr->size = 0;
+        
     // moved other analysis to the next function which builds the attack structure
     end:;
 
@@ -837,7 +853,7 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
     PacketBuildInstructions *packets = NULL;
     PacketBuildInstructions *ret = NULL;
     FilterInformation fptr;
-    int got_fin_ack = 0;
+    uint32_t got_fin_ack = 0;
     //int count = 0, ccount = 0, fcount = 0;
 
     //printf("InstructionsFindConnection count of incoming packets: %d\n", L_count((LINK *)iptr));
@@ -899,18 +915,20 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                         // RST + ACK = last packet.. in the millions of packets it was slow-er without this...
                         // turned this off.. it was leaving 2 more packets.. rewrite
 
-                        // this got messy fast.. rewrite (have another func to look into future packets for the final)
+                        // final ACK is from the client to the server 
+                        // *** todo: need to keep IP info when we see fin/ack so we know which side will send the last ACK
                         if (got_fin_ack == 0) {
                             if ((iptr->flags & TCP_FLAG_FIN) && (iptr->flags & TCP_FLAG_ACK)) {
-                                got_fin_ack = 1;
+                                got_fin_ack = iptr->source_ip;
                                 //printf("Found last packet.. FIN|ACK\n");
                                 //break;
                             }
-                        } else if (got_fin_ack == 1) {
-                                if ((iptr->flags & TCP_FLAG_ACK)) {
-                                    got_fin_ack++;
+                        } else if (got_fin_ack != 0) {
+                                // final is client side to server side sending ACK (after a FIN/ACK)
+                                if ((iptr->flags & TCP_FLAG_ACK) && iptr->source_ip == got_fin_ack) {
+                                    break;
                                 }
-                        } else if (got_fin_ack == 2) break;
+                        }
                             
                         // time to process the next
                         iptr = inext;

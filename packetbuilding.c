@@ -62,7 +62,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
 
-    if (PacketTCP4BuildOptions(iptr->aptr, iptr) != 1) return -1;
+    if (PacketTCP4BuildOptions(iptr) != 1) return -1;
 
     // this is only for ipv4 tcp
     if (iptr->type != PACKET_TYPE_TCP_4) return ret;
@@ -157,7 +157,8 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
         memcpy(checkbuf + sizeof(struct pseudo_tcp4) + iptr->options_size, iptr->data, iptr->data_size);        
 
         // put the checksum into the correct location inside of the header
-        p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
+        // options size was already calculated into TCPHSIZE
+        p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size);
         //printf("-3 %d %d %d %d\n",TCPHSIZE, PSEUDOTCPHSIZE, iptr->data_size, iptr->options_size);
         //md5hash((char *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
         //printf("-\n");
@@ -192,7 +193,9 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 // Incomplete but within 1 day it should emulate Linux, Windows, and Mac...
 // we need access to the attack structure due to the timestampp generator having a response portion from the opposide sides packets
 // *** finish building tcp options data for the header
-int PacketTCP4BuildOptions(AS_attacks *aptr, PacketBuildInstructions *iptr) {
+int PacketTCP4BuildOptions(PacketBuildInstructions *iptr) {
+    // later we nede to access parameters in aptr to build correctly (os emulation)
+    AS_attacks *aptr = iptr->aptr;
     // need to see what kind of packet by the flags....
     // then determine which options are necessaray...
     // low packet id (fromm 0 being syn connection) would require the tcp window size, etc
@@ -456,25 +459,34 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     struct pseudo_header_udp4 *udp_chk_hdr = NULL;
     char *checkbuf = NULL;
 
-    // this is only for ipv4 tcp
-    if (iptr->type != PACKET_TYPE_UDP_4) return ret;
+    printf("Build UDP4\n");
+
+    // this is only for ipv4 tcp (ret 0 since its not technically an error.. just wrong func)
+    if (iptr->type != PACKET_TYPE_UDP_4) return 0;
 
     // calculate full length of packet.. before we allocate memory for storage
     final_packet_size = sizeof(struct iphdr) + sizeof(struct udphdr) + iptr->data_size;
-    final_packet = (unsigned char *)calloc(1, final_packet_size);
+
+    // allocate space for the packet
+    if ((final_packet = (unsigned char *)calloc(1, final_packet_size)) == NULL) goto end;
+
+    // this is the main structure we cast for configuring IP/UDP header parameters
     p = (struct packetudp4 *)final_packet;
 
     // ensure the final packet was allocated correctly
     if (final_packet == NULL) return ret;
 
-    // IP header below
+    // IP header below (static)
     p->ip.version       = 4;
     p->ip.ihl   	    = IPHSIZE >> 2;
-    p->ip.tos   	    = 0;    
+    p->ip.tos   	    = 0;
     p->ip.frag_off 	    = 0;
     p->ip.protocol 	    = IPPROTO_UDP;
-    p->ip.tot_len       = htons(final_packet_size);
+    p->ip.ttl           = iptr->ttl;
+    
 
+    // These are the dynamic fields for UDP packets
+    p->ip.tot_len       = htons(final_packet_size);
     p->ip.saddr         = iptr->source_ip;
     p->ip.daddr         = iptr->destination_ip;
 
@@ -486,37 +498,49 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     p->udp.len          = iptr->data_size;
     p->udp.check        = 0;
 
+    // copy the UDP data after the IP, and UDP header
     memcpy((void *)(final_packet + sizeof(struct udphdr) + sizeof(struct iphdr)), iptr->data, iptr->data_size);
 
     if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
 
+    // this is the pseudo header used for UDP verification and its pointer for configuring the parameters
     udp_chk_hdr = (struct pseudo_header_udp4 *)checkbuf;
 
-    // im pretty sure all udp packets require at least 1 byte of data..
-    // will chek soon ***
-    if (iptr->data_size)
-        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), iptr->data, iptr->data_size);
+    // copy udp hdr after the pseudo header for checksum
+    memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), &p->udp, sizeof(struct udphdr));
 
+    if (iptr->data_size)
+        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
+
+    udp_chk_hdr->protocol = IPPROTO_UDP;
     udp_chk_hdr->source_address = iptr->source_ip;
     udp_chk_hdr->destination_address = iptr->destination_ip;
     udp_chk_hdr->placeholder = 0; // in case we arent using calloc if we copy/paste later..
     
     // *** get accurate (using sizeof struct) here... 
-    udp_chk_hdr->len = htons(8 + iptr->data_size);
+    udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
 
-    udp_chk_hdr->protocol = IPPROTO_UDP;
-    udp_chk_hdr->len = sizeof(struct udphdr) + iptr->data_size;
+    
+    //udp_chk_hdr->len = sizeof(struct udphdr) + iptr->data_size;
 
     p->udp.check = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);   
-
-    free(checkbuf);
 
     iptr->packet = (char *)final_packet;
     iptr->packet_size = final_packet_size;
 
+    // so we dont free the packet since everything is successful
+    final_packet = NULL;
+    final_packet_size = 0;
+
     ret = 1;
 
     end:;
+
+    printf("Build UDP4 ret %d\n", ret);
+
+    PtrFree(&final_packet);
+    PtrFree(&checkbuf);
+
     return ret;
 }
 
@@ -546,12 +570,12 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     p->ip.ihl = 5;
     p->ip.tos = 0;
     p->ip.tot_len = htons(final_packet_size);
+    p->ip.ttl = iptr->ttl;
 
-    // *** verify this id for all packets (udp)
-    p->ip.id = rand ();
+    // *** verify ID strategies in OS
+    p->ip.id = rand()%0xFFFFFFFF;
 
     p->ip.frag_off = 0;
-    p->ip.ttl = 255;
     p->ip.protocol = IPPROTO_ICMP;
     p->ip.saddr = iptr->source_ip;
     p->ip.daddr = iptr->destination_ip;
@@ -572,6 +596,10 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     if ((checkbuf = (char *)calloc(1, sizeof(struct icmphdr) + iptr->data_size)) == NULL) goto end;
 
 
+    // lets copy it directly from the instructions structure
+    memcpy((void *)&p->icmp, (void *)&iptr->icmp, sizeof(struct icmphdr));
+
+    // the checksum will always need to be processed here
     p->icmp.checksum = pkt_chk;
 
     iptr->packet = final_packet;
@@ -585,7 +613,8 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     end:;
 
     PtrFree(&final_packet);
-
+    PtrFree(&checkbuf);
+    
     return ret;
 }
 
@@ -596,3 +625,87 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr);
 int BuildSingleICMP6Packet(PacketBuildInstructions *iptr);
 
 */
+
+int test_udp4(AS_context *ctx) {
+    AS_attacks *aptr = NULL;
+    PacketBuildInstructions *iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions));
+    int ret = 1;
+    char *data = NULL;
+    int data_size = 0;
+
+    printf("test udp4\n");
+    
+    data_size = 5;
+
+    if ((data = (char *)malloc(data_size)) == NULL) goto end;
+
+    memcpy(data, "hello", 5);
+
+    iptr->type = PACKET_TYPE_UDP_4;
+
+
+    if (iptr == NULL) goto end;
+
+
+    iptr->destination_ip = inet_addr("10.0.0.4");
+
+    iptr->source_ip = inet_addr("10.0.0.1");
+
+    iptr->source_port = 31337;
+    iptr->destination_port = 1025;
+
+    iptr->data = data;
+    iptr->data_size = data_size;
+    
+    data = NULL; data_size = 0;
+
+    iptr->ttl = 64;
+     
+    if ((aptr = (AS_attacks *)calloc(1, sizeof(AS_attacks))) == NULL) return 0;
+
+    iptr->aptr = aptr;
+
+    // identifier for the attack..in case we need to find it in queue later
+    aptr->id = 2;
+    aptr->ctx = ctx;
+
+    // src&dst information
+    aptr->src = iptr->source_ip;
+    aptr->dst = iptr->destination_ip;
+    aptr->source_port = iptr->source_port;
+    aptr->destination_port = iptr->destination_port;
+
+    // this is a full blown tcp session
+    aptr->type = ATTACK_MULTI;
+
+    // how many times will we replay this session?
+    aptr->count = 99999;
+    // how much time in seconds between each replay?
+    aptr->repeat_interval = 1;
+
+    // initialize a mutex for this structure
+    //aptr->pause_mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_init(&aptr->pause_mutex, NULL);
+
+    aptr->packet_build_instructions = iptr;    
+    
+    // we dont wanna rebuild/change this packet...
+    aptr->skip_adjustments = 1;
+
+    // LIFO i decided it doesnt matter since the attacks are all happening simultaneously...
+    // if it becomes a problem its a small fix.  but your queues should also flush properly anyhow..
+    aptr->next = ctx->attack_list;
+    ctx->attack_list = aptr;
+
+
+    ret = 1;
+
+    end:;
+
+    printf("aptr %p data %p ret %d\n", aptr, data, ret);
+
+    PtrFree(&data);
+
+    return ret;
+}
+

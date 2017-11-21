@@ -35,6 +35,8 @@ typedef struct _attack_outgoing_queue {
 typedef struct _incoming_packet_queue {
     struct _incoming_packet_queue *next;
 
+    
+
 } IncomingPacketQueue;
 
 int prepare_socket();

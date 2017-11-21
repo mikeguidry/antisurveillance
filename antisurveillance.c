@@ -44,6 +44,7 @@ int AS_perform(AS_context *ctx) {
     
     // enumerate through each attack in our list
     while (aptr != NULL) {
+        printf("perform: aptr %p\n", aptr);
         // try to lock this mutex
         if (pthread_mutex_trylock(&aptr->pause_mutex) == 0) {
             // if we need to join this thread (just in case pthread will leak otherwise)
@@ -54,6 +55,7 @@ int AS_perform(AS_context *ctx) {
             
             //printf("aptr %p next %p\n", aptr, aptr->next);
             if (!aptr->paused && !aptr->completed) {
+                printf("seems ok %p\n", aptr->packet_build_instructions);
                 r = 0;
                 // if we dont have any prepared packets.. lets run the function for this attack
                 if (aptr->packets == NULL) {
@@ -63,6 +65,9 @@ int AS_perform(AS_context *ctx) {
                     if (func != NULL) {
                         // r = 1 if we created a new thread
                         r = ((*func)(aptr) == NULL) ? 0 : 1;
+                    } else {
+                        // no custom function.. lets use build packets
+                        BuildPackets(aptr);
                     }
                 }
 
@@ -71,6 +76,7 @@ int AS_perform(AS_context *ctx) {
                     if ((aptr->current_packet != NULL) || (aptr->packets != NULL)) {
                         PacketQueue(ctx, aptr);
                     } else {
+                        printf("marked as commpleted for no packets\n");
                         // otherwise we mark as completed to just free the structure
                         aptr->completed = 1;
                     }
@@ -107,6 +113,7 @@ void AS_remove_completed(AS_context *ctx) {
         if (pthread_mutex_trylock(&aptr->pause_mutex) == 0) {
 
             if (aptr->completed == 1) {
+                printf("kiling completed %p\n", aptr);
                 // try to lock this mutex
                 
                     // we arent using a normal for loop because
@@ -151,8 +158,8 @@ AS_context *AS_ctx_new() {
 
     if ((ctx = (AS_context *)calloc(1, sizeof(AS_context))) == NULL) return NULL;
     
-    // initialize a few things for gzip threading
-    gzip_init(ctx);
+    // initialize anything related to special attacks in attacks.c
+    attacks_init(ctx);
 
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
@@ -253,8 +260,18 @@ int main(int argc, char *argv[]) {
     } else {
         ctx->aggressive = 0;
     }
+/*
+    {
+        test_udp4(ctx);
+        for (i = 0; i < 1000; i++) {
+            AS_perform(ctx);
+            sleep(1);
+        }
 
-    
+  */      
+        
+        exit(-1);
+    }
 
 
     if (argc > 2) {
@@ -275,17 +292,17 @@ int main(int argc, char *argv[]) {
     // on the first call.  It is designed this way to handle a large amount of fabricated sessions 
     // simultaneously... since this is just a test... let's loop a few times just to be sure.
 
-    /*
+    
     for (i = 0; i < loop_count; i++) {
         r = AS_perform(ctx);
         if (r != 1) printf("AS_perform() = %d\n", r);
 
         usleep(500);
     }
-*/
+
     i = 0;
 
-    if (1==1)
+    if (1==0)
     while (++i) {
         AS_perform(ctx);
         if ((i % 5)==0) {

@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include "network.h"
+#include "antisurveillance.h"
 
 /*
 I want this information to get automatically populated using live pcaps, or wire.  It can monitor port 80, and pull this information
@@ -49,6 +52,7 @@ enum {
     
 };
 
+
 // to do add counting logic, and percentage choices
 // *** this code is terrible.. rewrite completely
 void OsPick(int options, int *ttl, int *window_size) {
@@ -78,5 +82,12 @@ void OsPick(int options, int *ttl, int *window_size) {
     *window_size = EmulationParameters[pick].window_size;
 
     if (list != NULL) free(list);
+    return;
+}
+
+
+// we would like to count the amount of clients, and servers on initialization so we can pick easily later
+void os_init(AS_context *ctx) {
+
     return;
 }

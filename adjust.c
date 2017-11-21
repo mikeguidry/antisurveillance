@@ -24,6 +24,7 @@ http.c because it will likely rely on other functions.
 // This function will have to call other functions soon to modify MACROS. (dynamic portions of the packets
 // which are intended to show other differences..) It could even load other messages in some cases.
 // it depends on how your attacks are targeted.
+// Adjustments needs to be modular in a way to easily support IPv4/6 and ICMP/UDP/TCP on both stacks.
 void PacketAdjustments(AS_attacks *aptr) {
     // our new source port must be above 1024 and below 65536 (generally acceptable on all OS) <1024 is privileged
     int client_port = (1024 + rand()%(65535 - 1024));
@@ -36,12 +37,18 @@ void PacketAdjustments(AS_attacks *aptr) {
     int server_new_seq = rand()%0xFFFFFFFF;
 
     // it picks new  IPs randomly right now.. it needs a context for the current configuration for picking them (w historic information)
-    uint32_t src_ip = inet_addr("10.0.0.3");//rand()%0xFFFFFFFF;
+    uint32_t src_ip = inet_addr("10.0.0.1");//rand()%0xFFFFFFFF;
     uint32_t dst_ip = inet_addr("10.0.0.4");//rand()%0xFFFFFFFF;
 
     // used to change the SEQ.. it calculates the difference between the old, and new so that the rest is compatible
     uint32_t client_seq_diff = 0;
     uint32_t server_seq_diff = 0;
+
+    // if this attack doesn't wanna get adjusted...
+    if (aptr->skip_adjustments) {
+        BuildPackets(aptr);
+        return;
+    }
 
     // loop through each packet instruction in memory for this attack
     PacketBuildInstructions *buildptr = aptr->packet_build_instructions;

@@ -42,6 +42,7 @@ typedef struct _packet_instructions {
 
     // Packets time to live setting
     int ttl;
+
     // Packets identifier for the header
     uint32_t header_identifier;
     
@@ -60,12 +61,6 @@ typedef struct _packet_instructions {
     // Flags.. it gets converted into TCP/IP flags but could contain other things
     int flags;
 
-    // TCP header additional information
-    char *options;
-    int options_size;
-
-    // Window size for the header (and controls amount of bytes for data flow each packet)
-    unsigned short tcp_window_size;
 
     // data goes here.. but it'd be nice to have it as an array..
     // so a function can fragment it which would cause even further processing
@@ -78,17 +73,31 @@ typedef struct _packet_instructions {
     char *packet;
     int packet_size;
 
+        
+
+    // if all is welll?... if not.. every instruction with the same session id
+    // will get disqualified
+    int ok;
+    
+    AS_attacks *aptr;
+
+
+    // TCP header additional information
+    char *options;
+    int options_size;
+
     // we should have a decent way of swapping these?
     // either builder function can loop again after using daata size, and 
     // flags.. or it can keep track initially using pointers to set this information
     uint32_t ack;
     uint32_t seq;
 
-    // if all is welll?... if not.. every instruction with the same session id
-    // will get disqualified
-    int ok;
+    // Window size for the header (and controls amount of bytes for data flow each packet)
+    unsigned short tcp_window_size;
 
-    AS_attacks *aptr;
+    // information required to generate ICMP packets
+    struct icmphdr icmp;
+    
 } PacketBuildInstructions;
 
 
@@ -158,8 +167,8 @@ enum {
 };
 
 enum {
-    ATTACK_SYN,
     ATTACK_SESSION,
+    ATTACK_MULTI,
     ATTACK_END
 };
 
@@ -207,8 +216,12 @@ typedef struct _filter_information {
 void PacketQueue(AS_context *, AS_attacks *aptr);
 void PacketsFree(PacketInfo **packets);
 void BuildPackets(AS_attacks *aptr);
-int PacketTCP4BuildOptions(AS_attacks *aptr, PacketBuildInstructions *iptr);
+int PacketTCP4BuildOptions(PacketBuildInstructions *iptr);
 int BuildSingleTCP4Packet(PacketBuildInstructions *iptr);
 int BuildSingleUDP4Packet(PacketBuildInstructions *iptr);
 int BuildSingleICMP4Packet(PacketBuildInstructions *iptr);
 unsigned short in_cksum(unsigned short *addr,int len);
+
+
+
+int test_udp4(AS_context *ctx);

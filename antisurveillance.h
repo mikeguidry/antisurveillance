@@ -4,6 +4,8 @@
 struct _packet_info;
 struct _packet_instructions;
 //typedef struct _packet_info PacketInfo;
+struct _bh_queue;
+typedef struct _bh_queue BH_Queue;
 
 
 // general attack structure...
@@ -72,6 +74,8 @@ typedef struct _as_attacks {
 
     AS_context *ctx;
 
+    // we dont apply adjustments to this packet
+    int skip_adjustments;
 } AS_attacks;
 
 
@@ -93,8 +97,10 @@ typedef struct _connection_properties {
     
     int client_ttl;
     int server_ttl;
+
     int max_packet_size_client;
     int max_packet_size_server;
+    
     int client_emulated_operating_system;
     int server_emulated_operating_system;
 } ConnectionProperties;
@@ -137,6 +143,9 @@ typedef struct _antisurveillance_context {
     int network_threaded;
 
     int aggressive;
+
+    BH_Queue *blackhole_queue;
+
 } AS_context;
 
 
