@@ -51,9 +51,6 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
     }
     
     while (optr != NULL) {
-        if (optr->buf == NULL) {
-            printf("optr buf NULL\n");  
-        }
 #ifdef TESTING_DONT_FREE_OUTGOING
         if (optr->submitted) {
             optr = optr->next;
@@ -80,7 +77,6 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
         // what comes after? we are about to free the pointer so..
         onext = optr->next;
 
-        printf("optr buf %p\n", optr->buf);
         // clear buffer
         PtrFree(&optr->buf);
 
@@ -142,7 +138,6 @@ void *AS_queue_threaded(void *arg) {
 // over all attack structure queue going to the Internet.
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     AttackOutgoingQueue *optr = NULL;
-
 
     if (qptr == NULL || qptr->buf == NULL) return -1;
 
@@ -216,7 +211,7 @@ int prepare_socket(AS_context *ctx) {
 
     if (ctx->raw_socket > 0) {
         // If we cannot use setsockopt.. there must be trouble!
-        if (setsockopt(ctx->raw_socket, IPPROTO_IP,IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
+        if (setsockopt(ctx->raw_socket, IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
             close(ctx->raw_socket);
             ctx->raw_socket = 0;
         }
@@ -227,7 +222,7 @@ int prepare_socket(AS_context *ctx) {
         return -1;
 
     // ensure the operating system knows that we will include the IP header within our data buffer
-    if (setsockopt(rawsocket, IPPROTO_IP,IP_HDRINCL, (char *)&one, sizeof(one)) < 0)
+    if (setsockopt(rawsocket, IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0)
         return -1;
 
     // set it for later in the overall context

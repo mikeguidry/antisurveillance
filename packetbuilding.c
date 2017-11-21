@@ -159,9 +159,6 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
         // put the checksum into the correct location inside of the header
         // options size was already calculated into TCPHSIZE
         p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size);
-        //printf("-3 %d %d %d %d\n",TCPHSIZE, PSEUDOTCPHSIZE, iptr->data_size, iptr->options_size);
-        //md5hash((char *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size + iptr->options_size);
-        //printf("-\n");
     
         free(checkbuf);
     }
@@ -498,6 +495,7 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     // copy the UDP data after the IP, and UDP header
     memcpy((void *)(final_packet + sizeof(struct udphdr) + sizeof(struct iphdr)), iptr->data, iptr->data_size);
 
+    // allocate memory for performing checksum calculations
     if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
 
     // this is the pseudo header used for UDP verification and its pointer for configuring the parameters

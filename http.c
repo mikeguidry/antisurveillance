@@ -347,7 +347,7 @@ int HTTPContentModification(AS_attacks *aptr) {
 
     // the data iis here but the library below didnt work as expected... =/
     // It might be smart to just remove it, and write some of my own code to accomplish...
-    // basic http stuff shhouldnt be too hard.. and if anything fails it can just discard
+    // basic http stuff shouldnt be too hard.. and if anything fails it can just discard
     // in reality, anything on the wire is probaby going to be okay to replay..
     // asa far asa securiyt concerns etc.. itll just be another session in the attack queue
     // and whats bad for us is bad for the NSA as well.

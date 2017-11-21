@@ -137,6 +137,63 @@ int Traceroute_Compare(TracerouteQueue *first, TracerouteQueue *second) {
 }
 
 
+
+/*
+
+traceroute spider
+
+strategy: first go by how many hops are equal...
+          then go by the distance between the hops (fromm either highest, or lowest ttl) 
+          if the match is on the far side (by dividing the amount of hops)
+          then it means its close on one side or the other (thus it shares fiber taps/surveillance nodes)
+
+          its plausable sites are in located in the 'middle' of the traceroute in comparison to another.. because
+          its data center is next to some major backbone
+
+          this means other tactics need to take place such as geoip(prob nt reliable), or just coordination with other
+          traceroutes
+          to find closer, and closer routes to get a better accuracy
+
+          so generally if its within 1-2 hops it can be considered a similar side although geoip on other IPs themselves (not
+        the hops or routers) would help determine the location of these routes...
+
+        so to find euro and USA routes.. we can geoip abunch of IP addresses in those countries (even go as far as states/cities) but
+        that would require a bigger data file initially
+
+        when we traceroute all the IPs and throw them into the traceroute spider it would help us determine by actual reports
+        where each router more than likely is located
+        anything going from country to country should be xpected to have a surveillance tap 
+        especially USA -> Euro
+        USA ->  China
+        pretty much any country to another border
+
+
+        i built a simple way to initialize the dataset without using extreme space, or other companies code
+        ill include it for helpinng detect curreent mass surveillance platforms in a simple small compact manner
+        even if its 10-20% wrong who cares.
+
+        geoip = 6mb.. vs .. 1k? if that
+*/
+typedef struct _traceroute_spider {
+    //routine linked list management..
+    struct _traceroute_spider *next;
+
+    // branches is like next but for all branches (this hop matches anothers)
+    struct _traceroute_spider *branches;
+
+    // the queue which linked into this tree
+    TracerouteQueue *queue;
+
+    // quick reference of IP
+    uint32_t IP;
+
+    // determined country code
+    int country_code;
+
+} TracerouteSpider;
+
+
+
 // OK ICMP/UDP is finished.. time for the real fun.. this will def catch some eyes once people realize how you can programmatically
 // target mass surveillance platforms ... without that much effort really.
 // while coding this im using ipv4 .. will change later.... still need to add ipv6 anyways
