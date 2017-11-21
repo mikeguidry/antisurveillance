@@ -515,15 +515,10 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     udp_chk_hdr->protocol = IPPROTO_UDP;
     udp_chk_hdr->source_address = iptr->source_ip;
     udp_chk_hdr->destination_address = iptr->destination_ip;
-    udp_chk_hdr->placeholder = 0; // in case we arent using calloc if we copy/paste later..
-    
-    // *** get accurate (using sizeof struct) here... 
+    udp_chk_hdr->placeholder = 0;
     udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
 
-    
-    //udp_chk_hdr->len = sizeof(struct udphdr) + iptr->data_size;
-
-    p->udp.check = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);   
+    p->udp.check = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);
 
     iptr->packet = (char *)final_packet;
     iptr->packet_size = final_packet_size;
@@ -596,6 +591,10 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     if (iptr->data_size) {
         memcpy((void *)(final_packet + sizeof(struct packeticmp4)), iptr->data, iptr->data_size);
     }
+
+    // this should be zero in the build instructions structure.. but just for future reference
+    // it should be 0 before we checksum it..
+    p->icmp.checksum = 0;
 
     // calculate ICMP checksum
     p->icmp.checksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size);

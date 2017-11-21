@@ -463,7 +463,7 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     char *data = NULL;
     int data_size = 0;
     char *checkbuf = NULL;
-    //struct pseudo_header_udp4 *udp_hdr_chk = NULL;
+    struct pseudo_header_udp4 *udp_chk_hdr = NULL;
     uint32_t pkt_chk = 0, our_chk = 0;
 
     printf("Process UDP4\n");
@@ -508,14 +508,25 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     // Set it to 0 now so we can verify ourselves..
     p->udp.check = 0;
     
-    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct packetudp4) + iptr->data_size)) == NULL) goto end;
+    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
 
-    // *** finish checksum here
+    // copy udp hdr after the pseudo header for checksum
+    memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), &p->udp, sizeof(struct udphdr));
 
-    if (pkt_chk != our_chk) {
-        printf("UDP checksum failed\n");
-        iptr->ok = 0;
-    }
+    if (iptr->data_size)
+        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
+        
+    // fill out the pseudo header for this UDP checksum
+    udp_chk_hdr = (struct pseudo_header_udp4 *)checkbuf;
+    udp_chk_hdr->protocol = IPPROTO_UDP;
+    udp_chk_hdr->source_address = iptr->source_ip;
+    udp_chk_hdr->destination_address = iptr->destination_ip;
+    udp_chk_hdr->placeholder = 0;
+    udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
+
+    our_chk = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);
+    
+    if (pkt_chk != our_chk) iptr->ok = 0;
         
     // put the original checksum back regardless
     p->udp.check = pkt_chk;
@@ -541,9 +552,9 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
 PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
     struct packeticmp4 *p = (struct packeticmp4 *)pptr->buf;
-    unsigned short pkt_chk = 0;
     char *data = NULL;
     int data_size = 0;
+    unsigned short pkt_chk = 0, our_chk = 0;
 
     printf("Process ICMP4\n");
 
@@ -559,7 +570,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     iptr->destination_ip = p->ip.daddr;
 
     // how much data is present in this packet?
-    data_size = 0;//ntohs(p->udp.len) - 8; // *** calc correctly
+    data_size = ntohs(p->ip.tot_len) - sizeof(struct iphdr);
 
     // set packet as OK (can disqualify from checksum)
     iptr->ok = 1;
@@ -579,55 +590,14 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     // set to 0 in packet so we can  calculate correctly..
     p->icmp.checksum = 0;
 
-    // ICMP checksum
-    p->icmp.checksum = in_cksum((unsigned short *)(pptr->buf + sizeof(struct iphdr)), sizeof(struct icmphdr) + iptr->data_size);
+    // ICMP checksum.. it can happen inline without copying to a new buffer.. no pseudo header
+    our_chk = (unsigned short)in_cksum((unsigned short *)&p->icmp, sizeof(struct icmphdr) + iptr->data_size);
 
-    if (pkt_chk != p->icmp.checksum) {
-        printf("ICMP checksum fail\n");
-        iptr->ok = 0;
-    }
+    // did the check equal what we expected?
+    if (pkt_chk != our_chk) iptr->ok = 0;
 
     // set back the original checksum we used to verify against
     p->icmp.checksum = pkt_chk;
-
-    
-    /*
-
-    // we need to hold ICMP parameters in a clever wy in the structure..
-_
-type <<8
-code <<16
-checksum << 24
-
-ack/seq, and tcp flags can be reused (or we can just add a new area for icmp...)
-or ill union them
-_
-
-
-    // set ICMP specific parameters
-    icmp->type = ICMP_ECHO;
-    icmp->code = 0;
-    icmp->un.echo.sequence = rand();
-    icmp->un.echo.id = rand();
-    
-    struct icmphdr {
-    u_int8_t type;
-    u_int8_t code;
-    u_int16_t checksum;
-    union {
-        struct {
-            u_int16_t	id;
-            u_int16_t	sequence;
-        } echo;
-        u_int32_t	gateway;
-        struct {
-            u_int16_t	__unused;
-            u_int16_t	mtu;
-        } frag;	
-    } un;
-    };
-*/
-
 
     // move original packet to this new structure
     iptr->packet = pptr->buf;
