@@ -137,7 +137,7 @@ int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body)
 
     if (options != NULL) {
         if (ctx->gzip_cache && ctx->gzip_cache_count > 0) {
-            buf = (char *)malloc(ctx->gzip_cache_size + 1);
+            buf = (char *)malloc(ctx->gzip_cache_size );
             if (buf == NULL) {
                 pthread_mutex_unlock(&ctx->gzip_cache_mutex);
 
@@ -234,10 +234,10 @@ int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body)
 
     // allocate space for the compressed output...
     compression_max_size = data_size * (600 * 3);
-    compressed = (char *)malloc(compression_max_size + 1);
+    compressed = (char *)malloc(compression_max_size );
 
     // buffer for injecting attack
-    buf = (char *)calloc(1, options->gzip_size + 1);
+    buf = (char *)calloc(1, options->gzip_size );
 
     // ensure both were allocated properly..
     if ((insertions == NULL) || (compressed == NULL) || (buf == NULL))
@@ -338,7 +338,7 @@ int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body)
         // not enough buffer space.. lets realloc
         if (i == Z_BUF_ERROR) {
             compression_max_size *= 2;
-            compressed_realloc = (char *)realloc((void *)compressed, compression_max_size + 1);
+            compressed_realloc = (char *)realloc((void *)compressed, compression_max_size );
             
             // error couldnt allocate
             if (compressed == compressed_realloc)
@@ -376,7 +376,7 @@ int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body)
 
     // re-use the attack buffers pointer to merge the original header, and the compressed data together..
     // *** todo: add gzip content type to a header that wasnt originally compressed
-    buf = (char *)malloc(compressed_out + header_size + 1);
+    buf = (char *)malloc(compressed_out + header_size );
     if (buf == NULL) goto end;
     memcpy(buf, *server_body, header_size);
     memcpy(buf + header_size, compressed, compressed_out);
@@ -395,7 +395,7 @@ int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body)
 
     // cache this gzip attack for the next 15 requests of another
     if (ctx->gzip_cache == NULL) {
-        ctx->gzip_cache = (char *)malloc(*size + 1);
+        ctx->gzip_cache = (char *)malloc(*size );
         if (ctx->gzip_cache != NULL) {
             memcpy(ctx->gzip_cache, *server_body, *size);
             ctx->gzip_cache_size = *size;

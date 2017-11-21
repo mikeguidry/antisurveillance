@@ -29,7 +29,9 @@ are built for on the wire sessions we want to automatically pull and reproduce..
 #define MAX_THREAD 16
 
 
-
+// Prepare a filter structure using various flags.. call it several times to set different values if required for those flags..
+// This is a simple packet filter.  I will create a new area which does ProtocolFilters (DNS/HTTP/etc) which will actually
+// verify against the packets whether or not it is a legit session of some protocol..
 void FilterPrepare(FilterInformation *fptr, int type, uint32_t value) {
     if (fptr->init != 1) {
         memset((void *)fptr, 0, sizeof(FilterInformation));
@@ -466,7 +468,7 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     struct pseudo_header_udp4 *udp_chk_hdr = NULL;
     uint32_t pkt_chk = 0, our_chk = 0;
 
-    printf("Process UDP4\n");
+    //printf("Process UDP4\n");
 
     p = (struct packetudp4 *)pptr->buf;
 
@@ -513,6 +515,7 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     // copy udp hdr after the pseudo header for checksum
     memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), &p->udp, sizeof(struct udphdr));
 
+    // if there is data then we copy it behind all headers inside of the checkbuf pointer
     if (iptr->data_size)
         memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
         
@@ -524,6 +527,7 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     udp_chk_hdr->placeholder = 0;
     udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
 
+    // perform checksum functin on PSEUDO header we just set parameters for, the actual for the wire UDP header, and the data
     our_chk = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);
     
     if (pkt_chk != our_chk) iptr->ok = 0;
@@ -556,10 +560,9 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
-    printf("Process ICMP4\n");
+    //printf("Process ICMP4\n");
 
-    // Lets do this here.. so we can append it to the list using a jump pointer so its faster
-    // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
+    // allocate space for an instruction structure which analysis of this packet will create
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
@@ -675,7 +678,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     
     if (data_size > 0) {
         // allocate memory for the data
-        if ((data = (char *)malloc(data_size + 1)) == NULL) goto end;
+        if ((data = (char *)malloc(data_size )) == NULL) goto end;
 
         // pointer to where the data starts in this packet being analyzed
         sptr = (char *)(pptr->buf + ((p->ip.ihl << 2) + (p->tcp.doff << 2)));
@@ -755,7 +758,6 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     p_tcp->ptcl 	= IPPROTO_TCP;
     p_tcp->tcpl 	= htons(tcp_header_size + iptr->data_size);
 
-
     // copy tcp/ip options into its buffer
     if (iptr->options_size)
         memcpy(checkbuf + sizeof(struct pseudo_tcp4), iptr->options, iptr->options_size);
@@ -813,7 +815,7 @@ ProcessFunc Processor_Find(int ip_version, int protocol) {
         { 0, 0, NULL}
     };
 
-    while (PacketProcessors[i].ip_version) {
+    while (PacketProcessors[i].ip_version != 0) {
         if ((PacketProcessors[i].ip_version == ip_version) && (PacketProcessors[i].protocol == protocol))
                 return PacketProcessors[i].Processor;
 

@@ -194,7 +194,7 @@ PacketInfo *PcapLoad(char *filename) {
         pkt_size = packet_hdr.incl_len - sizeof(struct ether_header);
 
         // allocate space for the packets buffer
-        if ((pkt_buf = (char *)malloc(pkt_size + 1)) == NULL) break;
+        if ((pkt_buf = (char *)malloc(pkt_size )) == NULL) break;
         
         // read the full packet into that buffer
         if (fread((void *)pkt_buf, 1, pkt_size, fd) != pkt_size) break;
@@ -238,7 +238,6 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
     AS_attacks *ret = NULL;
     int total = 0;
     int pcount = 0;
-    //int start_ts = time(0);
 
     // load pcap file into packet information structures
     if ((packets = PcapLoad(filename)) == NULL) return 0;
@@ -248,7 +247,7 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
 
     // prepare the filter for detination port
     //FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
-    FilterPrepare(&flt, 0, 0);
+    FilterPrepare(&flt, 0, 0); // *** just for testing
     
     pcount = L_count((LINK *)packetinstructions);
     // If its more than 100k lets use multiple threads to complete it faster

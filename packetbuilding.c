@@ -405,9 +405,10 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
         // if we are about to replay this attack again from the first packet due to a repeat count.. then
         // verify enough time has elapsed to match our repeat interval (IN seconds)
         timeval_subtract(&time_diff, &aptr->ts, &tv);
-        if (time_diff.tv_usec < aptr->repeat_interval)
+        if (time_diff.tv_usec < aptr->repeat_interval) {
             // we are on the first packet and it has NOT been long enough...
             return;
+        }
 
         // derement the count..
         aptr->count--;
@@ -432,9 +433,7 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
         // Is it too soon to send this packet? (we check its milliseconds)
         timeval_subtract(&time_diff, &aptr->ts, &tv);
 
-        if (time_diff.tv_usec < pkt->wait_time) {
-            return;
-        } 
+        if (time_diff.tv_usec < pkt->wait_time) return;
     }
 
     // Queue this packet into the outgoing queue for the network wire
@@ -458,8 +457,6 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     int final_packet_size = 0;
     struct pseudo_header_udp4 *udp_chk_hdr = NULL;
     char *checkbuf = NULL;
-
-    printf("Build UDP4\n");
 
     // this is only for ipv4 tcp (ret 0 since its not technically an error.. just wrong func)
     if (iptr->type != PACKET_TYPE_UDP_4) return 0;
@@ -509,17 +506,21 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     // copy udp hdr after the pseudo header for checksum
     memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), &p->udp, sizeof(struct udphdr));
 
+    // if this packet has data then we want to copy it into this buffer for checksum generation
     if (iptr->data_size)
         memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
 
+    // UDP requires these psuedo header parameters to be included in its checksum
     udp_chk_hdr->protocol = IPPROTO_UDP;
     udp_chk_hdr->source_address = iptr->source_ip;
     udp_chk_hdr->destination_address = iptr->destination_ip;
     udp_chk_hdr->placeholder = 0;
     udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
 
+    // call the checksum function to generate a hash for the data we put inside of checkbuf
     p->udp.check = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);
 
+    // ensure the build structure has the buffer, and size we just created so it can push to the wire
     iptr->packet = (char *)final_packet;
     iptr->packet_size = final_packet_size;
 
@@ -527,11 +528,10 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     final_packet = NULL;
     final_packet_size = 0;
 
+    // everything went well...
     ret = 1;
 
     end:;
-
-    printf("Build UDP4 ret %d\n", ret);
 
     PtrFree(&final_packet);
     PtrFree(&checkbuf);
@@ -540,7 +540,7 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
 }
 
 
-
+// Build IPv4 ICMP packet from an instruction structure
 int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     char *final_packet = NULL;
@@ -558,8 +558,10 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     // allocate space for this packet
     if ((final_packet = (char *)calloc(1, final_packet_size)) == NULL) goto end;
 
+    // prepare the ICMP header pointer in the final packet buffer we are creating
     icmp = (struct icmphdr *)(final_packet + sizeof(struct iphdr));
 
+    // this is the structure we use to prepare the IP header parameters inside of this for the wire packet buffer
     p = (struct packeticmp4 *)final_packet;
 
     // prepare IP header
@@ -576,6 +578,8 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     p->ip.protocol = IPPROTO_ICMP;
     p->ip.saddr = iptr->source_ip;
     p->ip.daddr = iptr->destination_ip;
+
+    // perform IP checksum on the packets parameters as they are in memory for the finial buffer.. (as it will be when it hits the wire)
     p->ip.check = in_cksum((unsigned short *)final_packet, sizeof (struct iphdr));
  
     // prepare ICMP header
@@ -588,20 +592,17 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     p->icmp.un.echo.id = rand();
     */
 
-    if (iptr->data_size) {
+    // If there is data to be appended to this packet then lets copy it over
+    if (iptr->data_size)
         memcpy((void *)(final_packet + sizeof(struct packeticmp4)), iptr->data, iptr->data_size);
-    }
 
     // this should be zero in the build instructions structure.. but just for future reference
     // it should be 0 before we checksum it..
     p->icmp.checksum = 0;
 
-    // calculate ICMP checksum
+    // calculate ICMP checksum and put it directly into the final packet
     p->icmp.checksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size);
     
-    // the checksum will always need to be processed here
-    //p->icmp.checksum = pkt_chk;
-
     // set the raw packet inside of the structure
     iptr->packet = final_packet;
     iptr->packet_size = final_packet_size;
@@ -610,6 +611,7 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     final_packet = NULL;
     final_packet_size = 0;
 
+    // everything went well...
     ret = 1;
 
     end:;

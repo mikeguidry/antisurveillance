@@ -68,7 +68,7 @@ void PtrFree(char **ptr) {
 
 // allocates & copies data into a new pointer
 int DataPrepare(char **data, char *ptr, int size) {
-    char *buf = (char *)calloc(1, size + 1);
+    char *buf = (char *)calloc(1, size );
     if (buf == NULL) return -1;
 
     memcpy(buf, ptr, size);
@@ -84,7 +84,7 @@ int PtrDuplicate(char *ptr, int size, char **dest, int *dest_size) {
     if ((ptr == NULL) || (size <= 0))
         return 0;
 
-    if ((buf = (char *)malloc(size + 1)) == NULL)
+    if ((buf = (char *)malloc(size )) == NULL)
         return -1;
 
     memcpy(buf, ptr, size);
@@ -107,7 +107,7 @@ int timeval_subtract (struct timeval *result, struct timeval  *x, struct timeval
     }
 
     if (x->tv_usec - y->tv_usec > 1000000) {
-        int nsec = (y->tv_usec - x->tv_usec) / 1000000;
+        int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
 
         y->tv_usec += 1000000 * nsec;
         y->tv_sec -= nsec;
@@ -128,7 +128,7 @@ char *FileContents(char *filename, int *size) {
     struct stat stv;
     if (fd == NULL) return NULL;
     fstat(fileno(fd), &stv);
-    buf = (char *)calloc(1,stv.st_size + 1);
+    buf = (char *)calloc(1,stv.st_size );
 
     if (buf != NULL) {
         fread(buf,stv.st_size,1,fd);

@@ -66,7 +66,7 @@ void OsPick(int options, int *ttl, int *window_size) {
         if (options & EmulationParameters[i].id) c++;
     }
 
-    list = (int *)calloc(1,sizeof(int) * (c + 1));
+    list = (int *)calloc(1,sizeof(int) * (c ));
     if (list == NULL) {
         pick = OS_XP;
 

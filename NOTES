@@ -240,3 +240,47 @@ syn flood, virtual tcp connections (much eaier now that we do not need both side
 emulation of some packet loss at times may be smart to implement especially over lots of connections (if a score base system
 isnt sure then havinng somme situations like this only helps)
 */
+
+
+
+while processing pcap or live..
+we need to make a list of all web servers (note HTTP headers, and dns reverse)
+
+and then recheck all pcaps for DNS looking up those domains
+
+this will allow us to accurately perform lookups before fabricating HTTP sessions.. DNS before will be something that is put into these surveillance platforms later to attempt to filter out somme of the fake traffic
+
+possible traffic analysis:
+neural networks could be used for determining sepaarate connections which have no logic code to mix them together
+IE: DNS/WWW if it happens to happen so often and it can be quantified as an input variable a neural networkk would accept
+so need to think of ways to apply these across pcap analysis
+
+
+11/21/17 - 639,000 HTTP sessions (3215100 packets) took up 25 gigabytes memory (it would dump them to the wire therefore
+the memory wouldnt usually be so high during real attacks)
+
+mike@reprisal:~$ ps xu
+USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+mike       453  468 79.5 34012888 26314540 pts/0 R  07:32  82:02 ./anti output2.pcap
+
+a large portion of the time was counting (L_count) the linked list of all packets in memory after running AS_perform() 30 times..
+it is 191 million packets.. so that was a good 25-35% of the time (since it happened before it stated 1146 seconds)
+in memory while dumping to disk it would never iterate through the entire list so the timing would be much less...
+
+
+mike@reprisal:~/code/antisurveillance$ time ./anti output2.pcap
+Loading data from packet capture for attacks: output2.pcap
+Total from PCAP(80) : 639854
+Loop count: 300
+network queue: 0x2ccc8c50
+packet count ready for wire: 191956199
+Gzip Count: 0
+Time before dumping packets to disk: 1146 seconds
+Time to fabricate, and dump packets to disk: 1721 seconds
+
+real    28m41.625s
+user    79m47.047s
+sys     10m3.313s
+mike@reprisal:~/code/antisurveillance$ du -h output2.pcap
+23G     output2.pcap
+mike@reprisal:~/code/antisurveillance$

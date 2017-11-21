@@ -44,7 +44,7 @@ int AS_perform(AS_context *ctx) {
     
     // enumerate through each attack in our list
     while (aptr != NULL) {
-        printf("perform: aptr %p\n", aptr);
+        //printf("perform: aptr %p\n", aptr);
         // try to lock this mutex
         if (pthread_mutex_trylock(&aptr->pause_mutex) == 0) {
             // if we need to join this thread (just in case pthread will leak otherwise)
@@ -55,7 +55,7 @@ int AS_perform(AS_context *ctx) {
             
             //printf("aptr %p next %p\n", aptr, aptr->next);
             if (!aptr->paused && !aptr->completed) {
-                printf("seems ok %p\n", aptr->packet_build_instructions);
+                //printf("seems ok %p\n", aptr->packet_build_instructions);
                 r = 0;
                 // if we dont have any prepared packets.. lets run the function for this attack
                 if (aptr->packets == NULL) {
@@ -165,8 +165,8 @@ AS_context *AS_ctx_new() {
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
     // start network queue thread
-    if (pthread_create(&ctx->network_thread, NULL, thread_network_flush, (void *)ctx) == 0)
-        ctx->network_threaded = 1;
+    //if (pthread_create(&ctx->network_thread, NULL, thread_network_flush, (void *)ctx) == 0)
+        //ctx->network_threaded = 1;
 
     return ctx;
 }
@@ -287,7 +287,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-    loop_count = (L_count((LINK *)ctx->attack_list) > 1000) ? 3000 : 300;
+    loop_count = (L_count((LINK *)ctx->attack_list) > 1000) ? 300 : 30;
     printf("Loop count: %d\n", loop_count);
     
     // We loop to call this abunch of times because theres a chance all packets do not get generated
@@ -313,6 +313,7 @@ int main(int argc, char *argv[]) {
         }
         usleep(700000);
     }
+
     // how many packes are queued in the output supposed to go to the internet?
     printf("network queue: %p\n", ctx->network_queue);
     if (ctx->network_queue)

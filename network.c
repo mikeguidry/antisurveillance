@@ -143,6 +143,7 @@ void *AS_queue_threaded(void *arg) {
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     AttackOutgoingQueue *optr = NULL;
 
+
     if (qptr == NULL || qptr->buf == NULL) return -1;
 
     if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) == NULL)
