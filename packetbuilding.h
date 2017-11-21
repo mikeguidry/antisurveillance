@@ -224,4 +224,4 @@ unsigned short in_cksum(unsigned short *addr,int len);
 
 
 
-int test_udp4(AS_context *ctx);
+int test_icmp4(AS_context *ctx);

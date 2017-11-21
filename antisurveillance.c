@@ -262,8 +262,9 @@ int main(int argc, char *argv[]) {
         ctx->aggressive = 0;
     }
 
+    /*
     {
-        test_udp4(ctx);
+        test_icmp4(ctx);
         for (i = 0; i < 1000; i++) {
             AS_perform(ctx);
             sleep(1);
@@ -273,7 +274,7 @@ int main(int argc, char *argv[]) {
         
         exit(-1);
     }
-
+*/
 
     if (argc > 2) {
         if (Test_Generate(ctx, argc, argv) != 1)

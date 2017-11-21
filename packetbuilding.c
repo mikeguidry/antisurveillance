@@ -551,8 +551,8 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     char *final_packet = NULL;
     int final_packet_size = 0;
     struct packeticmp4 *p = NULL;
-    char *checkbuf = NULL;
     uint32_t pkt_chk = 0;
+    struct icmphdr *icmp = NULL;
 
     // this is only for ipv4 tcp
     if (iptr->type != PACKET_TYPE_ICMP_4) return ret;
@@ -562,6 +562,8 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
 
     // allocate space for this packet
     if ((final_packet = (char *)calloc(1, final_packet_size)) == NULL) goto end;
+
+    icmp = (struct icmphdr *)(final_packet + sizeof(struct iphdr));
 
     p = (struct packeticmp4 *)final_packet;
 
@@ -582,29 +584,30 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     p->ip.check = in_cksum((unsigned short *)final_packet, sizeof (struct iphdr));
  
     // prepare ICMP header
+    // copy over ICMP parameters from its own structure..
+    memcpy((void *)&p->icmp, &iptr->icmp, sizeof(struct icmphdr));
+    /*
     p->icmp.type = ICMP_ECHO;
     p->icmp.code = 0;
     p->icmp.un.echo.sequence = rand();
     p->icmp.un.echo.id = rand();
-    //checksum
-    p->icmp.checksum = 0;
+    */
 
     if (iptr->data_size) {
         memcpy((void *)(final_packet + sizeof(struct packeticmp4)), iptr->data, iptr->data_size);
     }
 
-    if ((checkbuf = (char *)calloc(1, sizeof(struct icmphdr) + iptr->data_size)) == NULL) goto end;
-
-
-    // lets copy it directly from the instructions structure
-    memcpy((void *)&p->icmp, (void *)&iptr->icmp, sizeof(struct icmphdr));
-
+    // calculate ICMP checksum
+    p->icmp.checksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size);
+    
     // the checksum will always need to be processed here
-    p->icmp.checksum = pkt_chk;
+    //p->icmp.checksum = pkt_chk;
 
+    // set the raw packet inside of the structure
     iptr->packet = final_packet;
     iptr->packet_size = final_packet_size;
 
+    // we set these to NULL so it doesnt get freed at the end of this function
     final_packet = NULL;
     final_packet_size = 0;
 
@@ -613,7 +616,6 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     end:;
 
     PtrFree(&final_packet);
-    PtrFree(&checkbuf);
     
     return ret;
 }
@@ -626,7 +628,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr);
 
 */
 
-int test_udp4(AS_context *ctx) {
+int test_icmp4(AS_context *ctx) {
     AS_attacks *aptr = NULL;
     PacketBuildInstructions *iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions));
     int ret = 1;
@@ -641,7 +643,7 @@ int test_udp4(AS_context *ctx) {
 
     memcpy(data, "hello", 5);
 
-    iptr->type = PACKET_TYPE_UDP_4;
+    iptr->type = PACKET_TYPE_ICMP_4;
 
 
     if (iptr == NULL) goto end;
@@ -659,6 +661,13 @@ int test_udp4(AS_context *ctx) {
     data = NULL; data_size = 0;
 
     iptr->ttl = 64;
+
+    iptr->icmp.type = ICMP_ECHO;
+    iptr->icmp.code = 0;
+    iptr->icmp.un.echo.sequence = rand()%0xFFFFFFFF;
+    iptr->icmp.un.echo.id = rand()%0xFFFFFFFF;
+
+
      
     if ((aptr = (AS_attacks *)calloc(1, sizeof(AS_attacks))) == NULL) return 0;
 

@@ -567,7 +567,7 @@ typedef struct _blackhole_context {
     struct in6_addr **ip6_familiars;
 } BlackholeCTX;
 
-// Microsoft Azure goes here
+// blackhole ips
 typedef struct _built_in_attack_hosts {
     struct _built_in_attack_hosts *next;
     char *ipv4_cidr;
@@ -577,7 +577,7 @@ typedef struct _built_in_attack_hosts {
 BH_Queue *
 #define AH_ADD_CIDR(a,b,c,d,mask) { }
 
-#include "azure_ips.h"
+#include "blackhole_ips.h"
 
 int blackhole_add(uint32_t ip, int minutes) {
     int ret = -1;
@@ -627,7 +627,7 @@ void attacks_init(AS_context *ctx) {
     }
 
     // include ranges we wish to destroy using network 0day
-    #include "azure_ips.h"
+    #include "blackhole_ips.h"
 
     return;
 }
