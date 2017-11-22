@@ -675,7 +675,7 @@ static PyMethodDef PyASC_methods[] = {
     {"clear", (PyCFunction)PyASC_Clear,    METH_NOARGS,    "clears all outgoing queue, and attack structures" },
 
     // load sessions from a packet capture into memory as attacks (we need to allow different filters, etc)
-    {"pcapload", (PyCFunction)PyASC_PCAPload,    METH_O,    "" },
+    {"pcapload", (PyCFunction)PyASC_PCAPload,    METH_VARARGS | METH_KEYWORDS,    "" },
 
     // save all outgoing packets as a packet capture (for later), debugging, or repllaying on machines without hte software
     {"pcapsave", (PyCFunction)PyASC_PCAPsave,    METH_O,    "" },
