@@ -374,7 +374,7 @@ static PyObject *PyASC_NetworkClear(PyAS_Config* self){
 }
 
 static PyObject *PyASC_NetworkOff(PyAS_Config* self){
-    printf("Self CTX: %p\n", self->ctx);
+
     if (self->ctx) self->ctx->network_disabled = 1;
 
     Py_INCREF(Py_None);
@@ -389,14 +389,10 @@ static PyObject *PyASC_NetworkOn(PyAS_Config* self){
 }
 
 static PyObject *PyASC_CTXSet(PyAS_Config* self, PyObject *Pctx){
-    void *ctx = NULL;
-    printf("ctx set\n");
-    ctx = PyLong_AsVoidPtr(Pctx);
+    void *ctx = PyLong_AsVoidPtr(Pctx);
+
     printf("CTX %p\n", ctx);
-    if (ctx != NULL) {
-        printf("setting ctx %p\n", ctx);
-        self->ctx = ctx;
-    }
+    self->ctx = ctx;
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -894,7 +890,7 @@ AS_scripts *Scripting_New(AS_context *ctx) {
     AS_scripts *sctx = NULL;
 
     printf("Scripting new ctx %p\n", ctx);
-    
+
     if ((sctx = (AS_scripts *)calloc(1, sizeof(AS_scripts))) == NULL) return NULL;
 
     sctx->ctx = ctx;
