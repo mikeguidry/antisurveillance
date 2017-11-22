@@ -148,7 +148,7 @@ static PyObject *PyASC_PCAPload(PyAS_Config* self,  PyObject *args, PyObject *kw
 
     if (filename && self->ctx) {
         // *** todo: allow modified parameters, and setting globals to be used for everything
-        ret = PCAPtoAttack(self->ctx, (char *)filename, destination_port, self->replay_count, self->replay_interval, &self->flt);
+        ret = PCAPtoAttack(self->ctx, (char *)filename, destination_port, self->replay_count, self->replay_interval, use_python_filter ? &self->flt : NULL);
     }
 
     return PyInt_FromLong(ret);
@@ -343,8 +343,15 @@ static PyObject *PyASC_FilterCreate(PyAS_Config* self, PyObject *args, PyObject 
 }
 
 // instructions add a tcp close from a particular side of the connection
-static PyObject *PyASC_InstructionsTCP4Close(PyAS_Config* self,PyObject *Pfrom_client) {
-    int from_client= PyInt_AsLong(Pfrom_client);
+// default is from client
+static PyObject *PyASC_InstructionsTCP4Close(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    int from_client = 1;
+    static char *kwd_list[] = { "from_client", 0};
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i", kwd_list,  &from_client)) {
+        PyErr_Print();
+        return NULL;
+    }
 
     int ret = GenerateTCP4CloseConnectionInstructions(&self->connection_parameters, &self->instructions, from_client);
 
@@ -522,7 +529,7 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
     memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
 
     // the new connection needs these variables prepared
-    gettimeofday(&self->connection_parameters.ts, NULL);
+    //gettimeofday(&self->connection_parameters.ts, NULL);
     self->connection_parameters.server_ip = inet_addr(destination_ip);
     self->connection_parameters.client_ip = inet_addr(client_ip);
     self->connection_parameters.server_port = destination_port;
@@ -552,8 +559,8 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
 static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"count", "interval", 0};
     int ret = 0;
-    int count = 999;
-    int interval = 1;
+    int count = self->replay_count;
+    int interval = self->replay_interval;
     AS_attacks *aptr = NULL;
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ii", kwd_list, &count, &interval))
@@ -568,6 +575,12 @@ static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args
 
             // if it worked.. lets return its ID
             if (aptr != NULL) {
+
+                // link the attack to make it active
+                aptr->next = self->ctx->attack_list;
+                self->ctx->attack_list = aptr;
+
+                // return the attack ID
                 ret = aptr->id;
                 return PyInt_FromLong(ret);
             }
@@ -703,7 +716,7 @@ static PyMethodDef PyASC_methods[] = {
     {"instructionstcp4send", (PyCFunction)PyASC_InstructionsTCP4Send,    METH_VARARGS | METH_KEYWORDS,    "" },
 
     // tcp close connection into instructions
-    {"instructionstcp4close", (PyCFunction)PyASC_InstructionsTCP4Close,    METH_O,    "" },
+    {"instructionstcp4close", (PyCFunction)PyASC_InstructionsTCP4Close,    METH_VARARGS | METH_KEYWORDS,    "" },
     
     // UDP can be thrown in to show DNS requests in casae they begin filtering by checking for the TTL etc
     //{"instructionsudp4send", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "" },

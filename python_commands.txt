@@ -211,7 +211,8 @@ send data from one side of the tcp connection to the other, the side is chosen b
 
 instructionstcp4close()
 
-accepts keywords
+accepts keywords from_client
+default is from_client (connecting side closes connection) if you use no aprameters
 
 arguments: "from_client" which side is closing the connection
 close the tcp connectioon from one side or the other.. the side is chosen by "from_client"
