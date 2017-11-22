@@ -113,3 +113,27 @@ void PacketAdjustments(AS_attacks *aptr) {
 
     return;
 }
+
+
+//int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, uint32_t server_port,  char *client_body,
+//int client_size, char *server_body, int server_size);
+
+//IP stragies for PacketAadjustments..
+
+typedef struct _ip_strategy {
+	struct _ip_strategy *next;
+
+	int ts;
+	
+	// so multiple strategies can get used...
+	int last_use;
+	// country (0 if no country)
+	int geo;
+	
+	int ip_count;
+
+	uint32_t **ip_list;
+
+} IPStrategy;
+
+	

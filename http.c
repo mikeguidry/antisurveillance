@@ -418,3 +418,24 @@ int HTTPContentModification(AS_attacks *aptr) {
     return ret;
 }
 
+typedef struct _data_entry {
+    struct _data_entry *next;
+    int category;
+
+    // country (or 0 for global)
+    int geo;
+
+    int ts;
+
+    int last_ts;
+
+    char *ptr;
+    int size;
+} DataEntry;
+
+typedef struct _http_parameters {
+    DataEntry *server_body;
+    DataEntry *client_body;
+} HttpParameters;
+
+

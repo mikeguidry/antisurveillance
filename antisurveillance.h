@@ -152,6 +152,7 @@ typedef struct _antisurveillance_context {
     int aggressive;
 
     BH_Queue *blackhole_queue;
+    int blackhole_paused;
 
     TracerouteQueue *traceroute_queue;
 
@@ -172,8 +173,9 @@ typedef void *(*attack_func)(AS_attacks *aptr);
 
 
 
-void AS_remove_completed();
+void AS_remove_completed(AS_context *);
 
+void AS_Clear_All(AS_context *ctx);
 
 
 

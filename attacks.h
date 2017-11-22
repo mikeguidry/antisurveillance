@@ -28,6 +28,7 @@ typedef struct _bh_queue {
 
 } BH_Queue;
 
+void BH_Clear(AS_context *ctx) ;
 
 int BH_add_CIDR(AS_context *ctx, int a, int b, int c, int d, int mask);
 void AttackFreeStructures(AS_attacks *aptr);
@@ -37,3 +38,4 @@ int GZipAttack(AS_context *, AS_attacks *aptr, int *size, char **server_body);
 void attacks_init();
 int AS_session_queue(AS_context *, int id, uint32_t src, uint32_t dst, int src_port, int dst_port, int count, int interval, int depth, void *function);
 int BH_Perform(AS_context *ctx);
+void AttacksClear(AS_context *ctx);

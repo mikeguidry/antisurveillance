@@ -1,4 +1,8 @@
 
+Did governments forget that everything they are using these days are built by hackers?  Yet... hackers sit by and allow technology
+to be used against them?... well. i hope people start seeing other solutions.
+
+
 /*
 notes for using pcaps, etc....
 
@@ -217,6 +221,9 @@ Fourteen Eyes
 13. Spain 
 14. Sweden
 char *fourteen_eyes[] = {"AU","CA","NZ","GB","US","DE","FR","NL","NO","BE","DE","IT","ES","SE",NULL};
+turn into cpoints
+
+
 geoip [ 
     residential finder - generate & verify IPs within particular countries (first world, high intelligene gathering, etc)
     business IP finders - generate & verify ips in certain industries.. whois/http/dns (dfense, cyber, ads, etc)
@@ -308,4 +315,22 @@ ftp.ripe.net/ripe/stats/delegated-ripencc-latest
 ftp.afrinic.net/pub/stats/afrinic/delegated-afrinic-latest
 ftp.apnic.net/pub/stats/apnic/delegated-apnic-latest
 ftp.lacnic.net/pub/stats/lacnic/delegated-lacnic-latest
+
+
+
+
+
+
+incoming packets need a list of functions when things are active that may require certain packets
+
+it could be a lnked list containing a fiiter for matching, ,and if found it would send the packet to the function
+
+
+its easy to pair tcp packets into a session
+
+for performing simila circumstances with UDP we need to make a list of all source port, and dest port.. and thne we can try for familiars of each of them...
+it will allow us to see send/recv so we can assume its an  active communication and then we can pair those together as a session
+
+FindCommunication?
+
 

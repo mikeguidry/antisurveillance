@@ -77,3 +77,52 @@ so it can get branched off to a remote host, where python doesnt know the keys)
 
 
 afsdwefwezfdsZfdszfsdzeewttewwt3werqtth4th
+
+
+python needs to call functionss during a call back
+
+c -> python (for callbacks)
+w loops done in C
+
+or..
+
+python -> C (loops done in python.. python will decide when to call performs())
+
+
+C with calls to python is best for live mode (capture sessioons and repllay automatically w new IPs)
+
+
+/*
+
+without gettinng too crazy into scripting immediately.. it shoould be posssibe to crfeate attacks with different bodies...
+we can allow python to change the client, and server body... and they can just modify the body and create an attack...
+that attack will continue to use that body, aand then it can modify it, and create anothere
+
+this will allow the system to immediately be used by people once the IP strategies are controlled... (random works now)
+
+for advanced procedures:
+we can monitor irc, or some other information (logic) and then dynamically generate responses as pyython commands.. and eval it
+this will allow easily taking the minimal C versioon and expanding it directly with python to build an entire framework  immediately
+
+---
+fromm sommething about eval/exec:
+
+The short answer, or TL;DR
+
+Basically, eval is used to evaluate a single dynamically generated Python expression, and exec is used to execute dynamically generated Python code only for its side effects.
+
+eval and exec have these two differences:
+
+eval accepts only a single expression, exec can take a code block that has Python statements: loops, try: except:, class and function/method definitions and so on.
+
+An expression in Python is whatever you can have as the value in a variable assignment:
+a_variable = (anything you can put within these parentheses is an expression)
+eval returns the value of the given expression, whereas exec ignores the return value from its code, and always returns None (in Python 2 it is a statement and cannot be used as an expression, so it really does not return anything).
+
+!! exec is way to go
+---
+
+
+
+*/
+

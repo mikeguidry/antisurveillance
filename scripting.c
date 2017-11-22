@@ -11,6 +11,13 @@ in their area... or everywhere?
 
 lessons will be learned 1 way or another.
 
+i should say i hate python.  I am just making it easier for people to utilize this tool.. without requiring tons of custom code..
+if pythoon didnt require indentions i'd prob try it more often
+
+this is terrible code atm, and all things are being done with functions.. ill work it out later.. or maybe i wont i dont know
+once this works w traceroute + strategies im pretty much done.. if no bugs are here then oh well -- you can fuck up mass surveillance
+my job wil be done
+
 */
 #define PYTHON_MODULES
 
@@ -18,9 +25,19 @@ lessons will be learned 1 way or another.
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <netinet/tcp.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
+
 #include "network.h"
 #include "antisurveillance.h"
 #include "scripting.h"
+#include "pcap.h"
+#include "packetbuilding.h"
+#include "instructions.h"
+
+#include "utils.h"
 #ifdef PYTHON_MODULES
 #include <Python.h>
 #endif
@@ -144,45 +161,30 @@ typedef struct PyMemberDef {
 #define T_DOUBLE        4
 #define T_STRING        5
 #define T_OBJECT        6
-/* XXX the ordering here is weird for binary compatibility */
-#define T_CHAR          7       /* 1-character string */
-#define T_BYTE          8       /* 8-bit signed int */
-/* unsigned variants: */
+#define T_CHAR          7
+#define T_BYTE          8
 #define T_UBYTE         9
 #define T_USHORT        10
 #define T_UINT          11
 #define T_ULONG         12
-
-/* Added by Jack: strings contained in the structure */
 #define T_STRING_INPLACE        13
-
-/* Added by Lillo: bools contained in the structure (assumed char) */
 #define T_BOOL          14
-
-#define T_OBJECT_EX     16      /* Like T_OBJECT, but raises AttributeError
-                   when the value is NULL, instead of
-                   converting to None. */
+#define T_OBJECT_EX     16
 #ifdef HAVE_LONG_LONG
 #define T_LONGLONG      17
 #define T_ULONGLONG      18
-#endif /* HAVE_LONG_LONG */
-
-#define T_PYSSIZET       19 /* Py_ssize_t */
-
-
-/* Flags */
+#endif
+#define T_PYSSIZET       19
 #define READONLY        1
-#define RO              READONLY                /* Shorthand */
+#define RO              READONLY
 #define READ_RESTRICTED 2
 #define PY_WRITE_RESTRICTED 4
 #define RESTRICTED      (READ_RESTRICTED | PY_WRITE_RESTRICTED)
 
 
-/* Obsolete API, for binary backwards compatibility */
 PyAPI_FUNC(PyObject *) PyMember_Get(const char *, struct memberlist *, const char *);
 PyAPI_FUNC(int) PyMember_Set(char *, struct memberlist *, const char *, PyObject *);
 
-/* Current API, use this */
 PyAPI_FUNC(PyObject *) PyMember_GetOne(const char *, struct PyMemberDef *);
 PyAPI_FUNC(int) PyMember_SetOne(char *, struct PyMemberDef *, PyObject *);
 
@@ -190,13 +192,18 @@ PyAPI_FUNC(int) PyMember_SetOne(char *, struct PyMemberDef *, PyObject *);
 #ifdef __cplusplus
 }
 #endif
-#endif /* !Py_STRUCTMEMBER_H */
+#endif
 typedef struct {
     PyObject_HEAD
     PyObject *first;
     PyObject *last;
     int number;
     AS_context *ctx;
+
+    ConnectionProperties connection_parameters;
+    PacketBuildInstructions *instructions;
+
+    FilterInformation flt;
 } PyAS_Config;
 
 static int PyASC_traverse(PyAS_Config *self, visitproc visit, void *arg) {
@@ -263,12 +270,11 @@ static PyObject *PyASC_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
 
 static int PyASC_init(PyAS_Config *self, PyObject *args, PyObject *kwds) {
     PyObject *first=NULL, *last=NULL, *tmp;
+    void *ctx = NULL;
 
-    static char *kwlist[] = {"first", "last", "number", NULL};
+    static char *kwlist[] = {"first", "last", "number", "ctx", NULL};
 
-    if (! PyArg_ParseTupleAndKeywords(args, kwds, "|SSi", kwlist,
-                                      &first, &last,
-                                      &self->number))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|SSiK", kwlist, &first, &last, &self->number, &ctx))
         return -1;
 
     if (first) {
@@ -283,6 +289,11 @@ static int PyASC_init(PyAS_Config *self, PyObject *args, PyObject *kwds) {
         Py_INCREF(last);
         self->last = last;
         Py_XDECREF(tmp);
+    }
+
+    if (ctx) {
+        printf("Initialization CTX: %X\n", ctx);
+        self->ctx = ctx;
     }
 
     return 0;
@@ -351,29 +362,84 @@ static PyObject *PyASC_Enable(PyAS_Config* self){
 
 static PyObject *PyASC_Clear(PyAS_Config* self){
 
+    if (self->ctx) AS_Clear_All((AS_context *)self->ctx);
+
     Py_INCREF(Py_None);
     return Py_None; 
 }
 
-static PyObject *PyASC_PCAPload(PyAS_Config* self){
+static PyObject *PyASC_PCAPload(PyAS_Config* self, PyObject *Pfilename){
+    int i = 0;
+    const char* s = PyString_AsString(Pfilename);
+
+    if (s && self->ctx) {
+        // *** todo: allow modified parameters, and setting globals to be used for everything
+        i = PCAPtoAttack(self->ctx, (char *)s, 80, 999, 1);
+        printf("pcap load: %d\n", i);
+    }
 
     Py_INCREF(Py_None);
     return Py_None;
 }
 
-static PyObject *PyASC_PCAPsave(PyAS_Config* self){
+
+/*
+https://stackoverflow.com/questions/5356773/python-get-string-representation-of-pyobject
+for python3:
+
+static void reprint(PyObject *obj) {
+    PyObject* repr = PyObject_Repr(obj);
+    PyObject* str = PyUnicode_AsEncodedString(repr, "utf-8", "~E~");
+    const char *bytes = PyBytes_AS_STRING(str);
+
+    printf("REPR: %s\n", bytes);
+
+    Py_XDECREF(repr);
+    Py_XDECREF(str);
+}
+*/
+
+// save all packet captures to a filename fromm network outgoing queue
+static PyObject *PyASC_PCAPsave(PyAS_Config* self, PyObject *Pfilename){
+    int i = 0;
+    const char* s = PyString_AsString(Pfilename);
+
+    if (s && self->ctx) {
+        //int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, PacketInfo *ipackets, int free_when_done);
+        i = PcapSave(self->ctx, (char *)s, self->ctx->network_queue, NULL, 0);
+        printf("pcap save: %d\n", i);
+    }
 
     Py_INCREF(Py_None);
     return Py_None;
 }
+
+static PyObject *PyASC_NetworkCount(PyAS_Config* self){
+        long ret = 0;
+
+        if (self->ctx) ret = L_count((LINK *)self->ctx->network_queue);
+    
+        if (ret) {
+            return PyInt_FromLong(ret);
+        } else {
+            Py_INCREF(Py_None);
+            return Py_None; 
+        }
+}
+    
+
 
 static PyObject *PyASC_NetworkClear(PyAS_Config* self){
+    // clear all packets using the context given
+    if (self->ctx) ClearPackets((AS_context *)self->ctx);
 
     Py_INCREF(Py_None);
     return Py_None;    
 }
 
 static PyObject *PyASC_NetworkOff(PyAS_Config* self){
+
+    printf("ctx: %p\n", self->ctx);
 
     if (self->ctx) self->ctx->network_disabled = 1;
 
@@ -382,6 +448,7 @@ static PyObject *PyASC_NetworkOff(PyAS_Config* self){
 }
 
 static PyObject *PyASC_NetworkOn(PyAS_Config* self){
+
     if (self->ctx) self->ctx->network_disabled = 0;
 
     Py_INCREF(Py_None);
@@ -398,25 +465,319 @@ static PyObject *PyASC_CTXSet(PyAS_Config* self, PyObject *Pctx){
     return Py_None;
 }
 
+static PyObject *PyASC_AttackClear(PyAS_Config* self){    
+    if (self->ctx) AS_Clear_All((AS_context *)self->ctx);
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *PyASC_AttackPerform(PyAS_Config* self){    
+    int i = 0;
+
+    if (self->ctx) AS_perform(self->ctx);
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *PyASC_BlackholeDisable(PyAS_Config* self){
+
+    if (self->ctx) self->ctx->blackhole_paused = 0;
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *PyASC_BlackholeEnable(PyAS_Config* self){
+
+    if (self->ctx) self->ctx->blackhole_paused = 1;
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *PyASC_BlackholeClear(PyAS_Config* self){
+
+    if (self->ctx) BH_Clear(self->ctx);
+
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyObject *PyASC_BlackholeAdd(PyAS_Config* self){
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+
+
+
+// prepare a filter with particular flags, and values those filter flags requires
+static PyObject *PyASC_FilterPrepare(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = { "source_ip", "destination_ip", "source_port", "destination_port",
+    "packet_flags", "familiar", 0};
+
+    char *source_ip = NULL;
+    char *destination_ip = NULL;
+    int source_port = 0;
+    int destination_port = 0;
+    int packet_flags = 0;
+    int familiar = 0;
+    
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ssiii", kwd_list,  &source_ip, &destination_ip,
+    &source_port, &destination_port, &packet_flags))
+        return NULL;
+
+    if (source_ip)
+        FilterPrepare(&self->flt, FILTER_CLIENT_IP, inet_addr(source_ip));
+
+    if (destination_ip)
+        FilterPrepare(&self->flt, FILTER_SERVER_IP, inet_addr(destination_ip));
+
+    if (source_port)
+        FilterPrepare(&self->flt, FILTER_CLIENT_PORT, source_port);
+
+    if (destination_port)
+        FilterPrepare(&self->flt, FILTER_SERVER_PORT, destination_port);
+
+    if (packet_flags)
+        FilterPrepare(&self->flt, FILTER_PACKET_FLAGS, packet_flags);
+
+    if (familiar)
+        FilterPrepare(&self->flt, FILTER_PACKET_FAMILIAR, 0);
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+// create a new fiilter.. if one was already beign created hten it will be discarded
+static PyObject *PyASC_FilterCreate(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+
+    // zero the filter
+    memset((void *)&self->flt, 0, sizeof(FilterInformation));
+
+    // must initialize the filter
+    self->flt.init = 1;
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+// instructions add a tcp close from a particular side of the connection
+static PyObject *PyASC_InstructionsTCP4Close(PyAS_Config* self,PyObject *Pfrom_client) {
+    int from_client= PyInt_AsLong(Pfrom_client);
+
+    int ret = GenerateTCP4CloseConnectionInstructions(&self->connection_parameters, &self->instructions, from_client);
+
+    return PyInt_FromLong(ret);
+}
+
+// send data from one side of the tcp conneccton to the other
+static PyObject *PyASC_InstructionsTCP4Send(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    int from_client = 0;
+    char *data = NULL;
+    int size = 0;
+    int ret = 0;
+
+    static char *kwd_list[] = { "from_client", "data", "size", 0};
+    
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "is#", kwd_list,  &from_client, &data, &size))
+        return NULL;
+
+    ret = GenerateTCP4SendDataInstructions(&self->connection_parameters, &self->instructions, from_client, data, size);
+
+    return PyInt_FromLong(ret);
+}
+
+// create packets for opening a tcp conneection
+static PyObject *PyASC_InstructionsTCP4Open(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    
+    int ret = GenerateTCP4ConnectionInstructions(&self->connection_parameters, &self->instructions);
+
+    return PyInt_FromLong(ret);
+}
+
+// start a new instruction set (removing anything previously not saved, etc)
+static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {
+    "client_ip", "client_port", "destination_ip", "destination_port", "client_ttl", "server_ttl", 
+    "client_window_size", "server_window_size","client_seq", "server_seq", "client_identifier",
+    "server_identifier", "client_os","server_os", 0};
+
+    char *client_ip = NULL, *destination_ip = NULL;
+    int client_port = 0, destination_port = 0, client_ttl = 0, server_ttl = 0, client_window_size = 0;
+    int server_window_size = 0;
+    unsigned long client_seq = 0, server_seq = 0, client_identifier = 0, server_identifier = 0;
+    int client_os = 0, server_os = 0;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sisiiiii|kkkkii", kwd_list,  &client_ip, &client_port,
+    &destination_ip, &destination_port, &client_ttl, &server_ttl, &client_window_size, &server_window_size,
+    &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os, &server_os))
+        return NULL;
+
+    memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
+
+    // the new connection needs these variables prepared
+    self->connection_parameters.server_ip = inet_addr(destination_ip);
+    self->connection_parameters.client_ip = inet_addr(client_ip);
+    self->connection_parameters.server_port = destination_port;
+    self->connection_parameters.client_port = client_port;
+    self->connection_parameters.server_identifier = server_identifier;
+    self->connection_parameters.client_identifier = client_identifier;
+    self->connection_parameters.server_seq = server_seq;
+    self->connection_parameters.client_seq = client_seq;
+
+    self->connection_parameters.client_ttl = client_ttl;
+    self->connection_parameters.server_ttl = server_ttl;
+    self->connection_parameters.max_packet_size_client = client_window_size;
+    self->connection_parameters.max_packet_size_server = server_window_size;
+
+    // free all instructions used by this python module
+    PacketBuildInstructionsFree(&self->instructions);
+
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+
+// ------------------
+// turn an instruction set in meomry that was built into an attack structure for live attacks
+// it doesnt need anymore information about the instructions since they should be in memory.
+
+//AS_attacks *InstructionsToAttack(AS_context *ctx,
+// PacketBuildInstructions *instructions, int count,
+// int interval);
+static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"count", "interval", 0};
+
+    int ret = 0;
+
+    int count = 0;
+    int interval = 0;
+    AS_attacks *aptr = NULL;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "ii", kwd_list, &count, &interval))
+        return NULL;
+
+    if (self->ctx) {
+        if (self->instructions == NULL) {
+            // show error.. no instructions to turn into an attack
+        } else {
+
+            aptr = InstructionsToAttack(self->ctx, self->instructions, count, interval);
+
+            // if it worked.. lets return its ID
+            if (aptr != NULL) {
+                ret = aptr->id;
+                return PyInt_FromLong(ret);
+            }
+
+        }
+    }
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+// ------------------
 
 static PyMethodDef PyASC_methods[] = {
+    // fromm original code
     {"name", (PyCFunction)PyASC_name,   METH_NOARGS,    "Return the name, combining the first and last name" },
+
+    // set context (AS_context) to a value.. ill figure out how to do in C later.. from outside python framework
+    {"setctx", (PyCFunction)PyASC_CTXSet,    METH_O,    "set context pointer.. automate later" },    
+    
+    // software does exit(-1) immediately
     {"exit", (PyCFunction)PyASC_DIE,    METH_NOARGS,    "Exits the software" },
+    // *** TODO: graceful shutdown saving all connfiguation, etc
+
+    // disable everything (in top of AS_perform()..) immediately should pause
     {"disable", (PyCFunction)PyASC_Disable,    METH_NOARGS,    "pauses the software" },
+
+    // re-enable
     {"enable", (PyCFunction)PyASC_Enable,    METH_NOARGS,    "continues the software" },
+
+    // clear all attacks and outgoing packets (gracefully.. each section takes care of its own  freeing)
     {"clear", (PyCFunction)PyASC_Clear,    METH_NOARGS,    "clears all outgoing queue, and attack structures" },
-    {"pcapload", (PyCFunction)PyASC_PCAPload,    METH_NOARGS,    "" },
-    {"pcapsave", (PyCFunction)PyASC_PCAPsave,    METH_NOARGS,    "" },
+
+    // load sessions from a packet capture into memory as attacks (we need to allow different filters, etc)
+    {"pcapload", (PyCFunction)PyASC_PCAPload,    METH_O,    "" },
+
+    // save all outgoing packets as a packet capture (for later), debugging, or repllaying on machines without hte software
+    {"pcapsave", (PyCFunction)PyASC_PCAPsave,    METH_O,    "" },
+
+    // clear all outgoing queue
     {"networkclear", (PyCFunction)PyASC_NetworkClear,    METH_NOARGS,    "clear outgoing network packets" },
+
+    // disable/pause writing to network 
     {"networkoff", (PyCFunction)PyASC_NetworkOff,    METH_NOARGS,    "disable writing to network" },
+
+    // enable/unpause writing to network
     {"networkon", (PyCFunction)PyASC_NetworkOn,    METH_NOARGS,    "enable writing to network" },
-    {"setctx", (PyCFunction)PyASC_CTXSet,    METH_O,    "set context pointer.. automate later" },
+
+    // clear all attacks
+    {"attackclear", (PyCFunction)PyASC_AttackClear,    METH_NOARGS,    "clear only attack structures" },
+    
+    // perform 1 iteration of all attacks (next packet, etc)
+    {"attackperform", (PyCFunction)PyASC_AttackPerform,    METH_NOARGS,    "iterate all attack structures once" },
+
+    
+    // start a new filter, removing a current one if it was not saved
+    {"filtercreate", (PyCFunction)PyASC_FilterCreate,    METH_VARARGS | METH_KEYWORDS,    "" },
+    // prepare the fiilter for various flags,, or ips/ports
+    {"filterprepare", (PyCFunction)PyASC_FilterPrepare,    METH_VARARGS | METH_KEYWORDS,    "" },
+    // then we can do live capture with a filter, and put it into a particular context (and get a call back when X sessions are found)
+    // which it can then begin auto attakiing with modifications
+
+    // we want to be able to build instruction sets with python...
+    // a script can generate POP, SMTP, etc protocols into attacks directly from python...
+
+    // instructions create (start a new instructions set) clear the current if it wasnt saved into an attack
+    {"instructionscreate", (PyCFunction)PyASC_InstructionsCreate,    METH_VARARGS | METH_KEYWORDS,    "" },
+    // tcp open connection into the instructions
+    {"instructionstcp4open", (PyCFunction)PyASC_InstructionsTCP4Open,   METH_NOARGS,    "" },
+
+    // tcp send data into the instructions (fromm either client or server)
+    // the script can perform this as much as needed...
+    {"instructionstcp4send", (PyCFunction)PyASC_InstructionsTCP4Send,    METH_VARARGS | METH_KEYWORDS,    "" },
+
+    // tcp close connection into instructions
+    {"instructionstcp4close", (PyCFunction)PyASC_InstructionsTCP4Close,    METH_O,    "" },
+    
+    // UDP can be thrown in to show DNS requests in casae they begin filtering by checking for the TTL etc
+    //{"instructionsudp4send", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "" },
+    
+    // save instructions into an attack structure...
+    {"instructionsbuildattack", (PyCFunction)PyASC_InstructionsBuildAttack,    METH_VARARGS | METH_KEYWORDS,    "" },
+    
+
+    // turn on blackhole
+    {"blackholeenable", (PyCFunction)PyASC_BlackholeEnable,    METH_NOARGS,    "" },
+    // disable blackhole
+    {"blackholedisable", (PyCFunction)PyASC_BlackholeDisable,    METH_NOARGS,    "" },
+    // clear blackhole list
+    {"blackholeclear", (PyCFunction)PyASC_BlackholeClear,    METH_NOARGS,    "" },
+    // add to blackhole list
+    {"blackholeadd", (PyCFunction)PyASC_BlackholeAdd,    METH_NOARGS,    "" },
+
+    // i wanna turn these into structures (getter/setters)
+    {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
     {NULL}  /* Sentinel */
 };
+
+
 /*
-for i in Disable Enable Clear PCAPload PCAPsave NetworkClear NetworkOff NetworkOn;do
+for i in FilterSave FilterPrepare FilterCreate InstructionsTCP4Close InstructionsTCP4Send InstructionsTCP4Open InstructionsCreate InstructionsBuildAttack
+do
 echo "
-static PyObject *PyASC_$i(PyAS_Config* self){
+static PyObject *PyASC_$i(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+
+    Py_INCREF(Py_None);
+    return Py_None;
 }"
 done
 */
@@ -666,25 +1027,14 @@ int python_init(AS_scripts *eptr, char *filename) {
         //Py_EndInterpreter(python_handle)
     }
 
-    printf("ret\n");
+    printf("ret %p\n", evars ? evars->python_thread : "null");
     return ret;
 }
 
 
 
-// execute a python function from a file..
-// it will load into memory the first execution, and then use the original handle
-// for subsequent.. so the first should execute an 'init' function, and following
-// a loop (sockets, read, etc)
-// global variables are itchy.. 
-// check ircs.py for example of how i had it work.. I did 
-// global = class_init() and made initfunc bind using a 'start' function (which used the globla handler)
-// and the plumbing function then can access it correctly
-// i wasnt able to get the init function to declare the globla variable using the class, and have it 
-// work with the sequential calls.. so this works and ill stick with it..
-// i suggest using the function externally to test..
-// argument can be NULL.. or it can give the argument :)
-// *** todo: maybe separate python execution environments for each script..
+// this is fro another project..
+// once stable, and moving through itll be redesigned completely...
 int PythonModuleExecute(AS_scripts *eptr, char *script_file, char *func_name, PyObject *pArgs) {
 #ifdef PYTHON_MODULES
     PyObject *pName=NULL, *pModule=NULL, *pFunc=NULL;
@@ -701,7 +1051,7 @@ int PythonModuleExecute(AS_scripts *eptr, char *script_file, char *func_name, Py
     
     printf("initialize %p %p\n", eptr, evars);
 
-    //PyEval_AcquireThread(evars->python_thread);
+    
     
     if (!evars->pModule) {
         // initialize python paths etc that we require for operating
@@ -733,7 +1083,9 @@ int PythonModuleExecute(AS_scripts *eptr, char *script_file, char *func_name, Py
         //    PyObject_SetAttr
 
         pCtx = PyLong_FromVoidPtr((void *)eptr->ctx);
+
         i = PyObject_SetAttrString(pModule, "ctx", pCtx);
+
         printf("i: %d\n", i);
     
     }
@@ -741,6 +1093,8 @@ int PythonModuleExecute(AS_scripts *eptr, char *script_file, char *func_name, Py
     pModule = evars->pModule;
     if (pModule == NULL) goto end;
     
+    //PyEval_AcquireThread(evars->python_thread);
+
     // we want to execute a particular function under this module we imported
     pFunc = PyObject_GetAttrString(pModule, func_name);
     printf("pfunc %p\n", pFunc);
@@ -762,14 +1116,15 @@ int PythonModuleExecute(AS_scripts *eptr, char *script_file, char *func_name, Py
         // usually you have to use Py_DECREF() here.. 
         // so if the application requires a more intersting object type from python, then adjust that here   
     }
-        
+    
+    //PyEval_ReleaseThread(evars->python_thread);
 end:;
     if (pFunc != NULL)
         Py_XDECREF(pFunc);
     if (pValue != NULL)
         Py_XDECREF(pValue);
 
-    //PyEval_ReleaseThread(evars->python_thread);
+    
 
     return ret;
 #else
@@ -863,6 +1218,15 @@ enum {
 
 int Scripting_Perform(AS_context *ctx) {
     int ret = -1;
+
+    AS_scripts *sptr = ctx->scripts;
+
+    while (sptr != NULL) {
+
+        // *** call script using sendmessage (rewrote/new/modified)
+        
+        sptr = sptr->next;
+    }
 
     end:;
     return ret;

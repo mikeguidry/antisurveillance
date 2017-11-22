@@ -30,6 +30,7 @@ typedef struct _attack_outgoing_queue {
     int submitted;
 #endif
 
+    int ignore;
 } AttackOutgoingQueue;
 
 typedef struct _incoming_packet_queue {
@@ -45,3 +46,4 @@ int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr);
 void *AS_queue_threaded(void *arg);
 int AttackQueueAdd(AS_context *,AttackOutgoingQueue *optr, int only_try);
 int FlushAttackOutgoingQueueToNetwork(AS_context *);
+void ClearPackets(AS_context *ctx);

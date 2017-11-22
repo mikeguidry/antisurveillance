@@ -441,6 +441,19 @@ void AttackFreeStructures(AS_attacks *aptr) {
 }
 
 
+void AttacksClear(AS_context *ctx) {
+    AS_attacks *aptr = ctx->attack_list;
+
+    while (aptr != NULL) {
+        pthread_mutex_lock(&aptr->pause_mutex);
+        aptr->completed = 1;
+        aptr->paused = 1;
+        pthread_mutex_unlock(&aptr->pause_mutex);
+
+        aptr = aptr->next;
+    }
+}
+
 // Queues a TCP/IP session into a general structure.. the function being passed will be called other code to complete the preparations
 // for example: HTTP_Create()
 int AS_session_queue(AS_context *ctx, int id, uint32_t src, uint32_t dst, int src_port, int dst_port, int count, int interval, int depth, void *function) {
@@ -538,11 +551,32 @@ int BH_add_CIDR(AS_context *ctx, int a, int b, int c, int d, int mask) {
 }
 
 
+void BH_Clear(AS_context *ctx) {
+    BH_Queue *qptr = ctx->blackhole_queue, *qnext = NULL;
+
+    while (qptr != NULL) {
+
+        qnext = qptr->next;
+
+        free(qptr);
+
+        qptr = qnext;
+    }
+
+    return;
+}
+
+
 // This is the main function which  is to built the packets for BH tactics
 // It is meant to be called every iteration similar to AS_perform() but it'll get linked
 // in as an attack structure, and using its own custom function like HTTP_Create()
 int BH_Perform(AS_context *ctx) {
     int ret = -1;
+
+    if (ctx->blackhole_paused) {
+        ret = 1;
+        goto end;
+    }
 
     end:;
     return ret;

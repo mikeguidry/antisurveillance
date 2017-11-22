@@ -153,6 +153,14 @@ void AS_remove_completed(AS_context *ctx) {
     return;
 }
 
+
+void AS_Clear_All(AS_context *ctx) {
+    // clear all attacks (mark all as completed)
+    AttacksClear(ctx);
+    // clear all outgoing packets in queue (set to ignore)
+    ClearPackets(ctx);
+}
+
 // create a new context, and initialize some things
 AS_context *AS_ctx_new() {
     AS_context *ctx = NULL;

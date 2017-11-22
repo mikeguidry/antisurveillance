@@ -45,35 +45,44 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
     AttackOutgoingQueue *optr = ctx->network_queue, *onext = NULL;
     struct sockaddr_in rawsin;
 
+    // if disabled (used to store after as a pcap) fromm python scripts
+    // beware.. if things are marked to be cleared it wont until this flag gets removed and the code below gets executed
+    // maybe change later.. ***
+    if (ctx->network_disabled) return 0;
+
     // we need some raw sockets.
     if (ctx->raw_socket <= 0) {
         if (prepare_socket(ctx) <= 0) return -1;
     }
     
     while (optr != NULL) {
+
 #ifdef TESTING_DONT_FREE_OUTGOING
         if (optr->submitted) {
             optr = optr->next;
             continue;
         }
 #endif
-        // parameters required to write the spoofed packet to the socket.. it ensures the OS fills in the ethernet layer (src/dst mac
-        // addresses for the local IP, and local IP's gateway
-        rawsin.sin_family       = AF_INET;
-        rawsin.sin_port         = optr->dest_port;
-        rawsin.sin_addr.s_addr  = optr->dest_ip;
-    
-        // write the packet to the raw network socket.. keeping track of how many bytes
-        int bytes_sent = sendto(ctx->raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
 
-        // I need to perform some better error checking than just the size..
-        if (bytes_sent != optr->size) break;
+        if (!optr->ignore) {
+            // parameters required to write the spoofed packet to the socket.. it ensures the OS fills in the ethernet layer (src/dst mac
+            // addresses for the local IP, and local IP's gateway
+            rawsin.sin_family       = AF_INET;
+            rawsin.sin_port         = optr->dest_port;
+            rawsin.sin_addr.s_addr  = optr->dest_ip;
+        
+            // write the packet to the raw network socket.. keeping track of how many bytes
+            int bytes_sent = sendto(ctx->raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
 
-        // keep track of how many packets.. the calling function will want to keep track
-        count++;
+            // I need to perform some better error checking than just the size..
+            if (bytes_sent != optr->size) break;
+
+            // keep track of how many packets.. the calling function will want to keep track
+            count++;
 #ifdef TESTING_DONT_FREE_OUTGOING
-        optr->submitted = 1; optr = optr->next; continue;
+            optr->submitted = 1; optr = optr->next; continue;
 #endif
+        }
         // what comes after? we are about to free the pointer so..
         onext = optr->next;
 
@@ -96,6 +105,22 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
 
     // return how many successful packets were transmitted
     return count;
+}
+
+void ClearPackets(AS_context *ctx) {
+    AttackOutgoingQueue *optr = ctx->network_queue, *onext = NULL;
+
+    pthread_mutex_lock(&ctx->network_queue_mutex);
+
+    // mark all as ignore (itll just clear on next loop)
+    while (optr != NULL) {
+
+        optr->ignore = 1;
+
+        optr = optr->next;
+    }
+    
+    pthread_mutex_unlock(&ctx->network_queue_mutex);
 }
 
 

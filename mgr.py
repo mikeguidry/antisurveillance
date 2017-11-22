@@ -16,5 +16,13 @@ def init():
 	print("hi2222\n")
 	#print(a.networkoff())
         print(a.networkoff())	
+	a.pcapload("several.pcap")
+	count = 0
+	while (count < 30):
+		print(" Count is %d") % count
+		a.attackperform()
+		count = count + 1
+	print("network queue")
+	print(a.networkcount())
 	print("Done\n")
 
