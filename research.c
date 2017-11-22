@@ -169,10 +169,19 @@ strategy: first go by how many hops are equal...
 
 
         i built a simple way to initialize the dataset without using extreme space, or other companies code
-        ill include it for helpinng detect curreent mass surveillance platforms in a simple small compact manner
+        ill include it for helping manipulate curreent mass surveillance platforms in a simple small compact manner
         even if its 10-20% wrong who cares.
 
         geoip = 6mb.. vs .. 1k? if that
+
+
+        linking is simple.. 
+
+        all hops need to be cross referenced
+
+        for future: a network of p2p traceroutes could perform some pretty advanced research... i cant do everything from a single side
+        but enough to handle this problem.. it would require constant updates though thus have to stay active
+
 */
 typedef struct _traceroute_spider {
     //routine linked list management..
@@ -184,8 +193,14 @@ typedef struct _traceroute_spider {
     // the queue which linked into this tree
     TracerouteQueue *queue;
 
-    // quick reference of IP
-    uint32_t IP;
+    // quick reference of IP (of the router.. / hop / gateway)
+    uint32_t route_ip;
+
+    // what was being tracerouted to conclude this entry
+    uint32_t target_ip;
+
+    // TTL (hops) in which it was found
+    int ttl;
 
     // determined country code
     int country_code;

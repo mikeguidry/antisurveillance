@@ -29,3 +29,41 @@ save to file (ability to generate, ,and do other thingss in a new context, and t
 
 all scripting/python needs ability to control the system, and also be used on callbacks for certain things... 
 
+all aspects of the software should be configurable from the scripting languages
+a multi dimensional array, or objects which can be set and then updated might be the easiest (to ensure all changes hapapen accurately, immediately)
+rather than the script applying some change, and it not getting others for a few cycles
+
+turn on/off live capturing
+
+picking filters for turning pcap loading, or capturing to attaack structures
+
+linking multiple attqack kstructures together (for insntance, DNS/WWW) (the script can analyze itself and decide)
+
+pcap save/load
+
+generation of instructions (python app can build packets directly by setting source ip, dest ip, ports) and start buildinng by giving data...
+so all fabrication can happen inn python and then it will get loaded into the C portion to get repllayed, and repicated (extremely fast)
+
+content modification for attack structures should have a callback into python so that it can do its own packet adjustmentss (skippinng, or not
+the C++ ones which change ack/seq, etc).. all portions of all packets shouild be reachable fromm python
+
+pausing/unpausing attqack structures (for instance if we are odifyinng it)
+locking an attackk structures mutex, or unlocking (not necessarily pausing but stoppinng other things fromm reaching that AS)
+
+setting, getting IP lists (ranges used when deciding IP choices for a web server, or client side)
+
+activating traceroute comparison, etc and gettinng the resulting IPs strategy back.. as an array (which can then get loaded using set IP list)
+
+seting gzip attack parameters
+
+os emulation settings..
+innserting new operatinng systems, clearing/disabling compiled in ones, ,settinng percentages...
+choosinng different OS picks for different regions (countries) 
+
+http header operatinng systems (manipulation of user agents, paired with OS emulation) settinng user agents
+removing, clearing list, etc
+
+creating new context to separate sessions completey (one can load a pcap while the other is attacking)
+bridging context together like earlier can be done using DNS/WWW into a single sessions
+
+afsdwefwezfdsZfdszfsdzeewttewwt3werqtth4th
