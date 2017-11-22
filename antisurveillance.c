@@ -62,23 +62,29 @@ int AS_perform(AS_context *ctx) {
                 r = 0;
                 // if we dont have any prepared packets.. lets run the function for this attack
                 if (aptr->packets == NULL) {
+                    //printf("packes null\n");
                     // call the correct function for performing this attack to build packets.. it could be the first, or some adoption function decided to clear the packets
                     // to call the function again
                     func = (attack_func)aptr->function;
                     if (func != NULL) {
+                        //printf("func not null\n");
                         // r = 1 if we created a new thread
                         r = ((*func)(aptr) == NULL) ? 0 : 1;
                     } else {
+                        //printf("build packets\n");
                         // no custom function.. lets use build packets
                         BuildPackets(aptr);
                     }
                 }
 
                 if (!r && !aptr->paused) {
+                    //printf("not pause\n");
                     // If those function were successful then we would have some packets here to queue..
                     if ((aptr->current_packet != NULL) || (aptr->packets != NULL)) {
+                        //printf("packet queue\n");
                         PacketQueue(ctx, aptr);
                     } else {
+                        //printf("completed\n");
                         // otherwise we mark as completed to just free the structure
                         aptr->completed = 1;
                     }
@@ -309,7 +315,7 @@ int main(int argc, char *argv[]) {
     }
 
     
-
+/*
     if (argc > 2) {
         if (Test_Generate(ctx, argc, argv) != 1)
             exit(-1);
@@ -319,7 +325,7 @@ int main(int argc, char *argv[]) {
         if (Test_PCAP(ctx, filename) != 1)
             exit(-1);        
     }
-
+*/
 
     loop_count = (L_count((LINK *)ctx->attack_list) > 1000) ? 300 : 30;
     printf("Loop count: %d\n", loop_count);

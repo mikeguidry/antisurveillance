@@ -25,11 +25,13 @@ my job wil be done
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
-
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "scripting.h"
@@ -600,6 +602,122 @@ static PyObject *PyASC_InstructionsTCP4Open(PyAS_Config* self, PyObject *args, P
     return PyInt_FromLong(ret);
 }
 
+
+#define FROM_CLIENT 1
+#define FROM_SERVER 0
+
+
+// this is sortof redundant... it only takes 4 other commands (2 of the same)
+static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {
+    "client_ip", "client_port", "destination_ip", "destination_port", 
+    "client_body", "client_body_size", "server_body", "server_body_size",
+    "count", "interval",
+    "client_ttl", "server_ttl", 
+    "client_window_size", "server_window_size","client_seq", "server_seq", "client_identifier",
+    "server_identifier", "client_os","server_os", 0};
+
+    char *client_ip = NULL, *destination_ip = NULL;
+    char *server_body = NULL, *client_body = NULL;
+    int client_body_size = 0, server_body_size = 0;
+    int client_port = 0, destination_port = 0, client_ttl = 0, server_ttl = 0, client_window_size = 0;
+    int server_window_size = 0;
+    unsigned long client_seq = 0, server_seq = 0, client_identifier = 0, server_identifier = 0;
+    int client_os = 0, server_os = 0;
+    int count = 99999;
+    int interval = 1;
+    AS_attacks *aptr = NULL;
+
+    printf("C build http from python\n");
+
+    int ret = 0;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sisis#s#|iiiiiikkkkii", kwd_list,  &client_ip, &client_port,
+    &destination_ip, &destination_port, &client_body, &client_body_size, &server_body, &server_body_size,
+    &count, &interval,
+     &client_ttl, &server_ttl, &client_window_size, &server_window_size,
+    &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os, &server_os)) {
+
+        PyErr_Print();
+        return NULL;
+    }
+
+    printf("building\n");
+
+    memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
+
+    // the new connection needs these variables prepared
+    self->connection_parameters.server_ip = inet_addr(destination_ip);
+    self->connection_parameters.client_ip = inet_addr(client_ip);
+    self->connection_parameters.server_port = destination_port;
+    self->connection_parameters.client_port = client_port;
+    self->connection_parameters.server_identifier = server_identifier ? server_identifier : rand()%0xFFFFFFFF;
+    self->connection_parameters.client_identifier = client_identifier ? client_identifier : rand()%0xFFFFFFFF;
+    self->connection_parameters.server_seq = server_seq ? server_seq : rand()%0xFFFFFFFF;
+    self->connection_parameters.client_seq = client_seq ? client_seq : rand()%0xFFFFFFFF;
+
+    self->connection_parameters.client_ttl = client_ttl ? client_ttl : 64;// *** set efault ttl somewhere
+    self->connection_parameters.server_ttl = server_ttl ? server_ttl : 53;
+    self->connection_parameters.max_packet_size_client = client_window_size ? client_window_size : (1500 - (20 * 2 + 12));
+    self->connection_parameters.max_packet_size_server = server_window_size ? server_window_size : (1500 - (20 * 2 + 12));;
+    gettimeofday(&self->connection_parameters.ts, NULL);
+
+    // free all instructions used by this python module
+    PacketBuildInstructionsFree(&self->instructions);
+
+    
+    // open the connection...
+    if (GenerateTCP4ConnectionInstructions(&self->connection_parameters, &self->instructions) != 1) { ret = -2; goto err; }
+
+    // now we must send data from client to server (http request)
+    if (GenerateTCP4SendDataInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT, client_body, client_body_size) != 1) { ret = -3; goto err; }
+
+    // now we must send data from the server to the client (web page body)
+    if (GenerateTCP4SendDataInstructions(&self->connection_parameters, &self->instructions, FROM_SERVER, server_body, server_body_size) != 1) { ret = -4; goto err; }
+
+    // now lets close the connection from client side first
+    if (GenerateTCP4CloseConnectionInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT) != 1) { ret = -5; goto err; }
+
+
+    // now lets create the attak structure to begin...
+    if ((aptr = (AS_attacks *)calloc(1, sizeof(AS_attacks))) == NULL) goto err;
+
+    aptr->ctx = self->ctx;
+    aptr->id = rand()%0xFFFFFFFF;
+    pthread_mutex_init(&aptr->pause_mutex, NULL);  
+    aptr->type = ATTACK_SESSION;
+
+    aptr->count = count;
+    aptr->repeat_interval = interval;
+
+    // that concludes all packets
+    aptr->packet_build_instructions = self->instructions;
+    // lets unlink it from our structure..
+    self->instructions = NULL;
+
+    // now lets build the low level packets for writing to the network interface
+    BuildPackets(aptr);
+
+
+    if (aptr != NULL) {
+        // link it in.
+        aptr->next = self->ctx->attack_list;
+        self->ctx->attack_list = aptr;
+
+        // lets return the ID
+        ret = aptr->id;
+
+        printf("ret %d\n", ret);
+    }
+err:;
+
+    if (ret <= 0) {
+        PacketBuildInstructionsFree(&self->instructions);
+    }
+
+    return PyInt_FromLong(ret);
+}
+
 // start a new instruction set (removing anything previously not saved, etc)
 static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {
@@ -621,6 +739,7 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
     memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
 
     // the new connection needs these variables prepared
+    gettimeofday(&self->connection_parameters.ts, NULL);
     self->connection_parameters.server_ip = inet_addr(destination_ip);
     self->connection_parameters.client_ip = inet_addr(client_ip);
     self->connection_parameters.server_port = destination_port;
@@ -754,6 +873,7 @@ static PyMethodDef PyASC_methods[] = {
     // save instructions into an attack structure...
     {"instructionsbuildattack", (PyCFunction)PyASC_InstructionsBuildAttack,    METH_VARARGS | METH_KEYWORDS,    "" },
     
+    {"buildhttp4", (PyCFunction)PyASC_BuildHTTP4,    METH_VARARGS | METH_KEYWORDS,    "" },
 
     // turn on blackhole
     {"blackholeenable", (PyCFunction)PyASC_BlackholeEnable,    METH_NOARGS,    "" },
@@ -784,6 +904,21 @@ done
 
 /*
 
+build http (give ips, and body.. and use http4_create)
+
+aggressive (need to recode, but chnage aggressive-ness.. how much CPU etc)
+with python somme small code can check CPU and auto modify this to get it at a particular % (verifying with
+systems tasks every X seconds) - this will allow a router which is being used heavily
+at one time of the day to auto optimize and work perfectly without issues or dropped packets
+
+AS attacks: (create, delete, pause, unpause, lock mutex, unlock mutex, clear list, save cofiguration to disk,
+get configuration inline)
+id
+type (ATTACK_MULTI, ATTACK_SESSION)
+src, dst
+source port, dest port
+
+
 start_ts (get)
 raw_socket (possibly use? proxy write? maybe read?)
 read_socket.. depends on circumstances w kernel.. maybe can use one socket.. but maybe not.. lots of traffic on write
@@ -798,21 +933,11 @@ network queue last (can use it)
 pthread: network thread (verify its existing, kill, restart)
 network threaded (does it think its thread is open?)
 
-aggressive (need to recode, but chnage aggressive-ness.. how much CPU etc)
-with python somme small code can check CPU and auto modify this to get it at a particular % (verifying with
-systems tasks every X seconds) - this will allow a router which is being used heavily
-at one time of the day to auto optimize and work perfectly without issues or dropped packets
 
 scripts (list, check callbaks, remove calllbacks (raw), add callbacks, spy callbacks,
 spy callbacks means we get information about all callbacks which will go to a script)...
 can be used to modfy things in other scripts, or redirect.. proxy or filter another script
 
-AS attacks: (create, delete, pause, unpause, lock mutex, unlock mutex, clear list, save cofiguration to disk,
-get configuration inline)
-id
-type (ATTACK_MULTI, ATTACK_SESSION)
-src, dst
-source port, dest port
 
 send_state, recv_state (not used yet) .. maybe remove? can determine how many packets are left in queue (conncept of when
 the attack will end, or reach its next interval for replaying)
