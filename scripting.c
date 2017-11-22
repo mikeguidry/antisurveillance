@@ -584,7 +584,7 @@ static PyObject *PyASC_InstructionsTCP4Send(PyAS_Config* self, PyObject *args, P
     int size = 0;
     int ret = 0;
 
-    static char *kwd_list[] = { "from_client", "data", "size", 0};
+    static char *kwd_list[] = { "from_client", "data", 0};
     
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "is#", kwd_list,  &from_client, &data, &size))
         return NULL;
@@ -776,11 +776,11 @@ static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args
 
     int ret = 0;
 
-    int count = 0;
-    int interval = 0;
+    int count = 999;
+    int interval = 1;
     AS_attacks *aptr = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "ii", kwd_list, &count, &interval))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ii", kwd_list, &count, &interval))
         return NULL;
 
     if (self->ctx) {

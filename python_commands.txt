@@ -137,6 +137,8 @@ def init():
 
 filtercreate()
 
+zero's the filter (starts it fresh waiting for *prepare())
+
 create a filter used for things like pcapload
 
 -------------------------
@@ -145,9 +147,34 @@ filterprepare()
 
 prepare the filter using various parameters that you may wish to search for in the pcap
 
+arguments:
+    static char *kwd_list[] = { "source_ip", "destination_ip", "source_port", "destination_port",
+    "packet_flags", "familiar", 0};
+
+    whichever arguments you provide will be used.. you can call it several times with different arguments
+    only filtercreate() will clean it up
+
+    familiar should be used for TCP (it will match both sides of the connection.. for instance going to
+    server, and coming fromm server)
+
+    TCP flags... ill have to put them here later.. sync in 18 hours
+
+
+
 -------------------------
 
 instructionscreate()
+argments are almost the same as buildhttp4.. but it allow using the instructions commands below to
+build whatever tcp/ip protocol you'd like (not http)
+
+"client_ip", "client_port", "destination_ip", "destination_port", "client_ttl", "server_ttl", 
+    "client_window_size", "server_window_size",
+    
+    these arent necessary but possible...
+
+    "client_seq", "server_seq", "client_identifier",
+    "server_identifier", "client_os","server_os"
+
 
 start a new instructions list (immediately discarding anything that wasnt saved as a built attack)
 
@@ -161,6 +188,8 @@ add to current instructions list (after create) the source ip opening the connec
 -------------------------
 
 instructionstcp4send()
+arguments: "from_client" 1 or 0 (is the connecting party sending the data, or the server)
+"data" - data... (itll get the size automatically)
 
 send data from one side of the tcp connection to the other, the side is chosen by
 "from_client" parameter
@@ -169,12 +198,19 @@ send data from one side of the tcp connection to the other, the side is chosen b
 
 instructionstcp4close()
 
+arguments: "from_client" which side is closing the connection
 close the tcp connectioon from one side or the other.. the side is chosen by "from_client"
 
 
 -------------------------
 
 instructionsbuildattack()
+arguments: 
+count - (how many times to repeat this attack)
+default:999
+
+interval - how many seconds in between the repeats
+default:1
 
 turns all current instructions which were made using other functions into an attack, and enables it
 
