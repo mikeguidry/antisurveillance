@@ -9,10 +9,12 @@ from time import sleep
 def perform(a,b):
 	count = 0
 	while (count < b or b == 0):
-		print("AS_perform() - Count is %d") % count
+		if ((count % 10) == 0):
+			print("AS_perform() - Count is %d") % count
 		a.attackperform()
 		count = count + 1
-		#sleep(0.1)
+		if (b == 0):
+			sleep(0.05)
 
 #build an HTTP session and add it as an attack.. itll get enabled immediately
 def build_http4(a):
@@ -55,13 +57,14 @@ def other_build_http(a):
 	#now the connection gets closed from the client side (noo more requests)
 	a.instructionstcp4close(from_client=1)
 
-	#now build the attack structure around it
+	#now build the attack structure around those instructions we just designed
 	ret = a.instructionsbuildattack(count=999, interval=1)
 	
 	print("new attack ID %d") % ret
 
 
-
+#main function that gets called from anti
+#it should perform the duties.. and it could loop to continue executing
 def init():
 	# this should be removed and done completely in C.. i need to see how the object is allocated and hook it or somethiing..
 	# would rather work on other stuff first ***
@@ -71,12 +74,13 @@ def init():
 	pprint(a)
 
 	#turn networking off so that we will dump all packets, and they wont get wrote to the live internet
-	#a.networkoff()
+	a.networkoff()
 
 	#build an HTTP session
 	build_http4(a)
 
 	#build http session using the raw way (meant for other protocols as well)
+	#this can work for POP/SMTP/etc
 	other_build_http(a)
 
 	#iterate 30 times AS_perform() (pushes packets to outgoing queue, etc)
