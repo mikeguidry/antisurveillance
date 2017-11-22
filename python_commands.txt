@@ -1,0 +1,29 @@
+mgr.py hasa testing code i was using...
+
+buildhttp4 arguments:
+example:
+        a.buildhttp4(src_ip, src_port, dst_ip, dst_port, client_body, server_body)
+It will also accept keywords.  IE: a.buildhttp4(client_ip:src_ip,.....)
+
+client_ip: (source_ip)
+client_port: (1024+rand()%(65535-1024))
+destination_ip: (web server)
+destination_port: 80
+client_body: string of body
+server_body: response from www server
+
+These are not required:
+
+count: how many times to repeat this session? 99999 is default
+interval: how many seconds in between repeating it? 1 default
+client_ttl: client side ttl (OS emulation... ) default 64
+server_ttl: server side ttl (OS emulation) my VPS was 53.. linux digitalocean
+client_window_size: (1500 - sizeof(udphdr)(20) + sizeof(iphdr)(20) + sizeof(tcp options)(12))
+server_window_size:  (1500 - sizeof(udphdr)(20) + sizeof(iphdr)(20) + sizeof(tcp options)(12))
+client_identifier: initial ip header identifier (increases by 1 usually every packet)
+server_identifier: initial ip header identifier (increases by 1 usually every packet)
+client_os: not implemented os emulation fully yet
+server_os: not implemented os emulatioon fully yet
+
+-------------------------
+

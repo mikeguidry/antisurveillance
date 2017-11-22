@@ -9,6 +9,7 @@ def perform(a,b):
 		a.attackperform()
 		count = count + 1
 
+#build an HTTP session and add it as an attack.. itll get enabled immediately
 def build_http4(a):
 	server_body = open("server_body", 'rU').read()
 	client_body = open("client_body", 'rU').read()
@@ -26,7 +27,13 @@ def init():
 
 	pprint(a)
 
+	#build an HTTP session
 	build_http4(a)
 
+	#iterate 30 times AS_perform() (pushes packets to outgoing queue, etc)
+	#You can loop this and it would go on forever...right now the app can be used perfectly.
 	perform(a,30)
+
+	#pcap saving
+	a.pcapsave("py_output.pcap")
 

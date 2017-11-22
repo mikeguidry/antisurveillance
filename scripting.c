@@ -607,6 +607,7 @@ static PyObject *PyASC_InstructionsTCP4Open(PyAS_Config* self, PyObject *args, P
 #define FROM_SERVER 0
 
 
+
 // this is sortof redundant... it only takes 4 other commands (2 of the same)
 static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {
@@ -804,9 +805,6 @@ static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args
 // ------------------
 
 static PyMethodDef PyASC_methods[] = {
-    // fromm original code
-    {"name", (PyCFunction)PyASC_name,   METH_NOARGS,    "Return the name, combining the first and last name" },
-
     // set context (AS_context) to a value.. ill figure out how to do in C later.. from outside python framework
     {"setctx", (PyCFunction)PyASC_CTXSet,    METH_O,    "set context pointer.. automate later" },    
     
