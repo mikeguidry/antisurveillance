@@ -413,6 +413,7 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
     int interval = self->replay_interval;
     AS_attacks *aptr = NULL;
 
+    // *** finish implementing gzip here.. it has to create a new thread if the percentage matches
     // is gzip attack enabled? default yes
     int gzip_enable = 1;
     // what percentage chance does this http session get affected? (Default 30)
@@ -557,13 +558,14 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
 // turn an instruction set in meomry that was built into an attack structure for live attacks
 // it doesnt need anymore information about the instructions since they should be in memory.
 static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args, PyObject *kwds) {
-    static char *kwd_list[] = {"count", "interval", 0};
+    static char *kwd_list[] = {"count", "interval", "skip_adjustments", 0};
     int ret = 0;
     int count = self->replay_count;
     int interval = self->replay_interval;
+    int skip_adjustments=0;
     AS_attacks *aptr = NULL;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ii", kwd_list, &count, &interval))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|iii", kwd_list, &count, &interval, &skip_adjustments))
         return NULL;
 
     if (self->ctx) {
@@ -575,6 +577,8 @@ static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args
 
             // if it worked.. lets return its ID
             if (aptr != NULL) {
+
+                aptr->skip_adjustments = skip_adjustments;
 
                 // link the attack to make it active
                 aptr->next = self->ctx->attack_list;
@@ -616,6 +620,7 @@ static PyObject *PyASC_AttackEnable(PyAS_Config* self, PyObject *args, PyObject 
 
 
 // disable attacks by id, ips, ports, or age
+// complete this ***
 static PyObject *PyASC_AttackDisable(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"id","source_ip","destination_ip","any_ip","source_port","destination_port",
     "any_port", "age", 0};
@@ -662,7 +667,7 @@ static PyMethodDef PyASC_methods[] = {
     {"setctx", (PyCFunction)PyASC_CTXSet,    METH_O,    "set context pointer.. automate later" },    
     
     // software does exit(-1) immediately
-    {"exit", (PyCFunction)PyASC_DIE,    METH_NOARGS,    "Exits the software" },
+    {"exit", (PyCFunction)PyASC_DIE,    METH_NOARGS,    "Exits the software immediately.. not gracefully" },
     // *** TODO: graceful shutdown saving all connfiguation, etc
 
     // disable everything (in top of AS_perform()..) immediately should pause
@@ -718,7 +723,7 @@ static PyMethodDef PyASC_methods[] = {
     // tcp close connection into instructions
     {"instructionstcp4close", (PyCFunction)PyASC_InstructionsTCP4Close,    METH_VARARGS | METH_KEYWORDS,    "" },
     
-    // UDP can be thrown in to show DNS requests in casae they begin filtering by checking for the TTL etc
+    // UDP can be thrown in to show DNS requests in case they begin filtering by checking for the TTL etc
     //{"instructionsudp4send", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "" },
     
     // save instructions into an attack structure...
@@ -739,6 +744,7 @@ static PyMethodDef PyASC_methods[] = {
     {"attackdisable", (PyCFunction)PyASC_AttackDisable,    METH_NOARGS,    "" },
     // attack enablle by id, or IP/port
     {"attackenable", (PyCFunction)PyASC_AttackEnable,    METH_NOARGS,    "" },
+
     // obtain a list of all attacks (figure out whether to return it as an array, dict, or whatever)
     {"attacklist", (PyCFunction)PyASC_AttackList,    METH_NOARGS,    "" },
 

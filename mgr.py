@@ -58,7 +58,8 @@ def other_build_http(a):
 	a.instructionstcp4close(from_client=1)
 
 	#now build the attack structure around those instructions we just designed
-	ret = a.instructionsbuildattack(count=999, interval=1)
+	#skip adjustments is for replaying attacks not wanting to generate new IPs
+	ret = a.instructionsbuildattack(count=999, interval=1, skip_adjustments=0)
 	
 	print("new attack ID %d") % ret
 
@@ -94,9 +95,16 @@ def init():
 	# how many packets did that generate?
 	print("network queue count: %d") % a.networkcount()
 
-	#pcap saving
+	#pcap saving to open it in wireshark
 	a.pcapsave("py_output.pcap")
 
+
+	#could turn network dumping on...
+	#a.networkon()
+
+	#and loop for awhile...?
+	#just be sure the counts are high enoough for each attack structure...
+	#perform(a,99999) or (a,0) forever...
 
 	# i was calling disable() because it was running the C code right after.. it ignores it now if it returns 1 here
 	#a.disable()
