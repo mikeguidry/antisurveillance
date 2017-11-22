@@ -54,6 +54,7 @@ FYI: i haven't done a single thing that wasn't calculated the past two years. yo
 #endif
 
 
+// python configuration structure which has anything the script requires over time
 typedef struct {
     PyObject_HEAD
     AS_context *ctx;
@@ -62,6 +63,12 @@ typedef struct {
     PacketBuildInstructions *instructions;
 
     FilterInformation flt;
+
+    // *** incomplete
+    // defaults are used if the script doesn't provide... so its shared across several functions
+    // maybe retrieve this from C subsystem
+    int replay_count;
+    int replay_interval;
 } PyAS_Config;
 
 
@@ -97,6 +104,10 @@ static int PyASC_init(PyAS_Config *self, PyObject *args, PyObject *kwds) {
         printf("Initialization CTX: %X\n", ctx);
         self->ctx = ctx;
     }
+
+    // some global defaults... *** todo: retrieve fromm C side, or double check its used everywhere
+    self->replay_count = 99999;
+    self->replay_interval = 1;
 
     return 0;
 }
@@ -137,30 +148,35 @@ static PyObject *PyASC_Clear(PyAS_Config* self){
 
 // *** todo: modify this to accept the filter here if its been created..
 // also accept count, and interval.. and setup a global default (maybe in self) to let python modify
-static PyObject *PyASC_PCAPload(PyAS_Config* self, PyObject *Pfilename){
-    int i = 0;
-    const char* s = PyString_AsString(Pfilename);
-
-    if (s && self->ctx) {
-        // *** todo: allow modified parameters, and setting globals to be used for everything
-        i = PCAPtoAttack(self->ctx, (char *)s, 80, 999, 1);
-        printf("pcap load: %d\n", i);
+static PyObject *PyASC_PCAPload(PyAS_Config* self,  PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = { "filename", "use_python_filter", "destination_port", 0 };
+    char *filename = NULL;
+    int use_python_filter = 0;
+    int destination_port = 80;
+    int ret = 0;
+    
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|ii", kwd_list, &filename, &use_python_filter, &destination_port)) {
+        PyErr_Print();
+        return NULL;
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    if (filename && self->ctx) {
+        // *** todo: allow modified parameters, and setting globals to be used for everything
+        ret = PCAPtoAttack(self->ctx, (char *)filename, destination_port, self->replay_count, self->replay_interval, &self->flt);
+    }
+
+    return PyInt_FromLong(ret);
 }
 
 
 // save all packet captures to a filename fromm network outgoing queue
 static PyObject *PyASC_PCAPsave(PyAS_Config* self, PyObject *Pfilename){
-    int i = 0;
+    int ret = 0;
     const char* s = PyString_AsString(Pfilename);
 
     if (s && self->ctx) {
         //int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, PacketInfo *ipackets, int free_when_done);
-        i = PcapSave(self->ctx, (char *)s, self->ctx->network_queue, NULL, 0);
-        printf("pcap save: %d\n", i);
+        ret = PcapSave(self->ctx, (char *)s, self->ctx->network_queue, NULL, 0);
     }
 
     Py_INCREF(Py_None);
@@ -194,9 +210,6 @@ static PyObject *PyASC_NetworkClear(PyAS_Config* self){
 
 // disable flushing the outgoing network queue to the live wire
 static PyObject *PyASC_NetworkOff(PyAS_Config* self){
-
-    printf("ctx: %p\n", self->ctx);
-
     if (self->ctx) self->ctx->network_disabled = 1;
 
     Py_INCREF(Py_None);
@@ -205,7 +218,6 @@ static PyObject *PyASC_NetworkOff(PyAS_Config* self){
 
 // enable flushing the network queue to the live wire
 static PyObject *PyASC_NetworkOn(PyAS_Config* self){
-
     if (self->ctx) self->ctx->network_disabled = 0;
 
     Py_INCREF(Py_None);
@@ -217,8 +229,6 @@ static PyObject *PyASC_NetworkOn(PyAS_Config* self){
 // *** figure out how to set this without using this solution...
 static PyObject *PyASC_CTXSet(PyAS_Config* self, PyObject *Pctx){
     void *ctx = PyLong_AsVoidPtr(Pctx);
-
-    printf("CTX %p\n", ctx);
     self->ctx = ctx;
 
     Py_INCREF(Py_None);
@@ -269,14 +279,16 @@ static PyObject *PyASC_BlackholeClear(PyAS_Config* self){
 
     if (self->ctx) BH_Clear(self->ctx);
 
-
     Py_INCREF(Py_None);
     return Py_None;
 }
 
 
 // add a target to the blackhole attack
-static PyObject *PyASC_BlackholeAdd(PyAS_Config* self){
+static PyObject *PyASC_BlackholeAdd(PyAS_Config* self, PyObject *Ptarget){
+    const char* target = PyString_AsString(Ptarget);
+
+    // *** add blachole IP... using defines now.. maybe ned to add a new function
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -284,17 +296,17 @@ static PyObject *PyASC_BlackholeAdd(PyAS_Config* self){
 
 // remove a single target from the blackhole attack
 static PyObject *PyASC_BlackholeDel(PyAS_Config* self, PyObject *Ptarget){
+    const char* target = PyString_AsString(Ptarget);
 
+    Py_INCREF(Py_None);
+    return Py_None;    
 }
-
-
 
 
 // prepare a filter with particular flags, and values those filter flags requires
 static PyObject *PyASC_FilterPrepare(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = { "source_ip", "destination_ip", "source_port", "destination_port",
     "packet_flags", "familiar", 0};
-
     char *source_ip = NULL;
     char *destination_ip = NULL;
     int source_port = 0;
@@ -303,8 +315,10 @@ static PyObject *PyASC_FilterPrepare(PyAS_Config* self, PyObject *args, PyObject
     int familiar = 0;
     
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ssiii", kwd_list,  &source_ip, &destination_ip,
-    &source_port, &destination_port, &packet_flags))
+    &source_port, &destination_port, &packet_flags)) {
+        PyErr_Print();
         return NULL;
+    }
 
     if (source_ip)
         FilterPrepare(&self->flt, FILTER_CLIENT_IP, inet_addr(source_ip));
@@ -360,8 +374,10 @@ static PyObject *PyASC_InstructionsTCP4Send(PyAS_Config* self, PyObject *args, P
 
     static char *kwd_list[] = { "from_client", "data", 0};
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "is#", kwd_list,  &from_client, &data, &size))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "is#", kwd_list,  &from_client, &data, &size)) {
+        PyErr_Print();
         return NULL;
+    }
 
     ret = GenerateTCP4SendDataInstructions(&self->connection_parameters, &self->instructions, from_client, data, size);
 
@@ -400,8 +416,8 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
     int server_window_size = 0;
     unsigned long client_seq = 0, server_seq = 0, client_identifier = 0, server_identifier = 0;
     int client_os = 0, server_os = 0;
-    int count = 99999;
-    int interval = 1;
+    int count = self->replay_count;
+    int interval = self->replay_interval;
     AS_attacks *aptr = NULL;
 
     // is gzip attack enabled? default yes
@@ -421,7 +437,6 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
      &client_ttl, &server_ttl, &client_window_size, &server_window_size,
     &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os, &server_os,
     &gzip_enable, &gzip_percentage, &gzip_size, &gzip_injections)) {
-
         PyErr_Print();
         return NULL;
     }
@@ -515,8 +530,10 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "sisiiiii|kkkkii", kwd_list,  &client_ip, &client_port,
     &destination_ip, &destination_port, &client_ttl, &server_ttl, &client_window_size, &server_window_size,
-    &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os, &server_os))
+    &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os, &server_os)) {
+        PyErr_Print();
         return NULL;
+    }
 
     memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
 
@@ -548,15 +565,9 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
 // ------------------
 // turn an instruction set in meomry that was built into an attack structure for live attacks
 // it doesnt need anymore information about the instructions since they should be in memory.
-
-//AS_attacks *InstructionsToAttack(AS_context *ctx,
-// PacketBuildInstructions *instructions, int count,
-// int interval);
 static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"count", "interval", 0};
-
     int ret = 0;
-
     int count = 999;
     int interval = 1;
     AS_attacks *aptr = NULL;
@@ -596,7 +607,10 @@ static PyObject *PyASC_AttackEnable(PyAS_Config* self, PyObject *args, PyObject 
 
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|isssiiii", kwd_list, &id, &source_ip, &destination_ip,
-    &any_ip, &source_port, &destination_port, &any_port, &age)) return NULL;
+    &any_ip, &source_port, &destination_port, &any_port, &age)) {
+        PyErr_Print();
+        return NULL;
+    }
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -614,7 +628,10 @@ static PyObject *PyASC_AttackDisable(PyAS_Config* self, PyObject *args, PyObject
 
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|isssiiii", kwd_list, &id, &source_ip, &destination_ip,
-    &any_ip, &source_port, &destination_port, &any_port, &age)) return NULL;
+    &any_ip, &source_port, &destination_port, &any_port, &age)) {
+        PyErr_Print();
+        return NULL;
+    }
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -631,7 +648,10 @@ static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *k
 
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|sssiiii", kwd_list, &source_ip, &destination_ip,
-    &any_ip, &source_port, &destination_port, &any_port, &age)) return NULL;
+    &any_ip, &source_port, &destination_port, &any_port, &age)) {
+        PyErr_Print();
+        return NULL;
+    }
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -795,7 +815,7 @@ static PyMethodDef module_methods[] = {
 
 
 
-
+// initialize python extension
 void PyASC_Initialize(void) {
     PyObject* m;
 
@@ -977,8 +997,6 @@ int Scripting_Destroy(AS_context *ctx, AS_scripts *mptr) {
 // new scripting structure and initialize python
 AS_scripts *Scripting_New(AS_context *ctx) {
     AS_scripts *sctx = NULL;
-
-    printf("Scripting new ctx %p\n", ctx);
 
     if ((sctx = (AS_scripts *)calloc(1, sizeof(AS_scripts))) == NULL) return NULL;
 

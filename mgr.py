@@ -40,8 +40,15 @@ def init():
 	#You can loop this and it would go on forever...right now the app can be used perfectly.
 	perform(a,30)
 
-	print("networkk queue count: %d") % a.networkcount()
+	print("network queue count: %d") % a.networkcount()
 	#pcap saving
 	a.pcapsave("py_output.pcap")
 
+
+	# i was calling disable() because it was running the C code right after.. it ignores it now if it returns 1 here
 	a.disable()
+
+	#returning 1 will stop the C portion of the code...
+	#so itll only work with python
+	return 1
+	

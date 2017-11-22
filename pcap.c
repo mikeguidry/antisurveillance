@@ -229,7 +229,7 @@ PacketInfo *PcapLoad(char *filename) {
 
 // Loads a PCAP file looking for a particular destination port (for example, www/80)
 // and sets some attack parameters after it completes the process of importing it
-int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int interval) {
+int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int interval, FilterInformation *pcap_flt) {
     PacketInfo *packets = NULL;
     PacketBuildInstructions *packetinstructions = NULL;
     PacketBuildInstructions *final_instructions = NULL;
@@ -267,7 +267,7 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
 
             // find the connection for some last minute things required for building an attack
             // from the connection
-            if ((final_instructions = InstructionsFindConnection(&packetinstructions, &flt)) == NULL) goto end;
+            if ((final_instructions = InstructionsFindConnection(&packetinstructions, pcap_flt ? pcap_flt : &flt)) == NULL) goto end;
         
             if (final_instructions == NULL) break;
 

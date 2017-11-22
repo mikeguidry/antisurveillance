@@ -92,7 +92,11 @@ clear all outgoing queues
 -------------------------
 
 pcapload("filename")
-no keywords for this one.. but will soon to allow parameters (later today)
+    static char *kwd_list[] = { "filename", "use_python_filter", "destination_port", 0 };
+
+    filename is needed...
+    use_python_filter is for if you use python to prepare a filter...
+    destination_port isnt required if your ok with the default of www (80)
 
 load all http sessions from a pcap file as different attack structures
 

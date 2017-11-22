@@ -5,6 +5,9 @@ typedef struct _pkt_info PacketInfo;
 struct _attack_outgoing_queue;
 typedef struct _attack_outgoing_queue AttackOutgoingQueue;
 
+struct _filter_information;
+typedef struct _filter_information FilterInformation;
+
 
 #pragma pack(push, 1)
 typedef struct pcap_hdr_s {
@@ -29,6 +32,6 @@ typedef struct pcaprec_hdr_s {
 
 
 
-int PCAPtoAttack(AS_context *, char *filename, int dest_port, int count, int interval);
+int PCAPtoAttack(AS_context *, char *filename, int dest_port, int count, int interval, FilterInformation *pcap_flt);
 PacketInfo *PcapLoad(char *filename);
 int PcapSave(AS_context *, char *filename, AttackOutgoingQueue *packets, PacketInfo *iptr, int free_when_done);

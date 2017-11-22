@@ -218,7 +218,6 @@ typedef struct _filter_information {
 
 
 
-
 void PacketQueue(AS_context *, AS_attacks *aptr);
 void PacketsFree(PacketInfo **packets);
 void BuildPackets(AS_attacks *aptr);
