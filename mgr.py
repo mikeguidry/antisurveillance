@@ -72,7 +72,7 @@ def init():
 	a = antisurveillance.manager()
 	a.setctx(ctx)
 
-	pprint(a)
+	#pprint(a)
 
 	#you could load a previously dumped pcap.. so it would expand, and replay those sessions -- and dump the updated pcap at the end
 	#loop a few times and see how much the sessions/packets grow
@@ -115,5 +115,6 @@ def init():
 	
 
 # this is the function that gets called every iteration if running from the C side.. (Scripting_Perform())
+#this is irrelevant if your returning 1, or not doing anything in C that loops...
 def script_perform():
 	return 0

@@ -274,7 +274,9 @@ static PyObject *PyASC_BlackholeClear(PyAS_Config* self){
 static PyObject *PyASC_BlackholeAdd(PyAS_Config* self, PyObject *Ptarget){
     const char* target = PyString_AsString(Ptarget);
 
-    // *** add blachole IP... using defines now.. maybe ned to add a new function
+
+    if (self->ctx)
+        BH_add_IP(self->ctx, inet_addr(target));
 
     Py_INCREF(Py_None);
     return Py_None;
@@ -283,6 +285,9 @@ static PyObject *PyASC_BlackholeAdd(PyAS_Config* self, PyObject *Ptarget){
 // remove a single target from the blackhole attack
 static PyObject *PyASC_BlackholeDel(PyAS_Config* self, PyObject *Ptarget){
     const char* target = PyString_AsString(Ptarget);
+
+    if (self->ctx)
+        BH_del_IP(self->ctx, inet_addr(target));
 
     Py_INCREF(Py_None);
     return Py_None;    
@@ -397,6 +402,7 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
     "client_ip", "client_port", "destination_ip", "destination_port", 
     "client_body", "client_body_size", "server_body", "server_body_size",
     "count", "interval",
+    // these are not required
     "client_ttl", "server_ttl", 
     "client_window_size", "server_window_size","client_seq", "server_seq", "client_identifier",
     "server_identifier", "client_os","server_os", "gzip_enable", "gzip_percentage","gzip_size",
@@ -473,7 +479,7 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
     if ((aptr = (AS_attacks *)calloc(1, sizeof(AS_attacks))) == NULL) goto err;
 
     aptr->ctx = self->ctx;
-    aptr->id = rand()%0xFFFFFFFF;
+    aptr->id = rand()%5000;
     pthread_mutex_init(&aptr->pause_mutex, NULL);  
     aptr->type = ATTACK_SESSION;
 
@@ -598,6 +604,8 @@ static PyObject *PyASC_InstructionsBuildAttack(PyAS_Config* self, PyObject *args
 
 
 
+
+
 // enable attacks by id, ips, ports, or age
 static PyObject *PyASC_AttackEnable(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"id","source_ip","destination_ip","any_ip","source_port","destination_port",
@@ -605,7 +613,7 @@ static PyObject *PyASC_AttackEnable(PyAS_Config* self, PyObject *args, PyObject 
     int id = 0;
     char *source_ip = NULL, *destination_ip = NULL, *any_ip = NULL;
     int source_port = 0, destination_port = 0, any_port = 0, age = 0;
-
+    AS_attacks *aptr = NULL;
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|isssiiii", kwd_list, &id, &source_ip, &destination_ip,
     &any_ip, &source_port, &destination_port, &any_port, &age)) {
@@ -613,10 +621,16 @@ static PyObject *PyASC_AttackEnable(PyAS_Config* self, PyObject *args, PyObject 
         return NULL;
     }
 
+    if ((aptr = AttackFind(self->ctx, id, source_ip, destination_ip, any_ip, source_port, destination_port, any_port, age)) != NULL) {
+        aptr->paused = 0;
+    }
+
+
     Py_INCREF(Py_None);
     return Py_None;
     
 }
+
 
 
 // disable attacks by id, ips, ports, or age
@@ -627,6 +641,7 @@ static PyObject *PyASC_AttackDisable(PyAS_Config* self, PyObject *args, PyObject
     int id = 0;
     char *source_ip = NULL, *destination_ip = NULL, *any_ip = NULL;
     int source_port = 0, destination_port = 0, any_port = 0, age = 0;
+    AS_attacks *aptr = NULL;
 
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|isssiiii", kwd_list, &id, &source_ip, &destination_ip,
@@ -635,18 +650,32 @@ static PyObject *PyASC_AttackDisable(PyAS_Config* self, PyObject *args, PyObject
         return NULL;
     }
 
+    if ((aptr = AttackFind(self->ctx, id, source_ip, destination_ip, any_ip, source_port, destination_port, any_port, age)) != NULL) {
+        aptr->paused = 1;
+    }
+
     Py_INCREF(Py_None);
     return Py_None;
     
 }
 
 // attack list and have optional filters to narrow it down
+// this just returns the entire list ATM... i have to add filtering (using PyList_New() with the value, innstead of append)
+// redo soon
 static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"source_ip","destination_ip","any_ip","source_port","destination_port",
     "any_port", "age", 0};
 
     char *source_ip = NULL, *destination_ip = NULL, *any_ip = NULL;
     int source_port = 0, destination_port = 0, any_port = 0, age = 0;
+
+    int attack_count = 0;
+    PyObject *PAttackList = NULL;
+    AS_attacks *aptr = NULL;
+    int i = 0;
+    PyObject *Plist_element = NULL;
+    
+
 
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|sssiiii", kwd_list, &source_ip, &destination_ip,
@@ -655,8 +684,26 @@ static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *k
         return NULL;
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    attack_count = (int)L_count((LINK *)self->ctx->attack_list);
+    PAttackList = PyList_New(attack_count);
+    if (PAttackList == NULL) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    aptr = self->ctx->attack_list;
+    while (aptr != NULL) {
+
+        Plist_element = PyString_FromFormat("%d", aptr->id);
+
+        PyList_SetItem(PAttackList, i, Plist_element);
+
+        aptr = aptr->next;
+    }
+
+
+    Py_INCREF(PAttackList);
+    return PAttackList;
     
 }
 

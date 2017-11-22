@@ -22,6 +22,8 @@ typedef struct _bh_queue {
     int d;
     int netmask;
 
+    uint32_t ip;
+
     int strategy;
     int interval;
     int repeat;
@@ -39,3 +41,6 @@ void attacks_init();
 int AS_session_queue(AS_context *, int id, uint32_t src, uint32_t dst, int src_port, int dst_port, int count, int interval, int depth, void *function);
 int BH_Perform(AS_context *ctx);
 void AttacksClear(AS_context *ctx);
+int BH_add_IP(AS_context *ctx, uint32_t ip);
+int BH_del_IP(AS_context *ctx, uint32_t ip);
+AS_attacks *AttackFind(AS_context *ctx, int id, char *source_ip, char *destination_ip, char *any_ip, int source_port, int destination_port, int any_port, int age);

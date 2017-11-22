@@ -268,7 +268,6 @@ void BuildPackets(AS_attacks *aptr) {
         i = PacketBuilders[ptr->type].func(ptr);
         // if building this packet fails.. lets mark this attack for deletion
         if (i != 1) {
-            
             aptr->completed = 1;
 
             return;

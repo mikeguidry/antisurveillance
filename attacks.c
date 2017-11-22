@@ -554,7 +554,55 @@ int BH_add_CIDR(AS_context *ctx, int a, int b, int c, int d, int mask) {
     return ret;
 }
 
+// adding CIDR type of IP range to affect
+int BH_add_IP(AS_context *ctx, uint32_t ip) {
+    BH_Queue *qptr = NULL;
+    int ret = -1;
 
+    if ((qptr = (BH_Queue *)calloc(1,sizeof(BH_Queue))) == NULL) goto end;
+
+    
+    qptr->ip = ip;
+    qptr->netmask = 32;
+
+    // add to blackhole attacks in queue
+    qptr->next = ctx->blackhole_queue;
+    ctx->blackhole_queue = qptr;
+
+    end:;
+    return ret;
+}
+
+// remove by IP
+int BH_del_IP(AS_context *ctx, uint32_t ip) {
+    BH_Queue *qptr = NULL, *qlast = NULL, *qnext = NULL;
+    int ret = 0;
+
+    qptr = ctx->blackhole_queue;
+    while (qptr != NULL) {
+        if (qptr->ip == ip) {
+            if (ctx->blackhole_queue == qptr) {
+                ctx->blackhole_queue = qptr->next;
+            } else {
+                qlast->next = qptr->next;
+            }
+
+            qlast = qptr;
+            qnext = qptr->next;
+            free(qptr);
+            qptr = qnext;
+
+            ret = 1;
+            break;
+        }
+
+    }
+
+    return ret;
+}
+
+
+// clear blackhole queue list
 void BH_Clear(AS_context *ctx) {
     BH_Queue *qptr = ctx->blackhole_queue, *qnext = NULL;
 
@@ -576,11 +624,38 @@ void BH_Clear(AS_context *ctx) {
 // in as an attack structure, and using its own custom function like HTTP_Create()
 int BH_Perform(AS_context *ctx) {
     int ret = -1;
+    uint32_t ip = 0;
+    char Aip[16];
+
+
+    BH_Queue *qptr = ctx->blackhole_queue;
 
     if (ctx->blackhole_paused) {
         ret = 1;
         goto end;
     }
+
+
+    while (qptr != NULL) {
+
+        if (qptr->ip) {
+            ip = qptr->next;
+        } else {
+            sprintf(Aip, "%d.%d.%d.%d", qptr->a, qptr->b, qptr->c, qptr->d);
+            ip = inet_addr(Aip);
+        }
+
+
+
+        //
+
+
+
+        qptr = qptr->next;
+    }
+    
+
+
 
     end:;
     return ret;
@@ -668,4 +743,43 @@ void attacks_init(AS_context *ctx) {
     #include "blackhole_ips.h"
 
     return;
+}
+
+
+// find by criteria...
+AS_attacks *AttackFind(AS_context *ctx, int id, char *source_ip, char *destination_ip, char *any_ip, int source_port, int destination_port, int any_port, int age) {
+    AS_attacks *aptr = ctx->attack_list;
+    uint32_t src = 0, dst = 0, any = 0;
+    int ts= 0;
+    struct timeval tv;
+    struct timeval time_diff;
+
+
+    if (source_ip) src = inet_addr(source_ip);
+    if (destination_ip) dst = inet_addr(destination_ip);
+    if (any_ip) any = inet_addr(any_ip);
+
+    while (aptr != NULL) {
+
+        // does this attack match?
+        if (id && aptr->id == id) break;
+        if (src && aptr->src == src) break;
+        if (dst && aptr->dst == dst) break;
+        if (any && ((aptr->dst == any) || (aptr->dst == any))) break;
+        if (destination_port && aptr->destination_port == destination_port) break;
+        if (source_port && aptr->source_port == source_port) break;
+
+        // find connection by age
+        if (age) {
+            gettimeofday(&tv, NULL);
+            timeval_subtract(&time_diff, &aptr->ts, &tv);
+            if (time_diff.tv_sec > age) {
+                break;
+            }
+        }
+
+        aptr = aptr->next;
+    }
+
+    return aptr;
 }
