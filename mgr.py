@@ -52,3 +52,7 @@ def init():
 	#so itll only work with python
 	return 1
 	
+
+# this is the function that gets called every iteration if running from the C side.. (Scripting_Perform())
+def script_perform():
+	return 0

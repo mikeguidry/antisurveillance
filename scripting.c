@@ -3,23 +3,9 @@
 This should contain glue functions for being able to use scripting.  I'll use code I have from other projects but Python, LUA, maybe JavaScript,
 and a way to use binary packets to obtain requests/control should be easy enough to support.
 
-I will allow access to all portions of the C code.  Any further develops, controlling, etc can be handled in python.  It should be fairly
-simple to integrate P2P code.  It will allow building packets, management, and even incoming packet delivery to python.  The entire system
-could be developed in python although it would be fairly slow...  I decided to cut C code down and complete like this for the final
-public version.  It will allow using some new attacks, and should be good enough for anyone wishing to fuck up mass surveillance
-in their area... or everywhere?
-
-lessons will be learned 1 way or another.
-
 i should say i hate python.  I am just making it easier for people to utilize this tool.. without requiring tons of custom code..
 if pythoon didnt require indentions i'd prob try it more often
 
-this is terrible code atm, and all things are being done with functions.. ill work it out later.. or maybe i wont i dont know
-once this works w traceroute + strategies im pretty much done.. if no bugs are here then oh well -- you can fuck up mass surveillance
-my job wil be done
-
-FYI: i haven't done a single thing that wasn't calculated the past two years. you guys deserve everything.
-     but i am a little early.  I was going to wait till March.  Oh well.
 
 // -----------------------------------------------------------------------
 //  Used code from: https://docs.python.org/2/extending/newtypes.html
@@ -431,12 +417,11 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
 
     int ret = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sisis#s#|iiiiiikkkkiiiiii", kwd_list,  &client_ip, &client_port,
-    &destination_ip, &destination_port, &client_body, &client_body_size, &server_body, &server_body_size,
-    &count, &interval,
-     &client_ttl, &server_ttl, &client_window_size, &server_window_size,
-    &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os, &server_os,
-    &gzip_enable, &gzip_percentage, &gzip_size, &gzip_injections)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sisis#s#|iiiiiikkkkiiiiii", kwd_list,  
+    &client_ip, &client_port, &destination_ip, &destination_port, &client_body, &client_body_size,
+    &server_body, &server_body_size, &count, &interval, &client_ttl, &server_ttl, &client_window_size,
+    &server_window_size, &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os,
+    &server_os, &gzip_enable, &gzip_percentage, &gzip_size, &gzip_injections)) {
         PyErr_Print();
         return NULL;
     }
@@ -504,7 +489,6 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
         // lets return the ID
         ret = aptr->id;
 
-        printf("ret %d\n", ret);
     }
 err:;
 
