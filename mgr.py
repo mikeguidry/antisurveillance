@@ -1,3 +1,6 @@
+# anti surveillance python example/testing
+# itll be easy enough for a child to use.
+
 import antisurveillance
 from pprint import pprint
 
@@ -22,10 +25,13 @@ def build_http4(a):
 def init():
 	# this should be removed and done completely in C.. i need to see how the object is allocated and hook it or somethiing..
 	# would rather work on other stuff first ***
-	a = antisurveillance.Config()
+	a = antisurveillance.manager()
 	a.setctx(ctx)
 
 	pprint(a)
+
+	#turn networking off so that we will dump all packets, and they wont get wrote to the live internet
+	a.networkoff()
 
 	#build an HTTP session
 	build_http4(a)
@@ -34,6 +40,8 @@ def init():
 	#You can loop this and it would go on forever...right now the app can be used perfectly.
 	perform(a,30)
 
+	print("networkk queue count: %d") % a.networkcount()
 	#pcap saving
 	a.pcapsave("py_output.pcap")
 
+	a.disable()

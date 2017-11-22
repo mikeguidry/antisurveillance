@@ -1,4 +1,4 @@
-mgr.py hasa testing code i was using...
+mgr.py has testing code i was using...
 
 to use:
 import antisurveillance
@@ -8,6 +8,7 @@ import antisurveillance
 buildhttp4 arguments:
 example:
         a.buildhttp4(src_ip, src_port, dst_ip, dst_port, client_body, server_body)
+
 It will also accept keywords.  IE: a.buildhttp4(client_ip:src_ip,.....)
 
 client_ip: (source_ip)
@@ -47,6 +48,8 @@ to get the first full session into the wire queue...
 -------------------------
 
 pcapsave("filename")
+
+no keywords for this one...
 
 save all current network queue packets to a pcap filename
 
@@ -89,6 +92,7 @@ clear all outgoing queues
 -------------------------
 
 pcapload("filename")
+no keywords for this one.. but will soon to allow parameters (later today)
 
 load all http sessions from a pcap file as different attack structures
 
@@ -129,7 +133,7 @@ this has to be in the python file:
 def init():
         # this should be removed and done completely in C.. i need to see how the object is allocated and hook it or somethiing..
         # would rather work on other stuff first ***
-        a = antisurveillance.Config()
+        a = antisurveillance.manager()
         a.setctx(ctx)
 
 
@@ -144,6 +148,7 @@ create a filter used for things like pcapload
 -------------------------
 
 filterprepare()
+accepts keywords
 
 prepare the filter using various parameters that you may wish to search for in the pcap
 
@@ -164,6 +169,9 @@ arguments:
 -------------------------
 
 instructionscreate()
+
+accepts keywords
+
 argments are almost the same as buildhttp4.. but it allow using the instructions commands below to
 build whatever tcp/ip protocol you'd like (not http)
 
@@ -188,6 +196,7 @@ add to current instructions list (after create) the source ip opening the connec
 -------------------------
 
 instructionstcp4send()
+accepts keywords
 arguments: "from_client" 1 or 0 (is the connecting party sending the data, or the server)
 "data" - data... (itll get the size automatically)
 
@@ -198,6 +207,8 @@ send data from one side of the tcp connection to the other, the side is chosen b
 
 instructionstcp4close()
 
+accepts keywords
+
 arguments: "from_client" which side is closing the connection
 close the tcp connectioon from one side or the other.. the side is chosen by "from_client"
 
@@ -205,7 +216,7 @@ close the tcp connectioon from one side or the other.. the side is chosen by "fr
 -------------------------
 
 instructionsbuildattack()
-arguments: 
+accepts keywords - arguments: 
 count - (how many times to repeat this attack)
 default:999
 

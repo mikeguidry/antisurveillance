@@ -1,6 +1,5 @@
 int Scripting_Perform(AS_context *ctx);
 int Scripting_Init(AS_context *ctx);
-
 AS_scripts *Scripting_New(AS_context *ctx);
 
 
@@ -16,7 +15,9 @@ typedef struct _as_scripts {
  
     AS_context *ctx;
 
-    // scripts custom context (like PythonModuleCustom)
-    void *script_context;
+    
+    PyThreadState *python_thread;
+    PyObject *pModule;
+
 } AS_scripts;
 

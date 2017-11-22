@@ -43,7 +43,11 @@ int AS_perform(AS_context *ctx) {
     attack_func func;
     int r = 0;  
 
-    if (__sync_lock_test_and_set(&ctx->paused, 0)) return 0;
+    // the script shouldnt worry about this unless its running on different threads.. only GZIP, and loading fromm large pcaps
+    // are currently using different threads
+    //if (__sync_lock_test_and_set(&ctx->paused, 0)) return 0;
+    if (ctx->paused) return 0;
+    
     
     // enumerate through each attack in our list
     while (aptr != NULL) {
@@ -310,7 +314,7 @@ int main(int argc, char *argv[]) {
             char *script_file, char *func_name, 
             PyObject *pArgs) { */
 
-        i = PythonModuleExecute(sctx, "mgr", "init", NULL);
+        i = PythonLoadScript(sctx, "mgr", "init", NULL);
         printf("py mod exec: %d\n", i);
     }
 

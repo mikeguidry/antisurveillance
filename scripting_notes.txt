@@ -126,3 +126,74 @@ eval returns the value of the given expression, whereas exec ignores the return 
 
 */
 
+
+/*
+
+build http (give ips, and body.. and use http4_create)
+
+aggressive (need to recode, but chnage aggressive-ness.. how much CPU etc)
+with python somme small code can check CPU and auto modify this to get it at a particular % (verifying with
+systems tasks every X seconds) - this will allow a router which is being used heavily
+at one time of the day to auto optimize and work perfectly without issues or dropped packets
+
+AS attacks: (create, delete, pause, unpause, lock mutex, unlock mutex, clear list, save cofiguration to disk,
+get configuration inline)
+id
+type (ATTACK_MULTI, ATTACK_SESSION)
+src, dst
+source port, dest port
+
+
+start_ts (get)
+raw_socket (possibly use? proxy write? maybe read?)
+read_socket.. depends on circumstances w kernel.. maybe can use one socket.. but maybe not.. lots of traffic on write
+attack list (iterate)
+
+list of server bodies, client bodies (and paired to geoip regions, etc)
+
+gzip (array?) total gzip count, gzip cache, gzip cache size, gzip initialized, gzip cache count
+
+network queue (iterate, count packets, clear)
+network queue last (can use it)
+pthread: network thread (verify its existing, kill, restart)
+network threaded (does it think its thread is open?)
+
+
+scripts (list, check callbaks, remove calllbacks (raw), add callbacks, spy callbacks,
+spy callbacks means we get information about all callbacks which will go to a script)...
+can be used to modfy things in other scripts, or redirect.. proxy or filter another script
+
+
+send_state, recv_state (not used yet) .. maybe remove? can determine how many packets are left in queue (conncept of when
+the attack will end, or reach its next interval for replaying)
+
+packet build instructions (list, modify, add, create new)
+
+client_basae_seq, server_base_seq (no reason for this.. who knnows?)
+
+packets, currnt packet (can check how many is left by counting)
+
+paused (pause/unpause)
+join (is it waiting to pthread join)
+pause mutex (lock, unlock)
+
+commpleted (is it completed? lets completee it.)
+
+customm function (set, ,get, call, copy to a new attack kstructure from an existing)
+
+extra_attack_parameters (stored gzip parameters here).. maybe allow a global onone, ,or custom
+
+which context does this attack belong to? (if we wish to pause/unpause etire configurations of attacks)
+ie: different nodes can enable/disable at various times using p2p to coordinate...
+
+skip_adjustments - custom such as DNS, or something which requires 0 packet adjustments...
+
+
+
+mutex(s): gzip_cache_mutex (check if can capture),
+network queue mutex
+
+
+*/
+
+
