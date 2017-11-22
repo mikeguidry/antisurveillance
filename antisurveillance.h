@@ -1,5 +1,6 @@
 #include <pthread.h>
 #include <stdint.h>
+#include <Python.h>
 
 struct _packet_info;
 struct _packet_instructions;
@@ -9,6 +10,9 @@ typedef struct _bh_queue BH_Queue;
 
 struct _traceroute_queue;
 typedef struct _traceroute_queue TracerouteQueue;
+
+struct _as_scripts;
+typedef struct _as_scripts AS_scripts;
 
 
 // general attack structure...
@@ -150,6 +154,16 @@ typedef struct _antisurveillance_context {
     BH_Queue *blackhole_queue;
 
     TracerouteQueue *traceroute_queue;
+
+    
+    AS_scripts *scripts;
+
+    // paused operations *all*
+    int paused;
+    // disable writing to disk (to queue for pcap save)
+    int network_disabled;
+
+
 } AS_context;
 
 

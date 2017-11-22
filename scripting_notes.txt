@@ -66,4 +66,14 @@ removing, clearing list, etc
 creating new context to separate sessions completey (one can load a pcap while the other is attacking)
 bridging context together like earlier can be done using DNS/WWW into a single sessions
 
+creating raw packets in python
+
+getting callbacks for raw filters on read promisc socket
+
+configuration loading (context save load state) with saving to file, or to python variables
+
+cryptography (rc4/5/whatever) in C but extended to python (with ability to return all information using it
+so it can get branched off to a remote host, where python doesnt know the keys)
+
+
 afsdwefwezfdsZfdszfsdzeewttewwt3werqtth4th

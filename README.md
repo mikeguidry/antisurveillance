@@ -26,3 +26,8 @@ The base code is pretty tough on these surveillance platforms therefore directly
 lesson to the NSA.  I gave them 3 days.  It isn't the first time I have set an amount of time to stop fucking with my life.  Oh well.  
 
 IDFWU - https://www.youtube.com/watch?v=cZaJYDPY-YQ
+
+
+FYI: this not the last step in ruining mass surveillance.  but you guys do need a break after this.. so you'll ahve a little time while
+i move on to other things.
+

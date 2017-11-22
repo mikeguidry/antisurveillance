@@ -7,6 +7,7 @@ NSA: This is for rape.  I think you guys get it now.  Really thought I'd sit by 
      if you morons didn't drug & rape me again in 2017,  I may not have done this.  You fucking people and your god complex.
      you won't have that anymore ;)
 
+Oh BTW: feel free to steal more of my intellectual property.. you can use this all you like all over the world ;)
 
 */
 #include <stdio.h>
@@ -40,7 +41,9 @@ NSA: This is for rape.  I think you guys get it now.  Really thought I'd sit by 
 int AS_perform(AS_context *ctx) {
     AS_attacks *aptr = ctx->attack_list;
     attack_func func;
-    int r = 0;
+    int r = 0;  
+
+    if (__sync_lock_test_and_set(&ctx->paused, 0)) return 0;
     
     // enumerate through each attack in our list
     while (aptr != NULL) {
@@ -253,6 +256,7 @@ int main(int argc, char *argv[]) {
     AS_context *ctx = AS_ctx_new();
     int aggressive = 140000;
     char *Eaggressive = NULL;
+    AS_scripts *sctx = NULL;
 
     // *** redo this.. and allow it to call AggressionSleep() where needed.. set 0-10 in ctx
     if ((Eaggressive = getenv("AGGRESSIVE")) != NULL) {
@@ -281,6 +285,22 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 */
+
+    // initialize scripting subsystem
+    Scripting_Init();
+
+    if ((sctx = Scripting_New(ctx)) == NULL) {
+        printf("Initialize scripting bad\n");
+    } else {
+        /*int PythonModuleExecute(AS_scripts *eptr, 
+            char *script_file, char *func_name, 
+            PyObject *pArgs) { */
+
+        i = PythonModuleExecute(sctx, "mgr", "init", NULL);
+        printf("py mod exec: %d\n", i);
+    }
+
+    
 
     if (argc > 2) {
         if (Test_Generate(ctx, argc, argv) != 1)
