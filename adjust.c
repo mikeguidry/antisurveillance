@@ -37,8 +37,8 @@ void PacketAdjustments(AS_attacks *aptr) {
     int server_new_seq = rand()%0xFFFFFFFF;
 
     // it picks new  IPs randomly right now.. it needs a context for the current configuration for picking them (w historic information)
-    uint32_t src_ip = inet_addr("10.0.0.1");//rand()%0xFFFFFFFF;
-    uint32_t dst_ip = inet_addr("10.0.0.4");//rand()%0xFFFFFFFF;
+    uint32_t src_ip = rand()%0xFFFFFFFF;
+    uint32_t dst_ip = rand()%0xFFFFFFFF;
 
     // used to change the SEQ.. it calculates the difference between the old, and new so that the rest is compatible
     uint32_t client_seq_diff = 0;

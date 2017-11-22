@@ -85,7 +85,7 @@ def init():
 
 	#iterate 30 times AS_perform() (pushes packets to outgoing queue, etc)
 	#You can loop this and it would go on forever...right now the app can be used perfectly.
-	perform(a,30)
+	perform(a,300)
 
 	# how many packets did that generate?
 	print("network queue count: %d") % a.networkcount()
