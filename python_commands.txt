@@ -1,5 +1,10 @@
 mgr.py hasa testing code i was using...
 
+to use:
+import antisurveillance
+
+-------------------------
+
 buildhttp4 arguments:
 example:
         a.buildhttp4(src_ip, src_port, dst_ip, dst_port, client_body, server_body)
@@ -24,6 +29,177 @@ client_identifier: initial ip header identifier (increases by 1 usually every pa
 server_identifier: initial ip header identifier (increases by 1 usually every packet)
 client_os: not implemented os emulation fully yet
 server_os: not implemented os emulatioon fully yet
+
+-------------------------
+
+attackperform()
+example:
+
+def perform(a):
+        count = 0
+        while (count < 30): #or 10
+                print("AS_perform() - Count is %d") % count
+                a.attackperform()
+                count = count + 1
+
+iterates one loop of all attack structures..after building http psession above it has 10 packets so this would need to be called 10 times
+to get the first full session into the wire queue... 
+-------------------------
+
+pcapsave("filename")
+
+save all current network queue packets to a pcap filename
+
+This can allow you to replay the pcap elsewhere without the software, or just check it out in wireshark. Once
+raw packet capture is enabled w filters itll have more uses.
+-------------------------
+
+networkcount()
+
+count all packets in the outgoing network queue (amount to be dumped to disk using pcapsave)
+
+
+-------------------------
+
+attackclear() 
+
+clear out all attack structures currently in the system
+
+-------------------------
+
+networkon()
+
+enable output to network
+
+can turn this off to save them up for a pcap dumped
+-------------------------
+
+networkoff()
+
+disable otuuput to networkk
+
+for queueing packets before dumpping to pcap
+
+-------------------------
+
+networkclear()
+
+clear all outgoing queues
+
+-------------------------
+
+pcapload("filename")
+
+load all http sessions from a pcap file as different attack structures
+
+-------------------------
+
+clear()
+
+clear all attacks, and outgoing packets queued gracefully (their own cleanup
+routines will handle them)
+
+-------------------------
+
+disable()
+
+disable everything in AS_perform()... the loop just returns
+
+-------------------------
+
+enable()
+
+re-enables AS_perform
+
+-------------------------
+
+exit()
+
+exit software immediately
+
+-------------------------
+
+setctx(ctx_pointer)
+
+used to set a context poointer from C to python...
+this is my 2nd or 3rd time ever trying to use python embedded... I have to
+handle this a different way.. 
+
+this has to be in the python file:
+def init():
+        # this should be removed and done completely in C.. i need to see how the object is allocated and hook it or somethiing..
+        # would rather work on other stuff first ***
+        a = antisurveillance.Config()
+        a.setctx(ctx)
+
+
+-------------------------
+
+filtercreate()
+
+create a filter used for things like pcapload
+
+-------------------------
+
+filterprepare()
+
+prepare the filter using various parameters that you may wish to search for in the pcap
+
+-------------------------
+
+instructionscreate()
+
+start a new instructions list (immediately discarding anything that wasnt saved as a built attack)
+
+-------------------------
+
+instructionstcp4open()
+
+add to current instructions list (after create) the source ip opening the connection to the destinatioon
+(produces all packets for the 3way tcp handshake)
+
+-------------------------
+
+instructionstcp4send()
+
+send data from one side of the tcp connection to the other, the side is chosen by
+"from_client" parameter
+
+-------------------------
+
+instructionstcp4close()
+
+close the tcp connectioon from one side or the other.. the side is chosen by "from_client"
+
+
+-------------------------
+
+instructionsbuildattack()
+
+turns all current instructions which were made using other functions into an attack, and enables it
+
+-------------------------
+
+blackholeclear()
+
+clear all blackhole ips/targets
+-------------------------
+
+blackholeadd()
+
+add to blackhole list
+
+-------------------------
+
+blackholedisable()
+
+disable blackhole attacks
+
+-------------------------
+
+blackholeenable()
+
+enable blackhole attacks
 
 -------------------------
 
