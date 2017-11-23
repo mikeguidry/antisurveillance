@@ -220,12 +220,11 @@ PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, Co
     } else {
         bptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6;
         if (from_client) {
-            memcpy(&bptr->source_ipv6, &cptr->client_ipv6, sizeof(struct in6_addr));
-            memcpy(&bptr->destination_ipv6, &cptr->server_ipv6, sizeof(struct in6_addr));
+            CopyIPv6Address(&bptr->source_ipv6, &cptr->client_ipv6);
+            CopyIPv6Address(&bptr->destination_ipv6, &cptr->server_ipv6);
         } else {
-            memcpy(&bptr->source_ipv6, &cptr->server_ipv6, sizeof(struct in6_addr));
-            memcpy(&bptr->destination_ipv6, &cptr->client_ipv6, sizeof(struct in6_addr));
-            
+            CopyIPv6Address(&bptr->source_ipv6, &cptr->server_ipv6);
+            CopyIPv6Address(&bptr->destination_ipv6, &cptr->client_ipv6);
         }
     }
 
@@ -835,11 +834,11 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     iptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6;
 
     // source IP, and port from the IP/TCP headers
-    memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
+    CopyIPv6Address(&iptr->source_ipv6, &p->ip.ip6_src);
     iptr->source_port = ntohs(p->tcp.source);
     
     // destination IP, and port from the TCP/IP headers
-    memcpy(&iptr->destination_ipv6, &p->ip.ip6_dst, sizeof(struct in6_addr));
+    CopyIPv6Address(&iptr->destination_ipv6, &p->ip.ip6_dst);
     iptr->destination_port = ntohs(p->tcp.dest);
 
 
@@ -939,11 +938,11 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     iptr->type = PACKET_TYPE_UDP_6 | PACKET_TYPE_IPV6;
 
     // source IP, and port from the IP/TCP headers
-    memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
+    CopyIPv6Address(&iptr->source_ipv6, &p->ip.ip6_src);
     iptr->source_port = ntohs(p->udp.source);
     
     // destination IP, and port from the TCP/IP headers
-    memcpy(&iptr->destination_ipv6, &p->ip.ip6_dst, sizeof(struct in6_addr));
+    CopyIPv6Address(&iptr->destination_ipv6, &p->ip.ip6_dst);
     iptr->destination_port = ntohs(p->udp.dest);
 
     //inet_ntop(AF_INET6, &p->ip.ip6_src, &Aip_src, sizeof(Aip_src));
@@ -985,8 +984,8 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     // fill out the pseudo header for this UDP checksum
     udp_chk_hdr = (struct pseudo_header_udp6 *)checkbuf;
     udp_chk_hdr->protocol = IPPROTO_UDP;
-    memcpy(&udp_chk_hdr->source_address, &p->ip.ip6_src, sizeof(struct in6_addr));
-    memcpy(&udp_chk_hdr->destination_address, &p->ip.ip6_dst, sizeof(struct in6_addr));
+    CopyIPv6Address(&udp_chk_hdr->source_address, &p->ip.ip6_src);
+    CopyIPv6Address(&udp_chk_hdr->destination_address, &p->ip.ip6_dst);
     udp_chk_hdr->placeholder = 0;
     udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
 
@@ -1032,8 +1031,8 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     iptr->type = PACKET_TYPE_ICMP_6 | PACKET_TYPE_IPV6;
 
     // get IP addreses out of the packet
-    memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
-    memcpy(&iptr->destination_ipv6, &p->ip.ip6_dst, sizeof(struct in6_addr));
+    CopyIPv6Address(&iptr->source_ipv6, &p->ip.ip6_src);
+    CopyIPv6Address(&iptr->destination_ipv6, &p->ip.ip6_dst);
 
     // how much data is present in this packet?
     data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen) - sizeof(struct packeticmp6);
@@ -1244,8 +1243,8 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                             src_port = iptr->source_port;
                             dst_port = iptr->destination_port;
 
-                            memcpy((void *)&src_ipv6, (void *)&iptr->source_ipv6, sizeof(struct in6_addr));
-                            memcpy((void *)&dst_ipv6, (void *)&iptr->destination_ipv6, sizeof(struct in6_addr));
+                            CopyIPv6Address(&src_ipv6, &iptr->source_ipv6);
+                            CopyIPv6Address(&dst_ipv6, &iptr->destination_ipv6);
                     }
                 }
 
@@ -1283,7 +1282,7 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                                     got_fin_ack = iptr->source_ip;
                                 } else if (iptr->type & PACKET_TYPE_TCP_6) {
                                     got_fin_ack = 1;
-                                    memcpy(&got_fin_ack6, &iptr->source_ipv6, sizeof(struct in6_addr));
+                                    CopyIPv6Address(&got_fin_ack6, &iptr->source_ipv6);
                                 }
                             }
 
@@ -1296,7 +1295,7 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                                         break;
                                     }
                                 } else if (iptr->type & PACKET_TYPE_TCP_6) {
-                                    if (memcmp((void *)&got_fin_ack6, (void *)&iptr->source_ipv6, sizeof(struct in6_addr)) == 0) {
+                                    if (CompareIPv6Addresses(&got_fin_ack6, &iptr->source_ipv6)) {
                                         break;
                                     }
 
@@ -1553,8 +1552,8 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
                     aptr->src = iptr->source_ip;
                     aptr->dst = iptr->destination_ip;
                 } else if (iptr->type & PACKET_TYPE_IPV6) {
-                    memcpy(&aptr->src6, &iptr->source_ipv6, sizeof(struct in6_addr));
-                    memcpy(&aptr->dst6, &iptr->destination_ipv6, sizeof(struct in6_addr));
+                    CopyIPv6Address(&aptr->src6, &iptr->source_ipv6);
+                    CopyIPv6Address(&aptr->dst6, &iptr->destination_ipv6);
                 }
 
                 aptr->source_port = iptr->source_port;
@@ -1583,7 +1582,7 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
                             if ((pptr->source_ip == iptr->destination_ip))
                                 match = 1;
                         } else if (iptr->type & PACKET_TYPE_IPV6) {
-                            if (memcmp(&pptr->source_ipv6, &iptr->destination_ipv6, sizeof(struct in6_addr)) == 0)
+                            if (CompareIPv6Addresses(&pptr->source_ipv6, &iptr->destination_ipv6))
                                 match = 1;
                         }
 

@@ -17,3 +17,5 @@ LINK *L_last(LINK *list);
 int L_count(LINK *ele);
 
 void md5hash(char *data, int size);
+void CopyIPv6Address(void *dst, void *src);
+int CompareIPv6Addresses(struct in6_addr *first, struct in6_addr *second);

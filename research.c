@@ -245,7 +245,7 @@ TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *ho
             if (sptr->hop == hop)
                 break;
         } else {
-            if (memcmp((void *)&sptr->hopv6, hopv6, sizeof(struct in6_addr)) == 0)
+            if (CompareIPv6Addresses(&sptr->hopv6, hopv6)) 
                 break;
         }
 
@@ -303,9 +303,9 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
         if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) != NULL) {
             snew->hop = rptr->hop;
             snew->ttl = rptr->ttl;
-            memcpy(&snew->hopv6, &rptr->hopv6, sizeof(struct in6_addr));
+            CopyIPv6Address(&snew->hopv6, &rptr->hopv6);
             snew->target_ip = qptr->target;
-            memcpy(&qptr->targetv6, &qptr->targetv6, sizeof(struct in6_addr));
+            CopyIPv6Address(&qptr->targetv6, &rptr->targetv6);
         }
 
         if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
@@ -342,7 +342,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     tptr->target = target;
     // if its an ipv6 addres pasased.. lets copy it
     if (targetv6 != NULL)
-        memcpy(&tptr->targetv6, targetv6, sizeof(struct in6_addr));
+        CopyIPv6Address(&tptr->targetv6, targetv6);
 
     // we start at ttl 1.. itll inncrement to that when processing
     tptr->current_ttl = 0;
@@ -408,7 +408,7 @@ int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr) {
     
     // copy over IP parameters
     rptr->hop = iptr->source_ip;
-    memcpy((void *)&rptr->hopv6, (void *)&iptr->source_ipv6, sizeof(struct in6_addr));
+    CopyIPv6Address(&rptr->hopv6, &iptr->source_ipv6);
 
     // maybe lock a mutex here (have 2... one for incoming from socket, then moving from that list here)
     rptr->next = ctx->traceroute_responses;

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <stdint.h>
+#include <netinet/in.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "utils.h"  
@@ -165,4 +166,14 @@ void md5hash(char *data, int size) {
     printf("\n");
 
     return;
+}
+
+
+
+void CopyIPv6Address(void *dst, void *src) {
+    memcpy(dst, src, sizeof(struct in6_addr));
+}
+
+int CompareIPv6Addresses(struct in6_addr *first, struct in6_addr *second) {
+    return (memcmp(first,second,sizeof(struct in6_addr)) == 0);
 }

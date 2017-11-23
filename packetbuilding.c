@@ -611,8 +611,8 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMP;
 
     // get IP addreses out of the packet
-    memcpy(&p->ip.ip6_src, &iptr->source_ipv6, sizeof(struct in6_addr));
-    memcpy(&p->ip.ip6_dst, &iptr->destination_ipv6, sizeof(struct in6_addr));
+    CopyIPv6Address(&p->ip.ip6_src, &iptr->source_ipv6);
+    CopyIPv6Address(&p->ip.ip6_dst, &iptr->destination_ipv6);
 
     // prepare ICMP header
     // copy over ICMP parameters from its own structure..
@@ -690,8 +690,8 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     
 
     // get IP addreses out of the packet
-    memcpy(&p->ip.ip6_src, &iptr->source_ipv6, sizeof(struct in6_addr));
-    memcpy(&p->ip.ip6_dst, &iptr->destination_ipv6, sizeof(struct in6_addr));
+    CopyIPv6Address(&p->ip.ip6_src, &iptr->source_ipv6);
+    CopyIPv6Address(&p->ip.ip6_dst, &iptr->destination_ipv6);
 
     // how much data is present in this packet?
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
@@ -719,8 +719,8 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
 
     // UDP requires these psuedo header parameters to be included in its checksum
     udp_chk_hdr->protocol = IPPROTO_UDP;
-    memcpy(&udp_chk_hdr->source_address, &iptr->source_ipv6, sizeof(struct in6_addr));
-    memcpy(&udp_chk_hdr->destination_address, &iptr->destination_ipv6, sizeof(struct in6_addr));
+    CopyIPv6Address(&udp_chk_hdr->source_address, &iptr->source_ipv6);
+    CopyIPv6Address(&udp_chk_hdr->destination_address, &iptr->destination_ipv6);
     udp_chk_hdr->placeholder = 0;
     udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
 
@@ -782,8 +782,8 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 
 
     // Source, and destination IP addresses
-    memcpy(&p->ip.ip6_src, &iptr->source_ipv6, sizeof(struct in6_addr));
-    memcpy(&p->ip.ip6_dst, &iptr->destination_ipv6, sizeof(struct in6_addr));
+    CopyIPv6Address(&p->ip.ip6_src, &iptr->source_ipv6);
+    CopyIPv6Address(&p->ip.ip6_dst, &iptr->destination_ipv6);
     
     // TCP header below
     // The source, and destination ports in question
@@ -829,8 +829,8 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 
         p_tcp = (struct pseudo_tcp6 *)checkbuf;
 
-        memcpy(&p_tcp->saddr, &iptr->source_ipv6, sizeof(struct in6_addr));
-        memcpy(&p_tcp->daddr, &iptr->destination_ipv6, sizeof(struct in6_addr));
+        CopyIPv6Address(&p_tcp->saddr, &iptr->source_ipv6);
+        CopyIPv6Address(&p_tcp->daddr, &iptr->destination_ipv6);
         p_tcp->mbz      = 0;
         p_tcp->ptcl 	= IPPROTO_TCP;
         p_tcp->tcpl 	= htons(TCPHSIZE + iptr->data_size);
