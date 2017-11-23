@@ -340,9 +340,8 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 
     // which IP are we performing traceroutes on
     tptr->target = target;
-    // if its an ipv6 addres pasased.. lets copy it
-    if (targetv6 != NULL)
-        CopyIPv6Address(&tptr->targetv6, targetv6);
+    // if its an ipv6 addres pasased.. lets copy it (this function will verify its not NULL)
+    CopyIPv6Address(&tptr->targetv6, targetv6);
 
     // we start at ttl 1.. itll inncrement to that when processing
     tptr->current_ttl = 0;
@@ -397,9 +396,10 @@ int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr) {
     identifier = *(uint32_t *)(iptr->data);
 
     // ttl = right 16 bits
-    ttl = identifier & 0x0000FFFF;
+    ttl = (identifier & 0x0000FFFF);
+
     // identifier = left 16 bits
-    identifier = (identifier & 0xFFFF0000);
+    identifier = (identifier & 0xFFFF0000) >> 16;
 
     // allocate a new structure for traceroute analysis functions to deal with it later
     if ((rptr = (TracerouteResponse *)calloc(1, sizeof(TracerouteResponse))) == NULL) goto end;
@@ -435,6 +435,10 @@ int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr) {
 int Traceroute_Perform(AS_context *ctx) {
     TracerouteQueue *tptr = ctx->traceroute_queue;
     TracerouteResponse *rptr = ctx->traceroute_responses;
+    uint32_t packet_data = 0;
+    struct icmphdr icmp;
+    PacketBuildInstructions *iptr = NULL;
+    AttackOutgoingQueue *optr = NULL;
 
     int ret = 0;
     // timestamp required for various states of traceroute functionality
@@ -450,8 +454,61 @@ int Traceroute_Perform(AS_context *ctx) {
         if ((ts - tptr->ts_activity) > 5) {
             tptr->current_ttl++;
 
+            // lets merge these two variables nicely into a 32bit variable for the ICMP packet  (to know which request when it comes back)
+            // using it like this allows us to perform mass scans using a small amount of space
+            // it ensures we can keep a consistent queue of active traceroutes
+            packet_data = (((tptr->identifier << 16) & 0xFFFF0000) | (tptr->current_ttl & 0x0000FFFF));
+
+            icmp.type = ICMP_ECHO;
+            icmp.code = 0;
+            // i forgot about these.. might be able to use them as identifer/ttl
+            icmp.un.echo.sequence = tptr->identifier;
+            icmp.un.echo.id = tptr->current_ttl;
+
             // make packet, or call funnction to handle that..
             // mark some identifier in tptr for Traceroute_Incoming()
+
+            if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+                if (tptr->target != 0) {
+                    iptr->type = PACKET_TYPE_ICMP_4;
+                    iptr->destination_ip = tptr->target;
+                    // we need source ip here!
+                } else {
+                    iptr->type = PACKET_TYPE_ICMP_6;
+                    CopyIPv6Address(&iptr->destination_ipv6, &tptr->targetv6);
+                    // we need source ip here!
+                }
+
+                /*
+
+                iptr->data_size = sizeof(uint32_t);
+                iptr->data = (char *)calloc(1, iptr->data_size);
+                if (iptr->data != NULL) *(uint32_t *)(iptr->data) = packet_data;
+
+                */
+
+                // ok so we need a way to queue an outgoing instruction without an attack structure....
+                if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
+                    optr->buf = iptr->packet;
+                    optr->type = iptr->type;
+                    optr->size = iptr->packet_size;
+
+                    iptr->packet = NULL;
+                    iptr->packet_size = 0;
+
+                    // *** this is blocking... maybe change later 
+                    AttackQueueAdd(ctx, optr, 0);
+                }
+
+                // dont need this anymore..
+                PacketBuildInstructionsFree(&iptr);
+
+
+            } else {
+                // maybe issue w memory? lets roll back and let the next round try
+                tptr->current_ttl--;
+                break;
+            }
         }
 
         tptr = tptr->next;

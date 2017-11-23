@@ -171,9 +171,12 @@ void md5hash(char *data, int size) {
 
 
 void CopyIPv6Address(void *dst, void *src) {
-    memcpy(dst, src, sizeof(struct in6_addr));
+    // verify both parameters arent NULL..
+    if (dst && src)
+        memcpy(dst, src, sizeof(struct in6_addr));
 }
 
 int CompareIPv6Addresses(struct in6_addr *first, struct in6_addr *second) {
+    if (!first && !second) return 0;
     return (memcmp(first,second,sizeof(struct in6_addr)) == 0);
 }

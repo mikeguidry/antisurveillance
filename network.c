@@ -189,7 +189,7 @@ int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     optr->ctx = ctx;
 
     // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-    if (AttackQueueAdd(ctx, optr, 0) == 0) {
+    if (AttackQueueAdd(ctx, optr, 1) == 0) {
         // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
         if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
             // if we for some reason cannot pthread (prob memory).. lets do it blocking
