@@ -72,7 +72,7 @@ TCP protocol attacks - (causes traffic disruption)
     
     
     like ddos all over againn.. when teenagers can use python scripts to blackhole anything online.
-    funny enough.. its easier.  you don't even have to installl on 1000 boxes.
+    funny enough.. its easier.  you don't even have to installl on 1`00 boxes.
 */
 
 

@@ -14,6 +14,12 @@ typedef struct _traceroute_queue TracerouteQueue;
 struct _as_scripts;
 typedef struct _as_scripts AS_scripts;
 
+struct _traceroute_spider;
+typedef struct _traceroute_spider TracerouteSpider;
+
+struct _traceroute_response;
+typedef struct _traceroute_response TracerouteResponse;
+
 
 // general attack structure...
 // should support everything from syn packets, to virtual connections
@@ -165,7 +171,12 @@ typedef struct _antisurveillance_context {
     BH_Queue *blackhole_queue;
     int blackhole_paused;
 
+    // active traceroutes
     TracerouteQueue *traceroute_queue;
+    // internal database built from the traceroutes, and analysis
+    TracerouteSpider *traceroute_spider;
+    // responses coming from the network to get analyzed & put into the spiderweb
+    TracerouteResponse *traceroute_responses;
 
     
     AS_scripts *scripts;

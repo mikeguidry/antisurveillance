@@ -77,6 +77,7 @@ def init():
 	#you could load a previously dumped pcap.. so it would expand, and replay those sessions -- and dump the updated pcap at the end
 	#loop a few times and see how much the sessions/packets grow
 	#a.pcapload(filename="py_output.pcap")
+	#a.pcapload(filename="tcp6.pcap")
 
 	#turn networking off so that we will dump all packets, and they wont get wrote to the live internet
 	a.networkoff()

@@ -2,8 +2,14 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
 #include "network.h"
 #include "antisurveillance.h"
+#include "packetbuilding.h"
 #include "research.h"
 
 /*
@@ -108,8 +114,8 @@ int Traceroute_Compare(TracerouteQueue *first, TracerouteQueue *second) {
 
     // if there arent enough responses to compare.. then we are finished..
     // its not an error since it might just be queued with thousands of other sites/nodes
-    if (!first->traceroute_responses_count_v4 || !second->traceroute_responses_count_v4)
-        return ret;
+    //if (!first->traceroute_responses_count_v4 || !second->traceroute_responses_count_v4)
+        //return ret;
 
 
     // we need to verify how close two nodes are in the world..
@@ -186,6 +192,7 @@ strategy: first go by how many hops are equal...
         but enough to handle this problem.. it would require constant updates though thus have to stay active
 
 */
+
 typedef struct _traceroute_spider {
     //routine linked list management..
     struct _traceroute_spider *next;
@@ -194,10 +201,17 @@ typedef struct _traceroute_spider {
     struct _traceroute_spider *branches;
 
     // the queue which linked into this tree
+    // it wiill get removed fromm the active list to speed up the process
+    // of analyzing responses... but itll stay linked here for the original
+    // information for the strategies for picking targets for blackholing and sureillance attacks
     TracerouteQueue *queue;
 
+    // time this entry was created
+    int ts;
+
     // quick reference of IP (of the router.. / hop / gateway)
-    uint32_t route_ip;
+    uint32_t hop;
+    struct in6_addr hopv6;
 
     // what was being tracerouted to conclude this entry
     uint32_t target_ip;
@@ -208,14 +222,116 @@ typedef struct _traceroute_spider {
     // determined country code
     int country_code;
 
+    // we may want ASN information to take the fourteen eyes list, and assume
+    // all internet providers which are worldwide, and located in other countries
+    // fromm those countries are going to also have their own pllatforms in those
+    // other locations
+    // so we will do ASN -> companies (as an identifer)
+    // future: all of these strategies can get incorporated into future automated, and mass hacking campaigns
+    int asn;
 } TracerouteSpider;
+
+
+// lets see if we have a hop already in the spider.. then we just add this as a branch of it
+TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *hopv6) {
+    TracerouteSpider *sptr = ctx->traceroute_spider;
+
+    // enumerate through spider list tryinig to find a hop match...
+    // next we may want to add looking for targets.. but in general
+    // we will wanna analyze more hop informatin about a target ip
+    // as its hops come back.. so im not sure if its required yet
+    while (sptr != NULL) {
+        if (hop != 0) {
+            if (sptr->hop == hop)
+                break;
+        } else {
+            if (memcmp((void *)&sptr->hopv6, hopv6, sizeof(struct in6_addr)) == 0)
+                break;
+        }
+
+        sptr = sptr->next;
+    }
+
+    return sptr;
+}
+
+
+// when reading the traceroute responses from the raw socket.. it should get added into this list immediately
+// further information could be handled from another thread, or queue... this ensures less packet loss than
+// dealing with anything inline as it comes in.. and also allows dumping the data to a save file
+// for the spider in the future to pick & choose mass surveillance platforms
+typedef struct _traceroute_response {
+    struct _traceroute_response *next;
+
+    // to know where the packet relates to
+    uint32_t identifier;
+
+    int ttl;
+
+    // the hop which responded
+    uint32_t hop;
+    // or its ipv6
+    struct in6_addr hopv6;
+
+    // if we correlated the identifier with the target
+    uint32_t target;
+    struct in6_addr targetv6;
+} TracerouteResponse;
+
+
+// Analyze a traceroute response against the current queue and build the spider web of traceroutes
+// for further strategies
+int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
+    int ret = 0;
+    TracerouteQueue *qptr = ctx->traceroute_queue;
+    TracerouteSpider *sptr = NULL, *snew = NULL;
+
+    // if the pointer was NULL.. lets just return with 0 (no error...)
+    if (rptr == NULL) return ret;
+
+    while (qptr != NULL) {
+        // found a match since we are more than likely doing mass amounts of traceroutes...
+        if (qptr->identifier == rptr->identifier) {
+            break;
+        }
+
+        qptr = qptr->next;
+    }
+
+    // we had a match.. lets link it in the spider web
+    if (qptr != NULL) {
+        if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) != NULL) {
+            snew->hop = rptr->hop;
+            snew->ttl = rptr->ttl;
+            memcpy(&snew->hopv6, &rptr->hopv6, sizeof(struct in6_addr));
+            snew->target_ip = qptr->target;
+            memcpy(&qptr->targetv6, &qptr->targetv6, sizeof(struct in6_addr));
+        }
+
+        if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
+            // we found it as a spider.. so we can add it to a branch
+            snew->branches = sptr->branches;
+            sptr->branches = snew;
+        } else {
+            // lets link directly to main list .. first time seeing this hop
+            snew->next = ctx->traceroute_spider;
+            ctx->traceroute_spider = snew;
+        }
+
+        ret = 1;
+    }
+
+    end:;
+    return ret;
+}
+
 
 
 
 // OK ICMP/UDP is finished.. time for the real fun.. this will def catch some eyes once people realize how you can programmatically
 // target mass surveillance platforms ... without that much effort really.
 // while coding this im using ipv4 .. will change later.... still need to add ipv6 anyways
-int Traceroute_Queue(AS_context *ctx, uint32_t target_node) {
+int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6) {
     TracerouteQueue *tptr = NULL;
     int ret = -1;
 
@@ -223,7 +339,10 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target_node) {
     if ((tptr = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) goto end;
 
     // which IP are we performing traceroutes on
-    tptr->ipv4 = target_node;
+    tptr->target = target;
+    // if its an ipv6 addres pasased.. lets copy it
+    if (targetv6 != NULL)
+        memcpy(&tptr->targetv6, targetv6, sizeof(struct in6_addr));
 
     // we start at ttl 1.. itll inncrement to that when processing
     tptr->current_ttl = 0;
@@ -244,21 +363,79 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target_node) {
     return ret;
 }
 
+
+
 // if we have active traceroutes, then this function should take the incoming packet
 // analyze it,  and determine if it relates to any active traceroute missions
 // It should handle all types of packets... id say UDP/ICMP... 
 // its a good thing since it wont have to analyze ALL tcp connections ;)
 int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr) {
-    int ret = 0;
+    int ret = -1;
+    PacketBuildInstructions *iptr = NULL;
+    PacketInfo *pnext = NULL;
+    TracerouteResponse *rptr = NULL;
+
+    // when we extract the identifier from the packet.. put it here..
+    uint32_t identifier = 0;
+    // ttl has to be extracted as well (possibly from the identifier)
+    int ttl = 0;
+
+    // analyze the packet to ensure it IS one of our traceroutes.. just inn casae a filter, or other way let it through
+    // im not rewriting code here when ive already designed all of the analysis for other parts..
+    // if its linked to something, lets unlink.. turn into PacketBuildInstructions type
+    // so we can easily have access to all parameters of this packet..
+    pnext = pptr->next;
+    pptr->next = NULL;
+
+    // if we cant analyze it, then we are done here
+    if ((iptr = PacketsToInstructions(pptr)) == NULL) goto end;
+
+    // data isnt big enough to contain the identifier
+    if (iptr->data_size < sizeof(uint32_t)) goto end;
+
+    // extract identifier+ttl here fromm the packet characteristics, or its data.. if its not a traceroute, just goto end
+    identifier = *(uint32_t *)(iptr->data);
+
+    // ttl = right 16 bits
+    ttl = identifier & 0x0000FFFF;
+    // identifier = left 16 bits
+    identifier = (identifier & 0xFFFF0000);
+
+    // allocate a new structure for traceroute analysis functions to deal with it later
+    if ((rptr = (TracerouteResponse *)calloc(1, sizeof(TracerouteResponse))) == NULL) goto end;
+    rptr->identifier = identifier;
+    rptr->ttl = ttl;
+    
+    // copy over IP parameters
+    rptr->hop = iptr->source_ip;
+    memcpy((void *)&rptr->hopv6, (void *)&iptr->source_ipv6, sizeof(struct in6_addr));
+
+    // maybe lock a mutex here (have 2... one for incoming from socket, then moving from that list here)
+    rptr->next = ctx->traceroute_responses;
+    ctx->traceroute_responses = rptr;
+
+    // thats about it for the other function to determine the original target, and throw it into the spider web
+    ret = 1;
 
     end:;
+
+    // free this since we wont need it anymore later
+    PacketBuildInstructionsFree(&iptr);
+
+    // put this pointer back if it was there.. means the packet is in a chain linked w othters -- dont ruin that
+    if (pnext) pptr->next = pnext;
+
     return ret;
 }
+
+
 
 
 // iterate through all current queued traceroutes handling whatever circumstances have surfaced for them individually
 int Traceroute_Perform(AS_context *ctx) {
     TracerouteQueue *tptr = ctx->traceroute_queue;
+    TracerouteResponse *rptr = ctx->traceroute_responses;
+
     int ret = 0;
     // timestamp required for various states of traceroute functionality
     int ts = time(0);

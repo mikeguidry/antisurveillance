@@ -63,8 +63,8 @@ typedef struct _traceroute_queue {
     struct _traceroute_queue *next;
 
     // IPv4 or 6 address
-    uint32_t ipv4;
-    //struct in6_addr ipv6;
+    uint32_t target;
+    struct in6_addr targetv6;
 
     //timestamp added
     int ts;
@@ -76,14 +76,8 @@ typedef struct _traceroute_queue {
     int current_ttl;
     int max_ttl;
 
-    // amount of IPv4 responses for this traceroute (total)
-    int traceroute_responses_count_v4;
-    // now we want to know each response and the TTL it responded at...some wont but we still wanna keep it in this order
-    uint32_t traceroute_responses_v4[MAX_TTL];
-
-    // amount of IPv6 responses for this traceroute
-    //int traceroute_responses_count_v6;
-    //struct inn6_addr *traceroute_responses_v6;
+    // identifier to tie this to the responses since we will perform mass amounts
+    uint32_t identifier;
 } TracerouteQueue;
 
 

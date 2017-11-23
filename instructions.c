@@ -816,8 +816,6 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     char *data = NULL;
     char *sptr = NULL;
     int tcp_header_size = 0;
-    //char Aip_src[INET6_ADDRSTRLEN];
-    //char Aip_dst[INET6_ADDRSTRLEN];
 
     p = (struct packettcp6 *)pptr->buf;
 
@@ -843,10 +841,6 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     // destination IP, and port from the TCP/IP headers
     memcpy(&iptr->destination_ipv6, &p->ip.ip6_dst, sizeof(struct in6_addr));
     iptr->destination_port = ntohs(p->tcp.dest);
-
-    //inet_ntop(AF_INET6, &p->ip.ip6_src, &Aip_src, sizeof(Aip_src));
-    //inet_ntop(AF_INET6, &p->ip.ip6_dst, &Aip_dst, sizeof(Aip_dst));
-    //printf("src: %s dst: %s addr %s\n", Aip_src, Aip_dst, addr);
 
 
     // Ensure this new structure has the proper flags which were set in this packet

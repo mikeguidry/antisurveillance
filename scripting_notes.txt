@@ -182,7 +182,7 @@ pause mutex (lock, unlock)
 
 commpleted (is it completed? lets completee it.)
 
-customm function (set, ,get, call, copy to a new attack kstructure from an existing)
+custom function (set, ,get, call, copy to a new attack kstructure from an existing)
 
 extra_attack_parameters (stored gzip parameters here).. maybe allow a global onone, ,or custom
 
@@ -200,3 +200,16 @@ network queue mutex
 */
 
 
+
+
+im going to create the ability to have a watch dir with queued python files
+anything can generate python scripts to execute, and it will polll the directory and execute
+new ones as they pop in
+
+itll allow outside applications to generate configuration commands, or new sessions bodies, etc
+and integrate easily (could be PHP, python, bash, anything can generte and drop the files)
+
+
+python needs a command to load ip lists for generation of http sessions from a file
+needs to have a directory full of content bodies for server, ,and client side
+each should have ability to separate by country
