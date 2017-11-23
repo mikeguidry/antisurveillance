@@ -196,6 +196,7 @@ AS_context *AS_ctx_new() {
 int Subsystems_Perform(AS_context *ctx) {
     Traceroute_Perform(ctx);
     BH_Perform(ctx);
+    Scripting_Perform(ctx);
 }
 
 int Test_Generate(AS_context *ctx, int argc, char *argv[]) {
@@ -263,18 +264,18 @@ int Test_PCAP(AS_context *ctx, char *filename) {
 }
 
 
-
-// *** Redesign this.. allowing for tests, generating packets, or loading from PCAP...
-// or being controlled by a third party mechanism (script, etc)
-int main(int argc, char *argv[]) {
-    int i = 0, r = 0;
-    int start_ts = time(0);
-    char *filename = NULL;
-    int loop_count = 0;
-    AS_context *ctx = AS_ctx_new();
+// All binaries (revolving around scripting, or C loops) requires these initialization routines
+AS_context *Antisurveillance_Init() {
+    int i = 0;
     int aggressive = 140000;
     char *Eaggressive = NULL;
+    AS_context *ctx = AS_ctx_new();
     AS_scripts *sctx = NULL;
+
+    if (ctx == NULL) {
+        printf("Antisurveillance_init(): Error creating new context\n");
+        return NULL;
+    }
 
     // *** redo this.. and allow it to call AggressionSleep() where needed.. set 0-10 in ctx
     if ((Eaggressive = getenv("AGGRESSIVE")) != NULL) {
@@ -295,70 +296,10 @@ int main(int argc, char *argv[]) {
 
     if ((sctx = Scripting_New(ctx)) == NULL) {
         printf("Initialize scripting bad\n");
-    } else {
-        /*int PythonModuleExecute(AS_scripts *eptr, 
-            char *script_file, char *func_name, 
-            PyObject *pArgs) { */
-
-        i = PythonLoadScript(sctx, "mgr", "init", NULL);
+        return NULL;
     }
 
-    if (i != 1) {    
-        if (argc > 2) {
-            if (Test_Generate(ctx, argc, argv) != 1)
-                exit(-1);
-        } else if (argc == 2) {
-            filename = argv[1];
-        
-            if (Test_PCAP(ctx, filename) != 1)
-                exit(-1);        
-        }
+    ctx->scripts = sctx;
 
-
-
-        loop_count = (L_count((LINK *)ctx->attack_list) > 1000) ? 300 : 30;
-        printf("Loop count: %d\n", loop_count);
-        
-        // We loop to call this abunch of times because theres a chance all packets do not get generated
-        // on the first call.  It is designed this way to handle a large amount of fabricated sessions 
-        // simultaneously... since this is just a test... let's loop a few times just to be sure
-        for (i = 0; i < loop_count; i++) {
-            r = AS_perform(ctx);
-            if (r != 1) printf("AS_perform() = %d\n", r);
-
-            usleep(500);
-        }
-
-        i = 0;
-
-        if (1==0)
-        while (++i) {
-            AS_perform(ctx);
-            if ((i % 5)==0) {
-                printf("\rCount: %d                      \t", i);
-                fflush(stdout);
-            }
-            usleep(700000);
-        }
-
-        // how many packes are queued in the output supposed to go to the internet?
-        printf("network queue: %p\n", ctx->network_queue);
-        if (ctx->network_queue)
-            printf("packet count ready for wire: %d\n", L_count((LINK *)ctx->network_queue));  
-
-
-        printf("Gzip Count: %d\n", ctx->total_gzip_count);
-
-        // This is probably the amount of time it'd dumping to network since its all happening simultaneously
-        printf("Time before dumping packets to disk: %d seconds\n", (int)(time(0) - start_ts));
-
-        
-        PcapSave(ctx, filename ? (char *)"output2.pcap" : (char *)"output.pcap", ctx->network_queue, NULL, 1);
-        
-
-        printf("Time to fabricate, and dump packets to disk: %d seconds\n", (int)(time(0) - start_ts));
-    }
-
-    exit(0);
+    return ctx;
 }
-

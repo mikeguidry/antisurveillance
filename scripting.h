@@ -19,5 +19,7 @@ typedef struct _as_scripts {
     PyThreadState *python_thread;
     PyObject *pModule;
 
+    int perform;
+
 } AS_scripts;
 

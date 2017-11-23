@@ -8,16 +8,19 @@ _OBJ = os_emulation.o packetbuilding.o pcap.o antisurveillance.o network.o  adju
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
-$(ODIR)/%.o: %.c $(DEPS)
+$(ODIR)/%.o: %.c $(DEPS) scriptmain.o cmdline.o
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-anti: $(OBJ)
+anti: $(OBJ) cmdline.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
-anti_static: $(OBJ)
+anti_static: $(OBJ) cmdline.o
 	gcc -static -o $@ $^ $(CFLAGS) $(LIBS)
+
+antiscript: $(OBJ) scriptmain.o
+	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 clean:
 	rm -f anti $(ODIR)/*.o *~ core $(INCDIR)/*~ 
 
-all: clean anti
+all: clean anti antiscript

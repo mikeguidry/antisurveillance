@@ -1161,10 +1161,14 @@ int python_call_function(AS_scripts *mptr,  char *message, int size) {
 // perform one iteration of all scripts (callinng their 'script_perform' function) with the message "loop" (size 4)
 int Scripting_Perform(AS_context *ctx) {
     int ret = -1;
-    AS_scripts *sptr = ctx->scripts;
+    AS_scripts *sptr = NULL;
+
+    if ((ctx == NULL) || ((sptr = ctx->scripts) == NULL)) return 0;
 
     while (sptr != NULL) {
-        python_call_function(sptr, "loop", 4);
+
+        if (sptr->perform)
+            python_call_function(sptr, "loop", 4);
         
         sptr = sptr->next;
     }
