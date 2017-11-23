@@ -90,16 +90,16 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
     cptr.server_emulated_operating_system = 0;
 
     // open the connection...
-    if (GenerateTCP4ConnectionInstructions(&cptr, &build_list) != 1) { ret = -2; goto err; }
+    if (GenerateTCPConnectionInstructions(&cptr, &build_list) != 1) { ret = -2; goto err; }
 
     // now we must send data from client to server (http request)
-    if (GenerateTCP4SendDataInstructions(&cptr, &build_list, FROM_CLIENT, client_body, client_size) != 1) { ret = -3; goto err; }
+    if (GenerateTCPSendDataInstructions(&cptr, &build_list, FROM_CLIENT, client_body, client_size) != 1) { ret = -3; goto err; }
 
     // now we must send data from the server to the client (web page body)
-    if (GenerateTCP4SendDataInstructions(&cptr, &build_list, FROM_SERVER, server_body, server_size) != 1) { ret = -4; goto err; }
+    if (GenerateTCPSendDataInstructions(&cptr, &build_list, FROM_SERVER, server_body, server_size) != 1) { ret = -4; goto err; }
 
     // now lets close the connection from client side first
-    if (GenerateTCP4CloseConnectionInstructions(&cptr, &build_list, FROM_CLIENT) != 1) { ret = -5; goto err; }
+    if (GenerateTCPCloseConnectionInstructions(&cptr, &build_list, FROM_CLIENT) != 1) { ret = -5; goto err; }
 
     // that concludes all packets
     aptr->packet_build_instructions = build_list;

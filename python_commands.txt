@@ -192,14 +192,14 @@ start a new instructions list (immediately discarding anything that wasnt saved 
 
 -------------------------
 
-instructionstcp4open()
+instructionstcpopen()
 
 add to current instructions list (after create) the source ip opening the connection to the destinatioon
 (produces all packets for the 3way tcp handshake)
 
 -------------------------
 
-instructionstcp4send()
+instructionstcpsend()
 accepts keywords
 arguments: "from_client" 1 or 0 (is the connecting party sending the data, or the server)
 "data" - data... (itll get the size automatically)
@@ -209,7 +209,7 @@ send data from one side of the tcp connection to the other, the side is chosen b
 
 -------------------------
 
-instructionstcp4close()
+instructionstcpclose()
 
 accepts keywords from_client
 default is from_client (connecting side closes connection) if you use no aprameters

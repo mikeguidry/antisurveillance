@@ -238,7 +238,8 @@ enum {
     FILTER_PACKET_ICMP=256,
     FILTER_PACKET_IPV4=512,
     FILTER_PACKET_IPV6=1024,
-    FILTER_PACKET_DNS=2048
+    FILTER_CLIENT_IPV6=2048,
+    FILTER_SERVER_IPV6=4096
 };
 
 // This is the structure used to pass around filter information internally.
@@ -246,7 +247,9 @@ typedef struct _filter_information {
     int flags;
     int packet_flags;
     uint32_t source_ip;
+    struct in6_addr source_ipv6;
     uint32_t destination_ip;
+    struct in6_addr destination_ipv6;
     uint16_t source_port;
     uint16_t destination_port;
     int init;

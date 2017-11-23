@@ -208,22 +208,35 @@ int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
 
 
 // creates the base structure for instruction to build a for the wire packet..
-PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, uint32_t source_ip, uint32_t destination_ip, int source_port, int dst_port, int flags, int ttl, int window_size) {
+PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, ConnectionProperties *cptr, int from_client, int flags) {
     PacketBuildInstructions *bptr = NULL;
 
     if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) return NULL;
 
-    bptr->source_ip = source_ip;
-    bptr->source_port = source_port;
+    if (!cptr->is_ipv6) {
+        bptr->type = PACKET_TYPE_TCP_4;
+        bptr->source_ip = from_client ? cptr->client_ip : cptr->server_ip;
+        bptr->destination_ip = from_client ? cptr->server_ip : cptr->client_ip;
+    } else {
+        bptr->type = PACKET_TYPE_TCP_6;
+        if (from_client) {
+            memcpy(&bptr->source_ipv6, &cptr->client_ipv6, sizeof(struct in6_addr));
+            memcpy(&bptr->destination_ipv6, &cptr->server_ipv6, sizeof(struct in6_addr));
+        } else {
+            memcpy(&bptr->source_ipv6, &cptr->server_ipv6, sizeof(struct in6_addr));
+            memcpy(&bptr->destination_ipv6, &cptr->client_ipv6, sizeof(struct in6_addr));
+            
+        }
+    }
 
-    bptr->destination_ip = destination_ip;
-    bptr->destination_port = dst_port;
-
+    bptr->source_port = from_client ? cptr->client_port : cptr->server_port;
+    bptr->destination_port = from_client ? cptr->server_port : cptr->client_port;
+    
     bptr->flags = flags;
 
     // OS emulation
-    bptr->ttl = ttl;
-    bptr->tcp_window_size = window_size;
+    bptr->ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
+    bptr->tcp_window_size = from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server;
 
     // FIFO ordering
     L_link_ordered((LINK **)list, (LINK *)bptr);
@@ -232,11 +245,9 @@ PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, ui
 }
 
 
-
-
-
 // Generates instructions for fabricating a TCP connection being opened between two hosts..
-int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list) {
+// handles both ipv6, and ipv4
+int GenerateTCPConnectionInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list) {
     PacketBuildInstructions *bptr = NULL;
     PacketBuildInstructions *build_list = NULL;
     int packet_flags = 0;
@@ -246,7 +257,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     // first we need to generate a connection syn packet..
     packet_flags = TCP_FLAG_SYN|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW;
     packet_ttl = cptr->client_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, cptr->client_ip, cptr->server_ip, cptr->client_port, cptr->server_port, packet_flags, packet_ttl, cptr->max_packet_size_client)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr, 1, packet_flags)) == NULL) goto err;
     bptr->header_identifier = cptr->client_identifier++;
     bptr->client = 1; // so it can generate source port again later... for pushing same messages w out full reconstruction
     bptr->ack = 0;
@@ -256,7 +267,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     // then nthe server needs to respond acknowledgng it
     packet_flags = TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW;
     packet_ttl = cptr->server_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, cptr->server_ip, cptr->client_ip, cptr->server_port, cptr->client_port, packet_flags, packet_ttl, cptr->max_packet_size_server)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr, 0, packet_flags)) == NULL) goto err;
     bptr->header_identifier = cptr->server_identifier++;
     bptr->ack = cptr->client_seq;
     bptr->seq = cptr->server_seq++;
@@ -265,7 +276,7 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
     // then the client must respond acknowledging that servers response..
     packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
     packet_ttl = cptr->client_ttl;
-    if ((bptr = BuildInstructionsNew(&build_list, cptr->client_ip, cptr->server_ip, cptr->client_port, cptr->server_port, packet_flags, packet_ttl, cptr->max_packet_size_client)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr, 1, packet_flags)) == NULL) goto err;
     bptr->header_identifier = cptr->client_identifier++;
     bptr->client = 1;
     bptr->ack = cptr->server_seq;
@@ -289,7 +300,9 @@ int GenerateTCP4ConnectionInstructions(ConnectionProperties *cptr, PacketBuildIn
 // later we can emulate some packet loss in here.. its just  random()%100 < some percentage..
 // with a loop resending the packet.. super simple to handle.  we can also falsify other scenarios
 // involving ICMP etc.. some very nasty tricks coming.  
-int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list, int from_client, char *data, int size) {
+
+// works on ipv4/6 now
+int GenerateTCPSendDataInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list, int from_client, char *data, int size) {
     PacketBuildInstructions *bptr = NULL;
     PacketBuildInstructions *build_list = NULL;
     int packet_flags = 0;
@@ -340,7 +353,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         packet_flags = TCP_FLAG_PSH|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
         packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
         window_size = from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server;
-        if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
+        if ((bptr = BuildInstructionsNew(&build_list, cptr, from_client, packet_flags)) == NULL) goto err;
         if (DataPrepare(&bptr->data, data_ptr, packet_size) != 1) goto err;
         bptr->data_size = packet_size;
         bptr->header_identifier = (*src_identifier)++;
@@ -357,7 +370,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
         packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
         packet_ttl = from_client ? cptr->server_ttl : cptr->client_ttl;
         window_size = from_client ? cptr->max_packet_size_server : cptr->max_packet_size_client;
-        if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
+        if ((bptr = BuildInstructionsNew(&build_list, cptr, !from_client, packet_flags)) == NULL) goto err;
         bptr->header_identifier = (*dst_identifier)++;
         bptr->ack = *my_seq;
         bptr->seq = *remote_seq;
@@ -377,7 +390,7 @@ int GenerateTCP4SendDataInstructions(ConnectionProperties *cptr, PacketBuildInst
 
 
 // Generates fabricated packets required to disconnect a TCP session between two hosts.. starting with one side (client or server)
-int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list, int from_client) {
+int GenerateTCPCloseConnectionInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list, int from_client) {
     PacketBuildInstructions *bptr = NULL;
     PacketBuildInstructions *build_list = NULL;
     int packet_flags = 0;
@@ -420,7 +433,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_flags = TCP_FLAG_FIN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
     packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
     window_size = from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server;
-    if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr, from_client, packet_flags)) == NULL) goto err;
     bptr->client = from_client;
     bptr->header_identifier =  (*src_identifier)++;
     bptr->ack = *remote_seq;
@@ -432,7 +445,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_flags = TCP_FLAG_FIN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
     packet_ttl = from_client ? cptr->server_ttl : cptr->client_ttl;
     window_size = from_client ? cptr->max_packet_size_server : cptr->max_packet_size_client;
-    if ((bptr = BuildInstructionsNew(&build_list, dest_ip, source_ip, dest_port, source_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr, !from_client, packet_flags)) == NULL) goto err;
     bptr->client = !from_client;
     bptr->header_identifier = (*dst_identifier)++;
     bptr->ack = *my_seq;
@@ -444,7 +457,7 @@ int GenerateTCP4CloseConnectionInstructions(ConnectionProperties *cptr, PacketBu
     packet_flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
     packet_ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
     window_size = from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server;
-    if ((bptr = BuildInstructionsNew(&build_list, source_ip, dest_ip, source_port, dest_port, packet_flags, packet_ttl, window_size)) == NULL) goto err;
+    if ((bptr = BuildInstructionsNew(&build_list, cptr, from_client, packet_flags)) == NULL) goto err;
     bptr->client = from_client;
     bptr->header_identifier = (*src_identifier)++;
     bptr->ack = *remote_seq;

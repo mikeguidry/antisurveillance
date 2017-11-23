@@ -46,16 +46,16 @@ def other_build_http(a):
 	a.instructionscreate(client_ip=src_ip, client_port=src_port, destination_ip=dst_ip, destination_port=dst_port, client_ttl=client_ttl, server_ttl=server_ttl, client_window_size=client_window, server_window_size=server_window)
 
 	#lets open the connection (perform 3 way handshake packets)
-	a.instructionstcp4open()
+	a.instructionstcpopen()
 
 	#now we want to send a request fromm the client to the server (HTTP GET)
-	a.instructionstcp4send(from_client=1, data=client_body)
+	a.instructionstcpsend(from_client=1, data=client_body)
 
 	#now the server needs to respond
-	a.instructionstcp4send(from_client=0, data=server_body)
+	a.instructionstcpsend(from_client=0, data=server_body)
 
 	#now the connection gets closed from the client side (noo more requests)
-	a.instructionstcp4close(from_client=1)
+	a.instructionstcpclose(from_client=1)
 
 	#now build the attack structure around those instructions we just designed
 	#skip adjustments is for replaying attacks not wanting to generate new IPs
@@ -72,15 +72,11 @@ def init():
 	a = antisurveillance.manager()
 	a.setctx(ctx)
 
-	a.pcapload(filename="tcp6.pcap")
-	a.exit()
-
 	#pprint(a)
 
 	#you could load a previously dumped pcap.. so it would expand, and replay those sessions -- and dump the updated pcap at the end
 	#loop a few times and see how much the sessions/packets grow
 	#a.pcapload(filename="py_output.pcap")
-	#a.exit()
 
 	#turn networking off so that we will dump all packets, and they wont get wrote to the live internet
 	a.networkoff()

@@ -40,6 +40,25 @@ if pythoon didnt require indentions i'd prob try it more often
 #endif
 
 
+
+int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, int *_is_ipv6) {
+     int is_ipv6 = 0;
+
+    if (ascii_ip == NULL) return 0;
+
+    is_ipv6 = strchr(ascii_ip,':') ? 1 : 0;
+
+    if (!is_ipv6) {
+        *ipv4_dest = inet_addr(ascii_ip);
+        if (_is_ipv6 != NULL) *_is_ipv6 = 0;
+    } else {
+        if (_is_ipv6 != NULL) *_is_ipv6 = 1;
+    }
+
+    return 1;   
+}
+
+
 // python configuration structure which has anything the script requires over time
 typedef struct {
     PyObject_HEAD
@@ -358,7 +377,7 @@ static PyObject *PyASC_InstructionsTCP4Close(PyAS_Config* self, PyObject *args, 
         return NULL;
     }
 
-    int ret = GenerateTCP4CloseConnectionInstructions(&self->connection_parameters, &self->instructions, from_client);
+    int ret = GenerateTCPCloseConnectionInstructions(&self->connection_parameters, &self->instructions, from_client);
 
     return PyInt_FromLong(ret);
 }
@@ -377,7 +396,7 @@ static PyObject *PyASC_InstructionsTCP4Send(PyAS_Config* self, PyObject *args, P
         return NULL;
     }
 
-    ret = GenerateTCP4SendDataInstructions(&self->connection_parameters, &self->instructions, from_client, data, size);
+    ret = GenerateTCPSendDataInstructions(&self->connection_parameters, &self->instructions, from_client, data, size);
 
     return PyInt_FromLong(ret);
 }
@@ -385,7 +404,7 @@ static PyObject *PyASC_InstructionsTCP4Send(PyAS_Config* self, PyObject *args, P
 // create packets for opening a tcp conneection
 static PyObject *PyASC_InstructionsTCP4Open(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     
-    int ret = GenerateTCP4ConnectionInstructions(&self->connection_parameters, &self->instructions);
+    int ret = GenerateTCPConnectionInstructions(&self->connection_parameters, &self->instructions);
 
     return PyInt_FromLong(ret);
 }
@@ -443,8 +462,8 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
     memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
 
     // the new connection needs these variables prepared
-    self->connection_parameters.server_ip = inet_addr(destination_ip);
-    self->connection_parameters.client_ip = inet_addr(client_ip);
+    IP_prepare(destination_ip, &self->connection_parameters.server_ip, &self->connection_parameters.server_ipv6, &self->connection_parameters.is_ipv6);
+    IP_prepare(client_ip, &self->connection_parameters.client_ip, &self->connection_parameters.client_ipv6, &self->connection_parameters.is_ipv6);
     self->connection_parameters.server_port = destination_port;
     self->connection_parameters.client_port = client_port;
     self->connection_parameters.server_identifier = server_identifier ? server_identifier : rand()%0xFFFFFFFF;
@@ -464,16 +483,16 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
 
     
     // open the connection...
-    if (GenerateTCP4ConnectionInstructions(&self->connection_parameters, &self->instructions) != 1) { ret = -2; goto err; }
+    if (GenerateTCPConnectionInstructions(&self->connection_parameters, &self->instructions) != 1) { ret = -2; goto err; }
 
     // now we must send data from client to server (http request)
-    if (GenerateTCP4SendDataInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT, client_body, client_body_size) != 1) { ret = -3; goto err; }
+    if (GenerateTCPSendDataInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT, client_body, client_body_size) != 1) { ret = -3; goto err; }
 
     // now we must send data from the server to the client (web page body)
-    if (GenerateTCP4SendDataInstructions(&self->connection_parameters, &self->instructions, FROM_SERVER, server_body, server_body_size) != 1) { ret = -4; goto err; }
+    if (GenerateTCPSendDataInstructions(&self->connection_parameters, &self->instructions, FROM_SERVER, server_body, server_body_size) != 1) { ret = -4; goto err; }
 
     // now lets close the connection from client side first
-    if (GenerateTCP4CloseConnectionInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT) != 1) { ret = -5; goto err; }
+    if (GenerateTCPCloseConnectionInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT) != 1) { ret = -5; goto err; }
 
 
     // now lets create the attak structure to begin...
@@ -514,6 +533,125 @@ err:;
     return PyInt_FromLong(ret);
 }
 
+// this is sortof redundant... it only takes 4 other commands (2 of the same)
+static PyObject *PyASC_BuildHTTP6(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {
+    "client_ip", "client_port", "destination_ip", "destination_port", 
+    "client_body", "client_body_size", "server_body", "server_body_size",
+    "count", "interval",
+    // these are not required
+    "client_ttl", "server_ttl", 
+    "client_window_size", "server_window_size","client_seq", "server_seq", "client_identifier",
+    "server_identifier", "client_os","server_os", "gzip_enable", "gzip_percentage","gzip_size",
+    "gzip_injections", 0};
+
+    char *client_ip = NULL, *destination_ip = NULL;
+    char *server_body = NULL, *client_body = NULL;
+    int client_body_size = 0, server_body_size = 0;
+    int client_port = 0, destination_port = 0, client_ttl = 0, server_ttl = 0, client_window_size = 0;
+    int server_window_size = 0;
+    unsigned long client_seq = 0, server_seq = 0, client_identifier = 0, server_identifier = 0;
+    int client_os = 0, server_os = 0;
+    int count = self->replay_count;
+    int interval = self->replay_interval;
+    AS_attacks *aptr = NULL;
+
+    // *** finish implementing gzip here.. it has to create a new thread if the percentage matches
+    // is gzip attack enabled? default yes
+    int gzip_enable = 1;
+    // what percentage chance does this http session get affected? (Default 30)
+    int gzip_percentage = 30;
+    // default to 100megs
+    int gzip_size = 1024*1024*100;
+    // injections = rand between 1-5
+    int gzip_injections = 1+ (rand()%5);
+
+    int ret = 0;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sisis#s#|iiiiiikkkkiiiiii", kwd_list,  
+    &client_ip, &client_port, &destination_ip, &destination_port, &client_body, &client_body_size,
+    &server_body, &server_body_size, &count, &interval, &client_ttl, &server_ttl, &client_window_size,
+    &server_window_size, &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os,
+    &server_os, &gzip_enable, &gzip_percentage, &gzip_size, &gzip_injections)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
+
+    // the new connection needs these variables prepared
+    IP_prepare(destination_ip, &self->connection_parameters.server_ip, &self->connection_parameters.server_ipv6, &self->connection_parameters.is_ipv6);
+    IP_prepare(client_ip, &self->connection_parameters.client_ip, &self->connection_parameters.client_ipv6, &self->connection_parameters.is_ipv6);
+    self->connection_parameters.server_port = destination_port;
+    self->connection_parameters.client_port = client_port;
+    self->connection_parameters.server_identifier = server_identifier ? server_identifier : rand()%0xFFFFFFFF;
+    self->connection_parameters.client_identifier = client_identifier ? client_identifier : rand()%0xFFFFFFFF;
+    self->connection_parameters.server_seq = server_seq ? server_seq : rand()%0xFFFFFFFF;
+    self->connection_parameters.client_seq = client_seq ? client_seq : rand()%0xFFFFFFFF;
+
+    self->connection_parameters.client_ttl = client_ttl ? client_ttl : 64;// *** set efault ttl somewhere
+    self->connection_parameters.server_ttl = server_ttl ? server_ttl : 53;
+    self->connection_parameters.max_packet_size_client = client_window_size ? client_window_size : (1500 - (20 * 2 + 12));
+    self->connection_parameters.max_packet_size_server = server_window_size ? server_window_size : (1500 - (20 * 2 + 12));;
+
+    gettimeofday(&self->connection_parameters.ts, NULL);
+
+    // free all instructions used by this python module
+    PacketBuildInstructionsFree(&self->instructions);
+
+    
+    // open the connection...
+    if (GenerateTCPConnectionInstructions(&self->connection_parameters, &self->instructions) != 1) { ret = -2; goto err; }
+
+    // now we must send data from client to server (http request)
+    if (GenerateTCPSendDataInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT, client_body, client_body_size) != 1) { ret = -3; goto err; }
+
+    // now we must send data from the server to the client (web page body)
+    if (GenerateTCPSendDataInstructions(&self->connection_parameters, &self->instructions, FROM_SERVER, server_body, server_body_size) != 1) { ret = -4; goto err; }
+
+    // now lets close the connection from client side first
+    if (GenerateTCPCloseConnectionInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT) != 1) { ret = -5; goto err; }
+
+
+    // now lets create the attak structure to begin...
+    if ((aptr = (AS_attacks *)calloc(1, sizeof(AS_attacks))) == NULL) goto err;
+
+    aptr->ctx = self->ctx;
+    aptr->id = rand()%5000;
+    pthread_mutex_init(&aptr->pause_mutex, NULL);  
+    aptr->type = ATTACK_SESSION;
+
+    aptr->count = count;
+    aptr->repeat_interval = interval;
+
+    // that concludes all packets
+    aptr->packet_build_instructions = self->instructions;
+    // lets unlink it from our structure..
+    self->instructions = NULL;
+
+    // now lets build the low level packets for writing to the network interface
+    BuildPackets(aptr);
+
+
+    if (aptr != NULL) {
+        // link it in.
+        aptr->next = self->ctx->attack_list;
+        self->ctx->attack_list = aptr;
+
+        // lets return the ID
+        ret = aptr->id;
+
+    }
+err:;
+
+    if (ret <= 0) {
+        PacketBuildInstructionsFree(&self->instructions);
+    }
+
+    return PyInt_FromLong(ret);
+}
+
+
 // start a new instruction set (removing anything previously not saved, etc)
 static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {
@@ -527,6 +665,7 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
     unsigned long client_seq = 0, server_seq = 0, client_identifier = 0, server_identifier = 0;
     int client_os = 0, server_os = 0;
 
+
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "sisiiiii|kkkkii", kwd_list,  &client_ip, &client_port,
     &destination_ip, &destination_port, &client_ttl, &server_ttl, &client_window_size, &server_window_size,
     &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os, &server_os)) {
@@ -537,9 +676,8 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
     memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
 
     // the new connection needs these variables prepared
-    //gettimeofday(&self->connection_parameters.ts, NULL);
-    self->connection_parameters.server_ip = inet_addr(destination_ip);
-    self->connection_parameters.client_ip = inet_addr(client_ip);
+    IP_prepare(destination_ip, &self->connection_parameters.server_ip, &self->connection_parameters.server_ipv6, &self->connection_parameters.is_ipv6);
+    IP_prepare(client_ip, &self->connection_parameters.client_ip, &self->connection_parameters.client_ipv6, &self->connection_parameters.is_ipv6);
     self->connection_parameters.server_port = destination_port;
     self->connection_parameters.client_port = client_port;
     self->connection_parameters.server_identifier = server_identifier;
@@ -761,6 +899,7 @@ static PyMethodDef PyASC_methods[] = {
 
     // instructions create (start a new instructions set) clear the current if it wasnt saved into an attack
     {"instructionscreate", (PyCFunction)PyASC_InstructionsCreate,    METH_VARARGS | METH_KEYWORDS,    "" },
+
     // tcp open connection into the instructions
     {"instructionstcp4open", (PyCFunction)PyASC_InstructionsTCP4Open,   METH_NOARGS,    "" },
 
@@ -770,13 +909,26 @@ static PyMethodDef PyASC_methods[] = {
 
     // tcp close connection into instructions
     {"instructionstcp4close", (PyCFunction)PyASC_InstructionsTCP4Close,    METH_VARARGS | METH_KEYWORDS,    "" },
-    
+
+
+    // tcp open connection into the instructions
+    //{"instructionstcp6open", (PyCFunction)PyASC_InstructionsTCP6Open,   METH_NOARGS,    "" },
+
+    // tcp send data into the instructions (fromm either client or server)
+    // the script can perform this as much as needed...
+    //{"instructionstcp6send", (PyCFunction)PyASC_InstructionsTCP6Send,    METH_VARARGS | METH_KEYWORDS,    "" },
+
+    // tcp close connection into instructions
+    //{"instructionstcp6close", (PyCFunction)PyASC_InstructionsTCP6Close,    METH_VARARGS | METH_KEYWORDS,    "" },    
     
     // save instructions into an attack structure...
     {"instructionsbuildattack", (PyCFunction)PyASC_InstructionsBuildAttack,    METH_VARARGS | METH_KEYWORDS,    "" },
     
     // build an http session and automatically add as an attack
     {"buildhttp4", (PyCFunction)PyASC_BuildHTTP4,    METH_VARARGS | METH_KEYWORDS,    "" },
+
+    // build an http session and automatically add as an attack
+    {"buildhttp6", (PyCFunction)PyASC_BuildHTTP4,    METH_VARARGS | METH_KEYWORDS,    "" },
 
     // turn on blackhole
     {"blackholeenable", (PyCFunction)PyASC_BlackholeEnable,    METH_NOARGS,    "" },

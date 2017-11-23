@@ -1,7 +1,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <Python.h>
-
+#include <netinet/ip6.h>
 struct _packet_info;
 struct _packet_instructions;
 //typedef struct _packet_info PacketInfo;
@@ -91,8 +91,15 @@ typedef struct _connection_properties {
 	struct _connection_properties *next;
 
 	AS_attacks *aptr;
+    // IPv4
 	uint32_t server_ip;
 	uint32_t client_ip;
+    // IPv6
+    struct in6_addr server_ipv6;
+    struct in6_addr client_ipv6;
+
+    int is_ipv6;
+    
 	uint32_t server_port;
 	uint32_t client_port;
 	uint32_t server_identifier;
