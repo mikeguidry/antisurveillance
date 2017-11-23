@@ -11,14 +11,14 @@ OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 $(ODIR)/%.o: %.c $(DEPS) scriptmain.o cmdline.o
 	$(CC) -c -o $@ $< $(CFLAGS)
 
+antiscript: $(OBJ) scriptmain.o
+	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+
 anti: $(OBJ) cmdline.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 anti_static: $(OBJ) cmdline.o
 	gcc -static -o $@ $^ $(CFLAGS) $(LIBS)
-
-antiscript: $(OBJ) scriptmain.o
-	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 clean:
 	rm -f anti $(ODIR)/*.o *~ core $(INCDIR)/*~ 

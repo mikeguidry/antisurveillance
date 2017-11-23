@@ -606,7 +606,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
 
     // prepare IPv6 header
     p->ip.ip6_ctlun.ip6_un2_vfc = 6 << 4;
-    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size - sizeof(struct ip6_hdr));
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMP;
 
@@ -684,7 +684,7 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
 
     // prepare IPv6 header
     p->ip.ip6_ctlun.ip6_un2_vfc = 6 << 4;
-    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size  - sizeof(struct ip6_hdr));
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_UDP;
     
@@ -776,7 +776,7 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 
     // prepare IPv6 header
     p->ip.ip6_ctlun.ip6_un2_vfc = 6 << 4;
-    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size - sizeof(struct ip6_hdr));
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_TCP;
 

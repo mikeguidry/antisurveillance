@@ -345,6 +345,8 @@ int GenerateTCPSendDataInstructions(ConnectionProperties *cptr, PacketBuildInstr
     while (data_size > 0) {
         packet_size = min(data_size, from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server);
 
+        //if (packet_size > 53) packet_size -=
+
         // if something wasn't handled properly.. (when i turned off OSPick().. i had to search for hours to find this =/)
         if (packet_size < 0) return -1;
 
@@ -854,8 +856,8 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     // start OK.. until checksum.. or disqualify for other reasons
     iptr->ok = 1;
 
-    // total size from IPv4 header
-    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen);// - sizeof(struct ip6_hdr);
+    // total size from IPv6 header
+    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen) - sizeof(struct ip6_hdr);
     
     // get tcp header size (so we know if it has options, or not)
     tcp_header_size = (p->tcp.doff << 2);

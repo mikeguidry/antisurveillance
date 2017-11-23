@@ -330,10 +330,6 @@ int HTTPContentModification(AS_attacks *aptr) {
     char *response = NULL;
     int response_size = 0;
     // https://github.com/h2o/picohttpparser starting with their example...
-    char buf[4096], *method = NULL, *path = NULL;
-    int pret = 0, minor_version = 0;
-    size_t buflen = 0, prevbuflen = 0, method_len = 0, path_len = 0, num_headers = 0;
-    ssize_t rret = 0;
     char *hptr = NULL;
 
     // work in progress
