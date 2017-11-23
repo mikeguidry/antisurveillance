@@ -9,7 +9,6 @@
 #include "network.h"
 #include "antisurveillance.h"
 #include "utils.h"  
-#include <mhash.h>
 
 
 // count the amount of entries in a linked list
@@ -143,30 +142,6 @@ char *FileContents(char *filename, int *size) {
 
 
 
-
-void md5hash(char *data, int size) {
-    int i = 0;
-    MHASH td;
-    unsigned char buffer;
-    unsigned char hash[16]; /* enough size for MD5 */
-    
-
-    td = mhash_init(MHASH_MD5);
-
-    if (td == MHASH_FAILED) { printf("error mhash\n"); exit(-1); }
-
-    mhash(td, data, size);
-
-    mhash_deinit(td, hash);
-
-    printf("Hash:");
-    for (i = 0; i < mhash_get_block_size(MHASH_MD5); i++) {
-            printf("%.2x", hash[i]);
-    }
-    printf("\n");
-
-    return;
-}
 
 
 

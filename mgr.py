@@ -110,8 +110,6 @@ def init():
 	# i was calling disable() because it was running the C code right after.. it ignores it now if it returns 1 here
 	#a.disable()
 
-	#returning 1 will stop the C portion of the code...
-	#so itll only work with python
 	return 1
 	
 

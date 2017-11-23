@@ -749,8 +749,10 @@ void attacks_init(AS_context *ctx) {
         
     }
 
+#ifdef BUILTIN_BLACKHOLE_IPS
     // include ranges we wish to destroy using network 0day
     #include "blackhole_ips.h"
+#endif
 
     return;
 }
