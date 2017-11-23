@@ -7,6 +7,8 @@
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
@@ -193,44 +195,6 @@ strategy: first go by how many hops are equal...
 
 */
 
-typedef struct _traceroute_spider {
-    //routine linked list management..
-    struct _traceroute_spider *next;
-
-    // branches is like next but for all branches (this hop matches anothers)
-    struct _traceroute_spider *branches;
-
-    // the queue which linked into this tree
-    // it wiill get removed fromm the active list to speed up the process
-    // of analyzing responses... but itll stay linked here for the original
-    // information for the strategies for picking targets for blackholing and sureillance attacks
-    TracerouteQueue *queue;
-
-    // time this entry was created
-    int ts;
-
-    // quick reference of IP (of the router.. / hop / gateway)
-    uint32_t hop;
-    struct in6_addr hopv6;
-
-    // what was being tracerouted to conclude this entry
-    uint32_t target_ip;
-
-    // TTL (hops) in which it was found
-    int ttl;
-
-    // determined country code
-    int country_code;
-
-    // we may want ASN information to take the fourteen eyes list, and assume
-    // all internet providers which are worldwide, and located in other countries
-    // fromm those countries are going to also have their own pllatforms in those
-    // other locations
-    // so we will do ASN -> companies (as an identifer)
-    // future: all of these strategies can get incorporated into future automated, and mass hacking campaigns
-    int asn;
-} TracerouteSpider;
-
 
 // lets see if we have a hop already in the spider.. then we just add this as a branch of it
 TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *hopv6) {
@@ -254,29 +218,6 @@ TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *ho
 
     return sptr;
 }
-
-
-// when reading the traceroute responses from the raw socket.. it should get added into this list immediately
-// further information could be handled from another thread, or queue... this ensures less packet loss than
-// dealing with anything inline as it comes in.. and also allows dumping the data to a save file
-// for the spider in the future to pick & choose mass surveillance platforms
-typedef struct _traceroute_response {
-    struct _traceroute_response *next;
-
-    // to know where the packet relates to
-    uint32_t identifier;
-
-    int ttl;
-
-    // the hop which responded
-    uint32_t hop;
-    // or its ipv6
-    struct in6_addr hopv6;
-
-    // if we correlated the identifier with the target
-    uint32_t target;
-    struct in6_addr targetv6;
-} TracerouteResponse;
 
 
 // Analyze a traceroute response against the current queue and build the spider web of traceroutes
@@ -325,8 +266,14 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     return ret;
 }
 
-
-
+/*
+maybe move commands instead of taking ipv4, and ipv6 separately... we can union.. and check 
+if all other ipv6 bytes (that wouldnt get set fromm ipv4 due to small size) is 00s
+typedef union {
+    uint32_t target;
+    struct in6_addr targetv6;
+} target_ip;
+*/
 
 // OK ICMP/UDP is finished.. time for the real fun.. this will def catch some eyes once people realize how you can programmatically
 // target mass surveillance platforms ... without that much effort really.
@@ -439,6 +386,9 @@ int Traceroute_Perform(AS_context *ctx) {
     struct icmphdr icmp;
     PacketBuildInstructions *iptr = NULL;
     AttackOutgoingQueue *optr = NULL;
+    int i = 0;
+
+    memset(&icmp, 0, sizeof(struct icmphdr));
 
     int ret = 0;
     // timestamp required for various states of traceroute functionality
@@ -449,9 +399,10 @@ int Traceroute_Perform(AS_context *ctx) {
 
     // loop until we run out of elements
     while (tptr != NULL) {
+        // lets increase TTL every 10 seconds.. id like to perform thousands of these at all times.. so 10 seconds isnt a big deal...
+        // thats 5 minutes till MAX ttl (30)
 
-        // lets increase TTL every 5 seconds
-        if ((ts - tptr->ts_activity) > 5) {
+        if ((ts - tptr->ts_activity) > 10) {
             tptr->current_ttl++;
 
             // lets merge these two variables nicely into a 32bit variable for the ICMP packet  (to know which request when it comes back)
@@ -472,12 +423,15 @@ int Traceroute_Perform(AS_context *ctx) {
                 if (tptr->target != 0) {
                     iptr->type = PACKET_TYPE_ICMP_4;
                     iptr->destination_ip = tptr->target;
-                    // we need source ip here!
+                    iptr->source_ip = get_local_ipv4();
                 } else {
                     iptr->type = PACKET_TYPE_ICMP_6;
                     CopyIPv6Address(&iptr->destination_ipv6, &tptr->targetv6);
-                    // we need source ip here!
+                    get_local_ipv6(&iptr->source_ipv6);
                 }
+
+                // copy ICMP parameters into this instruction packet
+                memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
 
                 /*
 
@@ -488,16 +442,27 @@ int Traceroute_Perform(AS_context *ctx) {
                 */
 
                 // ok so we need a way to queue an outgoing instruction without an attack structure....
-                if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
-                    optr->buf = iptr->packet;
-                    optr->type = iptr->type;
-                    optr->size = iptr->packet_size;
+                // lets build a packet from the instructions we just designed
+                // lets build whichever type this is by calling the function directly from packetbuilding.c
+                // for either ipv4, or ipv6
+                if (iptr->type & PACKET_TYPE_ICMP_6)
+                    i = BuildSingleICMP6Packet(iptr);
 
-                    iptr->packet = NULL;
-                    iptr->packet_size = 0;
+                else if (iptr->type & PACKET_TYPE_ICMP_4)
+                    i = BuildSingleICMP4Packet(iptr);
 
-                    // *** this is blocking... maybe change later 
-                    AttackQueueAdd(ctx, optr, 0);
+                if (i == 1) {
+                    if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
+                        optr->buf = iptr->packet;
+                        optr->type = iptr->type;
+                        optr->size = iptr->packet_size;
+
+                        iptr->packet = NULL;
+                        iptr->packet_size = 0;
+
+                        // *** this is blocking... maybe change later 
+                        AttackQueueAdd(ctx, optr, 0);
+                    }
                 }
 
                 // dont need this anymore..
@@ -518,3 +483,64 @@ int Traceroute_Perform(AS_context *ctx) {
     end:;
     return ret;
 }
+
+
+//http://www.binarytides.com/get-local-ip-c-linux/
+uint32_t get_local_ipv4() {
+    const char* google_dns_server = "8.8.8.8";
+    int dns_port = 53;
+    uint32_t ret = 0;
+     
+    struct sockaddr_in serv;
+     
+    int sock = socket ( AF_INET, SOCK_DGRAM, 0);
+     if (sock < 0) return 0;
+     
+    memset( &serv, 0, sizeof(serv) );
+    serv.sin_family = AF_INET;
+    serv.sin_addr.s_addr = inet_addr( google_dns_server );
+    serv.sin_port = htons( dns_port );
+ 
+    int err = connect( sock , (const struct sockaddr*) &serv , sizeof(serv) );
+     
+    struct sockaddr_in name;
+    socklen_t namelen = sizeof(name);
+    err = getsockname(sock, (struct sockaddr*) &name, &namelen);
+         
+    ret = name.sin_addr.s_addr;
+
+    close(sock);
+     
+    return ret;
+}
+
+// fromm //http://www.binarytides.com/get-local-ip-c-linux/ as above..
+// but modified for ipv6
+void get_local_ipv6(struct in6_addr *dst) {
+    const char* google_dns_server = "2001:4860:4860::8888";
+    int dns_port = 53;
+    uint32_t ret = 0;
+
+    struct sockaddr_in6 serv;
+
+    int sock = socket ( AF_INET6, SOCK_DGRAM, 0);
+     if (sock < 0) return 0;
+
+    memset( &serv, 0, sizeof(serv) );
+    serv.sin6_family = AF_INET6;
+    inet_pton(AF_INET6, google_dns_server, &serv.sin6_addr);
+    serv.sin6_port = htons( dns_port );
+
+    int err = connect( sock , (const struct sockaddr*) &serv , sizeof(serv) );
+
+    struct sockaddr_in6 name;
+    socklen_t namelen = sizeof(name);
+    err = getsockname(sock, (struct sockaddr*) &name, &namelen);
+
+    memcpy(dst, &name.sin6_addr, sizeof(struct in6_addr));
+
+    close(sock);
+
+}
+
+

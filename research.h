@@ -82,7 +82,71 @@ typedef struct _traceroute_queue {
 
 
 
+typedef struct _traceroute_spider {
+    //routine linked list management..
+    struct _traceroute_spider *next;
+
+    // branches is like next but for all branches (this hop matches anothers)
+    struct _traceroute_spider *branches;
+
+    // the queue which linked into this tree
+    // it wiill get removed fromm the active list to speed up the process
+    // of analyzing responses... but itll stay linked here for the original
+    // information for the strategies for picking targets for blackholing and sureillance attacks
+    TracerouteQueue *queue;
+
+    // time this entry was created
+    int ts;
+
+    // quick reference of IP (of the router.. / hop / gateway)
+    uint32_t hop;
+    struct in6_addr hopv6;
+
+    // what was being tracerouted to conclude this entry
+    uint32_t target_ip;
+
+    // TTL (hops) in which it was found
+    int ttl;
+
+    // determined country code
+    int country_code;
+
+    // we may want ASN information to take the fourteen eyes list, and assume
+    // all internet providers which are worldwide, and located in other countries
+    // fromm those countries are going to also have their own pllatforms in those
+    // other locations
+    // so we will do ASN -> companies (as an identifer)
+    // future: all of these strategies can get incorporated into future automated, and mass hacking campaigns
+    int asn;
+} TracerouteSpider;
+
+
+
+// when reading the traceroute responses from the raw socket.. it should get added into this list immediately
+// further information could be handled from another thread, or queue... this ensures less packet loss than
+// dealing with anything inline as it comes in.. and also allows dumping the data to a save file
+// for the spider in the future to pick & choose mass surveillance platforms
+typedef struct _traceroute_response {
+    struct _traceroute_response *next;
+
+    // to know where the packet relates to
+    uint32_t identifier;
+
+    int ttl;
+
+    // the hop which responded
+    uint32_t hop;
+    // or its ipv6
+    struct in6_addr hopv6;
+
+    // if we correlated the identifier with the target
+    uint32_t target;
+    struct in6_addr targetv6;
+} TracerouteResponse;
+
 
 
 int Traceroute_Perform(AS_context *ctx);
 int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr);
+void get_local_ipv6(struct in6_addr *dst);
+uint32_t get_local_ipv4();
