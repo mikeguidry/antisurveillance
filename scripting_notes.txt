@@ -4,6 +4,9 @@ traffic id (pcap ID? live capture ID)
 size
 ts created, last used
 
+----------------------
+IPv6:  just use an ipv6 address instead of an ipv4 one.. and itll work fine.  (it checks for ":" in the address)
+----------------------
 
 
 create server body (for http fabrication)

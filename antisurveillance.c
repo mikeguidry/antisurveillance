@@ -290,20 +290,6 @@ int main(int argc, char *argv[]) {
         ctx->aggressive = 0;
     }
 
-    /*
-    {
-        test_icmp4(ctx);
-        for (i = 0; i < 1000; i++) {
-            AS_perform(ctx);
-            sleep(1);
-        }
-
-        
-        
-        exit(-1);
-    }
-*/
-
     // initialize scripting subsystem
     Scripting_Init();
 

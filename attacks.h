@@ -22,6 +22,8 @@ typedef struct _bh_queue {
     int d;
     int netmask;
 
+    struct in6_addr ipv6;
+
     uint32_t ip;
 
     int strategy;

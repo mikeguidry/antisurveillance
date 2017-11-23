@@ -623,6 +623,15 @@ void BH_Clear(AS_context *ctx) {
 // This is the main function which  is to built the packets for BH tactics
 // It is meant to be called every iteration similar to AS_perform() but it'll get linked
 // in as an attack structure, and using its own custom function like HTTP_Create()
+
+
+// IPv6:
+// Performing blackhole attacks on various hosts across the Internet is a little more difficult.  Ipv4 success rate is above 85%...
+// IPv6 will depend on whether or not those hosts configurations can be detected.  A lot of people use the same concepts in choosing their
+// network ranges, etc.  It just won't be 85%  but it is 100% if the configuration is guessed... the 85% on IPv4 is due to similar
+// and the fact that we dont want to flood other networks with an attack on a particular one... I thikn traceroute, and some other features
+// will help in solving to increase chances a little bit
+
 int BH_Perform(AS_context *ctx) {
     int ret = -1;
     uint32_t ip = 0;

@@ -41,6 +41,7 @@ if pythoon didnt require indentions i'd prob try it more often
 
 
 
+// this prepares fabricated connections using either IPv4, or IPv6 addresses.. it detects IPv6 by the :
 int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, int *_is_ipv6) {
      int is_ipv6 = 0;
 
@@ -472,7 +473,7 @@ static PyObject *PyASC_BuildHTTP(PyAS_Config* self, PyObject *args, PyObject *kw
     self->connection_parameters.server_seq = server_seq ? server_seq : rand()%0xFFFFFFFF;
     self->connection_parameters.client_seq = client_seq ? client_seq : rand()%0xFFFFFFFF;
 
-    self->connection_parameters.client_ttl = client_ttl ? client_ttl : 64;// *** set efault ttl somewhere
+    self->connection_parameters.client_ttl = client_ttl ? client_ttl : 64;
     self->connection_parameters.server_ttl = server_ttl ? server_ttl : 53;
     self->connection_parameters.max_packet_size_client = client_window_size ? client_window_size : (1500 - (20 * 2 + 12));
     self->connection_parameters.max_packet_size_server = server_window_size ? server_window_size : (1500 - (20 * 2 + 12));;

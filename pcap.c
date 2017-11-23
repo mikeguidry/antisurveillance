@@ -99,7 +99,7 @@ int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, Pack
         packet_hdr.orig_len = ptr->size + sizeof(struct ether_header);
 
         fwrite((void *)&packet_hdr, 1, sizeof(pcaprec_hdr_t), fd);
-        
+
         if (ptr->type & PACKET_TYPE_IPV4)
             ethhdr.ether_type = ntohs(ETHERTYPE_IP);
         else if (ptr->type & PACKET_TYPE_IPV6)
@@ -252,8 +252,8 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
     if ((packetinstructions = PacketsToInstructions(packets)) == NULL) goto end;
 
     // prepare the filter for detination port
-    //FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
-    FilterPrepare(&flt, 0, 0); // *** just for testing
+    FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
+    //FilterPrepare(&flt, 0, 0); // *** just for testing
     
     pcount = L_count((LINK *)packetinstructions);
     // If its more than 100k lets use multiple threads to complete it faster

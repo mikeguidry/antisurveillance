@@ -1,5 +1,10 @@
 mgr.py has testing code i was using...
 
+----------------------
+IPv6:  just use an ipv6 address instead of an ipv4 one.. and itll work fine.  (it checks for ":" in the address)
+----------------------
+
+
 to use:
 import antisurveillance
 
