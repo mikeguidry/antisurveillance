@@ -103,22 +103,32 @@ typedef struct _packet_instructions {
 } PacketBuildInstructions;
 
 
-#define PSEUDOTCPHSIZE	12
-// base ip header size (without options)
-#define IPHSIZE		20
-
 
 
 #pragma pack(push,1)
 // pseudo structure for calculating checksum
 struct pseudo_tcp4
 {
+    
 	unsigned saddr, daddr;
 	unsigned char mbz;
 	unsigned char ptcl;
 	unsigned short tcpl;
 	struct tcphdr tcp;
 };
+
+struct pseudo_tcp6
+{
+    
+    struct in6_addr saddr;
+    struct in6_addr daddr;
+	unsigned char mbz;
+	unsigned char ptcl;
+	unsigned short tcpl;
+	struct tcphdr tcp;
+};
+
+
 
 
 //http://www.binarytides.com/raw-udp-sockets-c-linux/
@@ -131,6 +141,13 @@ struct pseudo_header_udp4
     u_int16_t len;
 };
 
+struct pseudo_header_udp6 {
+    struct in6_addr source_address;
+    struct in6_addr destination_address;
+    u_int8_t placeholder;
+    u_int8_t protocol;
+    u_int16_t len;
+};
 
 // packet header.. options go after tcphdr.. i havent used iphdr so oh well
 struct packet

@@ -726,7 +726,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     p->ip.check = 0;
 
     // calculate what it should be
-    p->ip.check = (unsigned short)in_cksum((unsigned short *)&p->ip, IPHSIZE);
+    p->ip.check = (unsigned short)in_cksum((unsigned short *)&p->ip, sizeof(struct iphdr));
 
     // verify its OK.. if not mark this packet as bad (so we can verify how many bad/good and decide
     // on discarding or not)
@@ -765,10 +765,10 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 
     // now copy the data itself of the packet
     if (iptr->data_size)
-        memcpy(checkbuf + PSEUDOTCPHSIZE + tcp_header_size + iptr->options_size, iptr->data, iptr->data_size);
+        memcpy(checkbuf + sizeof(struct pseudo_tcp4) + tcp_header_size + iptr->options_size, iptr->data, iptr->data_size);
 
     // put the checksum into the correct location inside of the header
-    p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, tcp_header_size + PSEUDOTCPHSIZE + iptr->data_size);
+    p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, tcp_header_size + sizeof(struct pseudo_tcp4) + iptr->data_size);
 
 
     // TCP header verification failed
@@ -917,7 +917,7 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     char *data = NULL;
     char *sptr = NULL;
     char *checkbuf = NULL;
-    struct pseudo_header_udp4 *udp_chk_hdr = NULL;
+    struct pseudo_header_udp6 *udp_chk_hdr = NULL;
     uint32_t pkt_chk = 0, our_chk = 0;
     //char Aip_src[INET6_ADDRSTRLEN];
     //char Aip_dst[INET6_ADDRSTRLEN];
@@ -966,25 +966,25 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     // Set it to 0 now so we can verify ourselves..
     p->udp.check = 0;
     
-    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
+    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp6) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
 
     // copy udp hdr after the pseudo header for checksum
-    memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), &p->udp, sizeof(struct udphdr));
+    memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp6)), &p->udp, sizeof(struct udphdr));
 
     // if there is data then we copy it behind all headers inside of the checkbuf pointer
     if (iptr->data_size)
-        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
+        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp6) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
         
     // fill out the pseudo header for this UDP checksum
-    udp_chk_hdr = (struct pseudo_header_udp4 *)checkbuf;
+    udp_chk_hdr = (struct pseudo_header_udp6 *)checkbuf;
     udp_chk_hdr->protocol = IPPROTO_UDP;
-    udp_chk_hdr->source_address = iptr->source_ip;
-    udp_chk_hdr->destination_address = iptr->destination_ip;
+    memcpy(&udp_chk_hdr->source_address, &p->ip.ip6_src, sizeof(struct in6_addr));
+    memcpy(&udp_chk_hdr->destination_address, &p->ip.ip6_dst, sizeof(struct in6_addr));
     udp_chk_hdr->placeholder = 0;
     udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
 
     // perform checksum functin on PSEUDO header we just set parameters for, the actual for the wire UDP header, and the data
-    our_chk = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);
+    our_chk = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp6) + sizeof(struct udphdr) + iptr->data_size);
     
     if (pkt_chk != our_chk) iptr->ok = 0;
         

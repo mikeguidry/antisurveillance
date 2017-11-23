@@ -71,7 +71,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     if (iptr->options_size) TCPHSIZE += iptr->options_size;
 
     // calculate full length of packet.. before we allocate memory for storage
-    int final_packet_size = IPHSIZE + TCPHSIZE + iptr->data_size;
+    int final_packet_size = sizeof(struct iphdr) + TCPHSIZE + iptr->data_size;
     unsigned char *final_packet = (unsigned char *)calloc(1, final_packet_size);
     struct packet *p = (struct packet *)final_packet;
 
@@ -80,7 +80,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     
     // IP header below
     p->ip.version 	= 4;
-    p->ip.ihl   	= IPHSIZE >> 2;
+    p->ip.ihl   	= sizeof(struct iphdr) >> 2;
     p->ip.tos   	= 0;    
     p->ip.frag_off 	= 0x0040;
     p->ip.protocol 	= IPPROTO_TCP;
@@ -124,7 +124,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     p->tcp.doff 	= TCPHSIZE >> 2;
 
     // IP header checksum
-    p->ip.check	    = (unsigned short)in_cksum((unsigned short *)&p->ip, IPHSIZE);
+    p->ip.check	    = (unsigned short)in_cksum((unsigned short *)&p->ip, sizeof(struct iphdr));
 
 
     /*
@@ -158,7 +158,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
         // put the checksum into the correct location inside of the header
         // options size was already calculated into TCPHSIZE
-        p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size);
+        p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + sizeof(struct pseudo_tcp4) + iptr->data_size);
     
         free(checkbuf);
     }
@@ -424,7 +424,7 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
 
     // IP header below (static)
     p->ip.version       = 4;
-    p->ip.ihl   	    = IPHSIZE >> 2;
+    p->ip.ihl   	    = sizeof(struct iphdr) >> 2;
     p->ip.tos   	    = 0;
     p->ip.frag_off 	    = 0;
     p->ip.protocol 	    = IPPROTO_UDP;
@@ -653,7 +653,7 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     unsigned char *final_packet = NULL;
     struct packetudp6 *p = NULL;
     int final_packet_size = 0;
-    struct pseudo_header_udp4 *udp_chk_hdr = NULL;
+    struct pseudo_header_udp6 *udp_chk_hdr = NULL;
     char *checkbuf = NULL;
 
     // this is only for ipv4 tcp (ret 0 since its not technically an error.. just wrong func)
@@ -696,27 +696,27 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     memcpy((void *)(final_packet + sizeof(struct udphdr) + sizeof(struct ip6_hdr)), iptr->data, iptr->data_size);
 
     // allocate memory for performing checksum calculations
-    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
+    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp6) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
 
     // this is the pseudo header used for UDP verification and its pointer for configuring the parameters
-    udp_chk_hdr = (struct pseudo_header_udp4 *)checkbuf;
+    udp_chk_hdr = (struct pseudo_header_udp6 *)checkbuf;
 
     // copy udp hdr after the pseudo header for checksum
-    memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), &p->udp, sizeof(struct udphdr));
+    memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp6)), &p->udp, sizeof(struct udphdr));
 
     // if this packet has data then we want to copy it into this buffer for checksum generation
     if (iptr->data_size)
-        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
+        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp6) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
 
     // UDP requires these psuedo header parameters to be included in its checksum
     udp_chk_hdr->protocol = IPPROTO_UDP;
-    udp_chk_hdr->source_address = iptr->source_ip;
-    udp_chk_hdr->destination_address = iptr->destination_ip;
+    memcpy(&udp_chk_hdr->source_address, &iptr->source_ipv6, sizeof(struct in6_addr));
+    memcpy(&udp_chk_hdr->destination_address, &iptr->destination_ipv6, sizeof(struct in6_addr));
     udp_chk_hdr->placeholder = 0;
     udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
 
     // call the checksum function to generate a hash for the data we put inside of checkbuf
-    p->udp.check = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);
+    p->udp.check = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp6) + sizeof(struct udphdr) + iptr->data_size);
 
     // ensure the build structure has the buffer, and size we just created so it can push to the wire
     iptr->packet = (char *)final_packet;
@@ -809,26 +809,26 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 
     // TCP header checksum
     if (p->tcp.check == 0) {
-        struct pseudo_tcp4 *p_tcp = NULL;
-        char *checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp4) + TCPHSIZE + iptr->data_size);
+        struct pseudo_tcp6 *p_tcp = NULL;
+        char *checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp6) + TCPHSIZE + iptr->data_size);
 
         if (checkbuf == NULL) return -1;
 
-        p_tcp = (struct pseudo_tcp4 *)checkbuf;
+        p_tcp = (struct pseudo_tcp6 *)checkbuf;
 
-        //p_tcp->saddr 	= p->ip.saddr;
-        //p_tcp->daddr 	= p->ip.daddr;
+        memcpy(&p_tcp->saddr, &iptr->source_ipv6, sizeof(struct in6_addr));
+        memcpy(&p_tcp->daddr, &iptr->destination_ipv6, sizeof(struct in6_addr));
         p_tcp->mbz      = 0;
         p_tcp->ptcl 	= IPPROTO_TCP;
         p_tcp->tcpl 	= htons(TCPHSIZE + iptr->data_size);
 
         memcpy(&p_tcp->tcp, &p->tcp, TCPHSIZE);
-        memcpy(checkbuf + sizeof(struct pseudo_tcp4), iptr->options, iptr->options_size);
-        memcpy(checkbuf + sizeof(struct pseudo_tcp4) + iptr->options_size, iptr->data, iptr->data_size);        
+        memcpy(checkbuf + sizeof(struct pseudo_tcp6), iptr->options, iptr->options_size);
+        memcpy(checkbuf + sizeof(struct pseudo_tcp6) + iptr->options_size, iptr->data, iptr->data_size);        
 
         // put the checksum into the correct location inside of the header
         // options size was already calculated into TCPHSIZE
-        p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size);
+        p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + sizeof(struct pseudo_tcp6) + iptr->data_size);
     
         free(checkbuf);
     }
