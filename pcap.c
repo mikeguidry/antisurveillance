@@ -99,6 +99,12 @@ int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, Pack
         packet_hdr.orig_len = ptr->size + sizeof(struct ether_header);
 
         fwrite((void *)&packet_hdr, 1, sizeof(pcaprec_hdr_t), fd);
+        
+        if (ptr->type & PACKET_TYPE_IPV4)
+            ethhdr.ether_type = ntohs(ETHERTYPE_IP);
+        else if (ptr->type & PACKET_TYPE_IPV6)
+            ethhdr.ether_type = ntohs(0x86DD);
+
         fwrite((void *)&ethhdr, 1, sizeof(struct ether_header), fd);
         fwrite((void *)ptr->buf, 1, ptr->size, fd);
 

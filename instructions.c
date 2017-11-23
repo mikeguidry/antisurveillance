@@ -214,11 +214,11 @@ PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, Co
     if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) return NULL;
 
     if (!cptr->is_ipv6) {
-        bptr->type = PACKET_TYPE_TCP_4;
+        bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4;
         bptr->source_ip = from_client ? cptr->client_ip : cptr->server_ip;
         bptr->destination_ip = from_client ? cptr->server_ip : cptr->client_ip;
     } else {
-        bptr->type = PACKET_TYPE_TCP_6;
+        bptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6;
         if (from_client) {
             memcpy(&bptr->source_ipv6, &cptr->client_ipv6, sizeof(struct in6_addr));
             memcpy(&bptr->destination_ipv6, &cptr->server_ipv6, sizeof(struct in6_addr));
@@ -491,7 +491,7 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
-    iptr->type = PACKET_TYPE_UDP_4;
+    iptr->type = PACKET_TYPE_UDP_4 | PACKET_TYPE_IPV4;
 
     // start out OK.. might fail it later during checksum
     iptr->ok = 1;
@@ -580,7 +580,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
-    iptr->type = PACKET_TYPE_ICMP_4;
+    iptr->type = PACKET_TYPE_ICMP_4 | PACKET_TYPE_IPV4;
 
     // get IP addreses out of the packet
     iptr->source_ip = p->ip.saddr;
@@ -658,7 +658,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
 
     // ensure the type is set
-    iptr->type = PACKET_TYPE_TCP_4;
+    iptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4;
 
     // source IP, and port from the IP/TCP headers
     iptr->source_ip = p->ip.saddr;
@@ -834,7 +834,7 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
 
     // ensure the type is set
-    iptr->type = PACKET_TYPE_TCP_6;
+    iptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6;
 
     // source IP, and port from the IP/TCP headers
     memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
@@ -942,7 +942,7 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
 
     // ensure the type is set
-    iptr->type = PACKET_TYPE_UDP_6;
+    iptr->type = PACKET_TYPE_UDP_6 | PACKET_TYPE_IPV6;
 
     // source IP, and port from the IP/TCP headers
     memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
@@ -1035,7 +1035,7 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
-    iptr->type = PACKET_TYPE_ICMP_6;
+    iptr->type = PACKET_TYPE_ICMP_6 | PACKET_TYPE_IPV6;
 
     // get IP addreses out of the packet
     memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
@@ -1110,11 +1110,8 @@ ProcessFunc Processor_Find(int ip_version, int protocol) {
     };
 
     while (PacketProcessors[i].ip_version != 0) {
-        //printf("P ver %d protocol %d\n", PacketProcessors[i].ip_version, PacketProcessors[i].protocol);
-        if ((PacketProcessors[i].ip_version == ip_version) && (PacketProcessors[i].protocol == protocol)) {
-          //  printf("found\n");
+        if ((PacketProcessors[i].ip_version == ip_version) && (PacketProcessors[i].protocol == protocol))
                 return PacketProcessors[i].Processor;
-        }
 
         i++;
     }
@@ -1205,11 +1202,18 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
     PacketBuildInstructions *ilast = NULL, *inext = NULL;
     uint32_t src_ip=0, dst_ip=0;
     uint16_t src_port=0, dst_port=0;
+    struct in6_addr src_ipv6, dst_ipv6;
     PacketBuildInstructions *packets = NULL;
     PacketBuildInstructions *ret = NULL;
     FilterInformation fptr;
     uint32_t got_fin_ack = 0;
+    struct in6_addr got_fin_ack6;
     //int count = 0, ccount = 0, fcount = 0;
+
+
+    memset((void *)&src_ipv6, 0, sizeof(struct in6_addr));
+    memset((void *)&dst_ipv6, 0, sizeof(struct in6_addr));
+    memset((void *)&got_fin_ack6, 0, sizeof(struct in6_addr));
 
     //printf("InstructionsFindConnection count of incoming packets: %d\n", L_count((LINK *)iptr));
 
@@ -1231,13 +1235,23 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                 //printf("passed pass filter  %d:%d -> %d:%d data %p data size %d %X %X flags\n", src.s_addr, iptr->source_port, dst.s_addr, iptr->destination_port, iptr->data, iptr->data_size, iptr->header_identifier, iptr->flags);
 
                 // a SYN packet with an ACK of 0 should be the first connecting packet
-                if (!src_ip && !dst_ip && !src_port && !dst_port) {
-                    if ((iptr->flags & TCP_FLAG_SYN) && iptr->ack == 0) {
-                        // grab the IP addresses, and ports from packet.. we will use as a reference to find the connection
-                        src_ip = iptr->source_ip;
-                        dst_ip = iptr->destination_ip;
-                        src_port = iptr->source_port;
-                        dst_port = iptr->destination_port;
+                if (iptr->type & PACKET_TYPE_TCP_4) {
+                    if (!src_ip && !dst_ip && !src_port && !dst_port) {
+                        if ((iptr->flags & TCP_FLAG_SYN) && iptr->ack == 0) {
+                            // grab the IP addresses, and ports from packet.. we will use as a reference to find the connection
+                            src_ip = iptr->source_ip;
+                            dst_ip = iptr->destination_ip;
+                            src_port = iptr->source_port;
+                            dst_port = iptr->destination_port;
+                        }
+                    }
+                } else if (iptr->type & PACKET_TYPE_TCP_6) {
+                    if (!src_port && !dst_port) {
+                            src_port = iptr->source_port;
+                            dst_port = iptr->destination_port;
+
+                            memcpy((void *)&src_ipv6, (void *)&iptr->source_ipv6, sizeof(struct in6_addr));
+                            memcpy((void *)&dst_ipv6, (void *)&iptr->destination_ipv6, sizeof(struct in6_addr));
                     }
                 }
 
@@ -1271,15 +1285,27 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
                         // 1st packet
                         if (got_fin_ack == 0) {
                             if ((iptr->flags & TCP_FLAG_FIN) && (iptr->flags & TCP_FLAG_ACK)) {
-                                got_fin_ack = iptr->source_ip;
+                                if (iptr->type & PACKET_TYPE_TCP_4) {
+                                    got_fin_ack = iptr->source_ip;
+                                } else if (iptr->type & PACKET_TYPE_TCP_6) {
+                                    got_fin_ack = 1;
+                                    memcpy(&got_fin_ack6, &iptr->source_ipv6, sizeof(struct in6_addr));
+                                }
                             }
 
                         // 2nd packet in the middle here is a ACK/FIN from the other side..
                             
                         } else if (got_fin_ack != 0) {
                                 // 3rd packet the final is an ACK from the side which initiated closing the TCP connection
-                                if ((iptr->flags & TCP_FLAG_ACK) && iptr->source_ip == got_fin_ack) {
-                                    break;
+                                if (iptr->type & PACKET_TYPE_TCP_4) {
+                                    if ((iptr->flags & TCP_FLAG_ACK) && iptr->source_ip == got_fin_ack) {
+                                        break;
+                                    }
+                                } else if (iptr->type & PACKET_TYPE_TCP_6) {
+                                    if (memcmp((void *)&got_fin_ack6, (void *)&iptr->source_ipv6, sizeof(struct in6_addr)) == 0) {
+                                        break;
+                                    }
+
                                 }
                         }
                             
@@ -1492,6 +1518,7 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
     int Current_Packet = 0;
     int found_seq = 0;
     int i = 0;
+    int match = 0;
 
     // ensure that packet array if ZERO for later...
     memset((void *)&Packets, 0, sizeof(PacketBuildInstructions *) * 16);
@@ -1528,14 +1555,17 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
             // if its set as a client from the last function which created these structures, and its a SYN packet..
             // then its the first
             if (iptr->client && (iptr->flags & TCP_FLAG_SYN)) {
-                aptr->src = iptr->source_ip;
-                aptr->dst = iptr->destination_ip;
+                if (iptr->type & PACKET_TYPE_IPV4) {
+                    aptr->src = iptr->source_ip;
+                    aptr->dst = iptr->destination_ip;
+                } else if (iptr->type & PACKET_TYPE_IPV6) {
+                    memcpy(&aptr->src6, &iptr->source_ipv6, sizeof(struct in6_addr));
+                    memcpy(&aptr->dst6, &iptr->destination_ipv6, sizeof(struct in6_addr));
+                }
+
                 aptr->source_port = iptr->source_port;
                 iptr->destination_port = iptr->destination_port;
 
-                aptr->dst = iptr->destination_ip;
-                aptr->src = iptr->source_ip;
-                
                 found_start = 1;
             }
         }
@@ -1552,8 +1582,18 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
                 for (i = 1; i < 16; i++) {
                     pptr = Packets[i % 16];
                     if (pptr != NULL) {
-                        // be sure its the same connection
-                        if ((pptr->source_ip == iptr->destination_ip))
+
+                        match = 0;
+                        // be sure its the same connection (check ipv4, and 6)
+                        if (iptr->type & PACKET_TYPE_IPV4) {
+                            if ((pptr->source_ip == iptr->destination_ip))
+                                match = 1;
+                        } else if (iptr->type & PACKET_TYPE_IPV6) {
+                            if (memcmp(&pptr->source_ipv6, &iptr->destination_ipv6, sizeof(struct in6_addr)) == 0)
+                                match = 1;
+                        }
+
+                        if (match)
                             // the packet before (SYN packet) should have an ACK of 0 since its new... and it has SYN flag
                             if ((pptr->ack == 0) && (iptr->flags & TCP_FLAG_SYN) & (iptr->flags & TCP_FLAG_ACK)) {
                                 // this is the one where we get the clients base seq

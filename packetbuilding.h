@@ -213,12 +213,15 @@ enum {
 // Packet types that are supported.  The order does matter because it is used in two different linked lists.  One is for
 // building packets, and the other is for analysis of incoming packets.
 enum {
-    PACKET_TYPE_TCP_4,
-    PACKET_TYPE_UDP_4,
-    PACKET_TYPE_ICMP_4,
-    PACKET_TYPE_TCP_6,
-    PACKET_TYPE_UDP_6,
-    PACKET_TYPE_ICMP_6
+    PACKET_TYPE_TCP_4=1,
+    PACKET_TYPE_UDP_4=2,
+    PACKET_TYPE_ICMP_4=4,
+    PACKET_TYPE_TCP_6=8,
+    PACKET_TYPE_UDP_6=16,
+    PACKET_TYPE_ICMP_6=32,
+    PACKET_TYPE_IPV4=64,
+    PACKET_TYPE_IPV6=128
+
 };
 
 

@@ -174,6 +174,7 @@ int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     // free it too early
     optr->buf = qptr->buf;
     qptr->buf = NULL;
+    optr->type = qptr->type;
 
     optr->size = qptr->size;
     qptr->size = 0;

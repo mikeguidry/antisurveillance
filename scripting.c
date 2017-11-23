@@ -53,6 +53,7 @@ int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, 
         if (_is_ipv6 != NULL) *_is_ipv6 = 0;
     } else {
         if (_is_ipv6 != NULL) *_is_ipv6 = 1;
+        inet_pton(AF_INET6, ascii_ip, ipv6_dest);
     }
 
     return 1;   
@@ -368,7 +369,7 @@ static PyObject *PyASC_FilterCreate(PyAS_Config* self, PyObject *args, PyObject 
 
 // instructions add a tcp close from a particular side of the connection
 // default is from client
-static PyObject *PyASC_InstructionsTCP4Close(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+static PyObject *PyASC_InstructionsTCPClose(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     int from_client = 1;
     static char *kwd_list[] = { "from_client", 0};
 
@@ -383,7 +384,7 @@ static PyObject *PyASC_InstructionsTCP4Close(PyAS_Config* self, PyObject *args, 
 }
 
 // send data from one side of the tcp conneccton to the other
-static PyObject *PyASC_InstructionsTCP4Send(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+static PyObject *PyASC_InstructionsTCPSend(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     int from_client = 0;
     char *data = NULL;
     int size = 0;
@@ -402,7 +403,7 @@ static PyObject *PyASC_InstructionsTCP4Send(PyAS_Config* self, PyObject *args, P
 }
 
 // create packets for opening a tcp conneection
-static PyObject *PyASC_InstructionsTCP4Open(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+static PyObject *PyASC_InstructionsTCPOpen(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     
     int ret = GenerateTCPConnectionInstructions(&self->connection_parameters, &self->instructions);
 
@@ -416,7 +417,7 @@ static PyObject *PyASC_InstructionsTCP4Open(PyAS_Config* self, PyObject *args, P
 
 
 // this is sortof redundant... it only takes 4 other commands (2 of the same)
-static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+static PyObject *PyASC_BuildHTTP(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {
     "client_ip", "client_port", "destination_ip", "destination_port", 
     "client_body", "client_body_size", "server_body", "server_body_size",
@@ -677,7 +678,9 @@ static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyO
 
     // the new connection needs these variables prepared
     IP_prepare(destination_ip, &self->connection_parameters.server_ip, &self->connection_parameters.server_ipv6, &self->connection_parameters.is_ipv6);
+    //printf("ipv6? %d ip %s\n", self->connection_parameters.is_ipv6, destination_ip);
     IP_prepare(client_ip, &self->connection_parameters.client_ip, &self->connection_parameters.client_ipv6, &self->connection_parameters.is_ipv6);
+    //printf("ipv6? %d ip %s\n", self->connection_parameters.is_ipv6, client_ip);
     self->connection_parameters.server_port = destination_port;
     self->connection_parameters.client_port = client_port;
     self->connection_parameters.server_identifier = server_identifier;
@@ -901,14 +904,14 @@ static PyMethodDef PyASC_methods[] = {
     {"instructionscreate", (PyCFunction)PyASC_InstructionsCreate,    METH_VARARGS | METH_KEYWORDS,    "" },
 
     // tcp open connection into the instructions
-    {"instructionstcp4open", (PyCFunction)PyASC_InstructionsTCP4Open,   METH_NOARGS,    "" },
+    {"instructionstcpopen", (PyCFunction)PyASC_InstructionsTCPOpen,   METH_NOARGS,    "" },
 
     // tcp send data into the instructions (fromm either client or server)
     // the script can perform this as much as needed...
-    {"instructionstcp4send", (PyCFunction)PyASC_InstructionsTCP4Send,    METH_VARARGS | METH_KEYWORDS,    "" },
+    {"instructionstcpsend", (PyCFunction)PyASC_InstructionsTCPSend,    METH_VARARGS | METH_KEYWORDS,    "" },
 
     // tcp close connection into instructions
-    {"instructionstcp4close", (PyCFunction)PyASC_InstructionsTCP4Close,    METH_VARARGS | METH_KEYWORDS,    "" },
+    {"instructionstcpclose", (PyCFunction)PyASC_InstructionsTCPClose,    METH_VARARGS | METH_KEYWORDS,    "" },
 
 
     // tcp open connection into the instructions
@@ -924,11 +927,8 @@ static PyMethodDef PyASC_methods[] = {
     // save instructions into an attack structure...
     {"instructionsbuildattack", (PyCFunction)PyASC_InstructionsBuildAttack,    METH_VARARGS | METH_KEYWORDS,    "" },
     
-    // build an http session and automatically add as an attack
-    {"buildhttp4", (PyCFunction)PyASC_BuildHTTP4,    METH_VARARGS | METH_KEYWORDS,    "" },
-
-    // build an http session and automatically add as an attack
-    {"buildhttp6", (PyCFunction)PyASC_BuildHTTP4,    METH_VARARGS | METH_KEYWORDS,    "" },
+    // build an http session and automatically add as an attack (does ipv4 and ipv6)
+    {"buildhttp", (PyCFunction)PyASC_BuildHTTP,    METH_VARARGS | METH_KEYWORDS,    "" },
 
     // turn on blackhole
     {"blackholeenable", (PyCFunction)PyASC_BlackholeEnable,    METH_NOARGS,    "" },

@@ -29,6 +29,10 @@ typedef struct _as_attacks {
     // if its 0 then it will go along with the packet structures
     uint32_t src;
     uint32_t dst;
+
+    struct in6_addr src6;
+    struct in6_addr dst6;
+
     uint32_t source_port;
     uint32_t destination_port;
 

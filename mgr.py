@@ -17,14 +17,14 @@ def perform(a,b):
 			sleep(0.05)
 
 #build an HTTP session and add it as an attack.. itll get enabled immediately
-def build_http4(a):
+def build_http(a):
 	server_body = open("server_body", 'rU').read()
 	client_body = open("client_body", 'rU').read()
 	src_ip = "10.0.0.1"
 	dst_ip = "10.0.0.2"
 	src_port = 31337
 	dst_port = 80
-	ret = a.buildhttp4(src_ip, src_port, dst_ip, dst_port, client_body, server_body)
+	ret = a.buildhttp(src_ip, src_port, dst_ip, dst_port, client_body, server_body)
 
 	print("new attack ID %d") % ret
 
@@ -33,8 +33,8 @@ def build_http4(a):
 def other_build_http(a):
 	server_body = open("server_body", 'rU').read()
 	client_body = open("client_body", 'rU').read()
-	src_ip = "10.0.0.3"
-	dst_ip = "10.0.0.4"
+	src_ip = "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+	dst_ip = "2001:0db8:85a3:0000:0000:8a2e:0370:7335"
 	src_port = 31338
 	dst_port = 80
 	client_ttl = 64
@@ -60,7 +60,7 @@ def other_build_http(a):
 	#now build the attack structure around those instructions we just designed
 	#skip adjustments is for replaying attacks not wanting to generate new IPs
 	ret = a.instructionsbuildattack(count=999, interval=1, skip_adjustments=0)
-	
+
 	print("new attack ID %d") % ret
 
 
@@ -82,7 +82,7 @@ def init():
 	a.networkoff()
 
 	#build an HTTP session
-	build_http4(a)
+	build_http(a)
 
 	#build http session using the raw way (meant for other protocols as well)
 	#this can work for POP/SMTP/etc

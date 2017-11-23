@@ -65,7 +65,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     if (PacketTCP4BuildOptions(iptr) != 1) return -1;
 
     // this is only for ipv4 tcp
-    if (iptr->type != PACKET_TYPE_TCP_4) return ret;
+    if (!(iptr->type & PACKET_TYPE_TCP_4)) return ret;
 
     // increase the heaader by the size of the TCP options
     if (iptr->options_size) TCPHSIZE += iptr->options_size;
@@ -193,6 +193,7 @@ void BuildPackets(AS_attacks *aptr) {
     PacketBuildInstructions *ptr = aptr->packet_build_instructions;
     PacketInfo *qptr = NULL;
     int i = 0;
+    int n = 0;
 
     // Structure containing each packet type, and their functions for building
     // The type must diretly correlate to the  enum {} list.. in order
@@ -216,16 +217,24 @@ void BuildPackets(AS_attacks *aptr) {
 
     // process each packet using its particular function for building
     while (ptr != NULL) {
-        // use the structure containing the function required for building this type of packet
-        i = PacketBuilders[ptr->type].func(ptr);
-        // if building this packet fails.. lets mark this attack for deletion
-        if (i != 1) {
-            aptr->completed = 1;
+        // find the correct function.. no longer a jump table because of ipv6 bitmask checking
+        while (PacketBuilders[n].func != NULL) {
+            if (ptr->type & PacketBuilders[n].type) {
 
-            return;
+                // if building this packet fails.. lets mark this attack for deletion
+                i = PacketBuilders[n].func(ptr);
+
+                if (i != 1) {
+                    aptr->completed = 1;
+
+                    return;
+                }
+
+                break;
+            }
+            n++;
         }
 
-        // everything went well...
         ptr->ok = 1;
 
         ptr = ptr->next;
@@ -408,7 +417,7 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     char *checkbuf = NULL;
 
     // this is only for ipv4 tcp (ret 0 since its not technically an error.. just wrong func)
-    if (iptr->type != PACKET_TYPE_UDP_4) return 0;
+    if (!(iptr->type & PACKET_TYPE_UDP_4)) return 0;
 
     // calculate full length of packet.. before we allocate memory for storage
     final_packet_size = sizeof(struct iphdr) + sizeof(struct udphdr) + iptr->data_size;
@@ -500,7 +509,7 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     struct icmphdr *icmp = NULL;
 
     // this is only for ipv4 tcp
-    if (iptr->type != PACKET_TYPE_ICMP_4) return ret;
+    if (!(iptr->type & PACKET_TYPE_ICMP_4)) return ret;
 
     // calculate size of complete packet
     final_packet_size = sizeof(struct packeticmp4) + iptr->data_size;
@@ -581,7 +590,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     struct icmphdr *icmp = NULL;
 
     // this is only for ipv4 tcp
-    if (iptr->type != PACKET_TYPE_ICMP_6) return ret;
+    if (!(iptr->type & PACKET_TYPE_ICMP_6)) return ret;
 
     // calculate size of complete packet
     final_packet_size = sizeof(struct packeticmp6) + iptr->data_size;
@@ -596,7 +605,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     p = (struct packeticmp6 *)final_packet;
 
     // prepare IPv6 header
-    p->ip.ip6_ctlun.ip6_un2_vfc = 6;
+    p->ip.ip6_ctlun.ip6_un2_vfc = 0x60;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMP;
@@ -657,7 +666,7 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     char *checkbuf = NULL;
 
     // this is only for ipv4 tcp (ret 0 since its not technically an error.. just wrong func)
-    if (iptr->type != PACKET_TYPE_UDP_6) return 0;
+    if (!(iptr->type & PACKET_TYPE_UDP_6)) return 0;
 
     // calculate full length of packet.. before we allocate memory for storage
     final_packet_size = sizeof(struct iphdr) + sizeof(struct udphdr) + iptr->data_size;
@@ -674,7 +683,7 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     // IP header below (static)
 
     // prepare IPv6 header
-    p->ip.ip6_ctlun.ip6_un2_vfc = 6;
+    p->ip.ip6_ctlun.ip6_un2_vfc = 0x60;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_UDP;
@@ -745,10 +754,12 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
 
+    
+
     if (PacketTCP4BuildOptions(iptr) != 1) return -1;
 
     // this is only for ipv4 tcp
-    if (iptr->type != PACKET_TYPE_TCP_6) return ret;
+    if (!(iptr->type & PACKET_TYPE_TCP_6)) return ret;
 
     // increase the heaader by the size of the TCP options
     if (iptr->options_size) TCPHSIZE += iptr->options_size;
@@ -761,8 +772,10 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     // ensure the final packet was allocated correctly
     if (final_packet == NULL) return ret;
     
+    
+
     // prepare IPv6 header
-    p->ip.ip6_ctlun.ip6_un2_vfc = 6;
+    p->ip.ip6_ctlun.ip6_un2_vfc = 0x60;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_TCP;
@@ -849,6 +862,7 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     // put the final packet into the build instruction structure as completed..
     iptr->packet = (char *)final_packet;
     iptr->packet_size = final_packet_size;
+
 
     // returning 1 here will mark it as GOOD
     return (ret = 1);

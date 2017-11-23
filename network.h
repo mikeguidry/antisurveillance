@@ -31,6 +31,8 @@ typedef struct _attack_outgoing_queue {
 #endif
 
     int ignore;
+
+    int type;
 } AttackOutgoingQueue;
 
 typedef struct _incoming_packet_queue {
