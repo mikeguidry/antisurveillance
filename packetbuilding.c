@@ -186,52 +186,6 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
 
 
-//https://tools.ietf.org/html/rfc1323
-// Incomplete but within 1 day it should emulate Linux, Windows, and Mac...
-// we need access to the attack structure due to the timestampp generator having a response portion from the opposide sides packets
-// *** finish building tcp options data for the header
-int PacketTCP4BuildOptions(PacketBuildInstructions *iptr) {
-    // later we nede to access parameters in aptr to build correctly (os emulation)
-    AS_attacks *aptr = iptr->aptr;
-    // need to see what kind of packet by the flags....
-    // then determine which options are necessaray...
-    // low packet id (fromm 0 being syn connection) would require the tcp window size, etc
-
-    // options are here static.. i need to begin to generate the timestamp because that can be used by surveillance platforms
-    // to attempt to weed out fabricated connections ;) i disabled it to grab this raw array
-    unsigned char options[12] = {0x02, 0x04, 0x05, 0xb4, 0x01, 0x01, 0x04, 0x02, 0x01, 0x03,0x03, 0x07};
-    // this is preparing for when we have dynamic options...
-    char *current_options = NULL;
-
-    int current_options_size = 12;
-
-    // verify that we should even generate the options.. if not return 1 (no error)
-    if (!(iptr->flags & TCP_OPTIONS))
-        return 1;
-    /*
-    if (iptr->flags & TCP_OPTIONS_TIMESTAMP) {
-        current_options_size += 8;
-        // generate new options.. into current_options[_size]
-    }*/
-
-
-    current_options = (char *)calloc(1, current_options_size);
-    if (current_options == NULL) return -1;
-
-    PtrFree(&iptr->options);
-
-    // *** generate options using flags.. timestamp+window size
-    // until we generate using flags...
-    memcpy(current_options, options, 12);
-
-    iptr->options_size = current_options_size;
-    iptr->options = current_options;
-
-    return 1;
-}
-
-
-
 // This function takes the linked list of build instructions, and loops to build out each packet
 // preparing it to be wrote to the Internet.  It will mark an attack structure as completed on
 // failure.
@@ -249,11 +203,9 @@ void BuildPackets(AS_attacks *aptr) {
         { PACKET_TYPE_TCP_4,    &BuildSingleTCP4Packet },
         { PACKET_TYPE_UDP_4,    &BuildSingleUDP4Packet },
         { PACKET_TYPE_ICMP_4,   &BuildSingleICMP4Packet },
-        /*
         { PACKET_TYPE_TCP_6,    &BuildSingleTCP6Packet },
         { PACKET_TYPE_UDP_6,    &BuildSingleUDP6Packet },
         { PACKET_TYPE_ICMP_6,   &BuildSingleICMP6Packet },
-        */
         { 0, NULL }
     };
 
@@ -619,13 +571,336 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     return ret;
 }
 
-/*
-coming soon:
-int BuildSingleTCP6Packet(PacketBuildInstructions *iptr);
-int BuildSingleUDP6Packet(PacketBuildInstructions *iptr);
-int BuildSingleICMP6Packet(PacketBuildInstructions *iptr);
+// Build IPv4 ICMP packet from an instruction structure
+int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
+    int ret = -1;
+    char *final_packet = NULL;
+    int final_packet_size = 0;
+    struct packeticmp6 *p = NULL;
+    uint32_t pkt_chk = 0;
+    struct icmphdr *icmp = NULL;
 
-*/
+    // this is only for ipv4 tcp
+    if (iptr->type != PACKET_TYPE_ICMP_6) return ret;
+
+    // calculate size of complete packet
+    final_packet_size = sizeof(struct packeticmp6) + iptr->data_size;
+
+    // allocate space for this packet
+    if ((final_packet = (char *)calloc(1, final_packet_size)) == NULL) goto end;
+
+    // prepare the ICMP header pointer in the final packet buffer we are creating
+    icmp = (struct icmphdr *)(final_packet + sizeof(struct ip6_hdr));
+
+    // this is the structure we use to prepare the IP header parameters inside of this for the wire packet buffer
+    p = (struct packeticmp6 *)final_packet;
+
+    // prepare IPv6 header
+    p->ip.ip6_ctlun.ip6_un2_vfc = 6;
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMP;
+
+    // get IP addreses out of the packet
+    memcpy(&p->ip.ip6_src, &iptr->source_ipv6, sizeof(struct in6_addr));
+    memcpy(&p->ip.ip6_dst, &iptr->destination_ipv6, sizeof(struct in6_addr));
+
+    // prepare ICMP header
+    // copy over ICMP parameters from its own structure..
+    memcpy((void *)&p->icmp, &iptr->icmp, sizeof(struct icmphdr));
+    /*
+    p->icmp.type = ICMP_ECHO;
+    p->icmp.code = 0;
+    p->icmp.un.echo.sequence = rand();
+    p->icmp.un.echo.id = rand();
+    */
+
+    // If there is data to be appended to this packet then lets copy it over
+    if (iptr->data_size)
+        memcpy((void *)(final_packet + sizeof(struct packeticmp4)), iptr->data, iptr->data_size);
+
+    // this should be zero in the build instructions structure.. but just for future reference
+    // it should be 0 before we checksum it..
+    p->icmp.checksum = 0;
+
+    // calculate ICMP checksum and put it directly into the final packet
+    p->icmp.checksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size);
+    
+    // set the raw packet inside of the structure
+    iptr->packet = final_packet;
+    iptr->packet_size = final_packet_size;
+
+    // we set these to NULL so it doesnt get freed at the end of this function
+    final_packet = NULL;
+    final_packet_size = 0;
+
+    // everything went well...
+    ret = 1;
+
+    end:;
+
+    PtrFree(&final_packet);
+    
+    return ret;
+}
+
+
+
+
+
+int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
+    int ret = -1;
+    unsigned char *final_packet = NULL;
+    struct packetudp6 *p = NULL;
+    int final_packet_size = 0;
+    struct pseudo_header_udp4 *udp_chk_hdr = NULL;
+    char *checkbuf = NULL;
+
+    // this is only for ipv4 tcp (ret 0 since its not technically an error.. just wrong func)
+    if (iptr->type != PACKET_TYPE_UDP_6) return 0;
+
+    // calculate full length of packet.. before we allocate memory for storage
+    final_packet_size = sizeof(struct iphdr) + sizeof(struct udphdr) + iptr->data_size;
+
+    // allocate space for the packet
+    if ((final_packet = (unsigned char *)calloc(1, final_packet_size)) == NULL) goto end;
+
+    // this is the main structure we cast for configuring IP/UDP header parameters
+    p = (struct packetudp6 *)final_packet;
+
+    // ensure the final packet was allocated correctly
+    if (final_packet == NULL) return ret;
+
+    // IP header below (static)
+
+    // prepare IPv6 header
+    p->ip.ip6_ctlun.ip6_un2_vfc = 6;
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_UDP;
+    
+
+    // get IP addreses out of the packet
+    memcpy(&p->ip.ip6_src, &iptr->source_ipv6, sizeof(struct in6_addr));
+    memcpy(&p->ip.ip6_dst, &iptr->destination_ipv6, sizeof(struct in6_addr));
+
+    // how much data is present in this packet?
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
+
+    p->udp.source       = htons(iptr->source_port);
+    p->udp.dest         = htons(iptr->destination_port);
+    p->udp.len          = htons(sizeof(struct udphdr) + iptr->data_size);
+    p->udp.check        = 0;
+
+    // copy the UDP data after the IP, and UDP header
+    memcpy((void *)(final_packet + sizeof(struct udphdr) + sizeof(struct ip6_hdr)), iptr->data, iptr->data_size);
+
+    // allocate memory for performing checksum calculations
+    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
+
+    // this is the pseudo header used for UDP verification and its pointer for configuring the parameters
+    udp_chk_hdr = (struct pseudo_header_udp4 *)checkbuf;
+
+    // copy udp hdr after the pseudo header for checksum
+    memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), &p->udp, sizeof(struct udphdr));
+
+    // if this packet has data then we want to copy it into this buffer for checksum generation
+    if (iptr->data_size)
+        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
+
+    // UDP requires these psuedo header parameters to be included in its checksum
+    udp_chk_hdr->protocol = IPPROTO_UDP;
+    udp_chk_hdr->source_address = iptr->source_ip;
+    udp_chk_hdr->destination_address = iptr->destination_ip;
+    udp_chk_hdr->placeholder = 0;
+    udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
+
+    // call the checksum function to generate a hash for the data we put inside of checkbuf
+    p->udp.check = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);
+
+    // ensure the build structure has the buffer, and size we just created so it can push to the wire
+    iptr->packet = (char *)final_packet;
+    iptr->packet_size = final_packet_size;
+
+    // so we dont free the packet since everything is successful
+    final_packet = NULL;
+    final_packet_size = 0;
+
+    // everything went well...
+    ret = 1;
+
+    end:;
+
+    PtrFree(&final_packet);
+    PtrFree(&checkbuf);
+
+    return ret;
+}
+
+
+
+// Takes build instructions from things like HTTP Session generation, and creates the final network ready
+// data buffers which will flow across the Internet
+int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
+    int ret = -1;
+    int TCPHSIZE = 20;
+
+    if (PacketTCP4BuildOptions(iptr) != 1) return -1;
+
+    // this is only for ipv4 tcp
+    if (iptr->type != PACKET_TYPE_TCP_6) return ret;
+
+    // increase the heaader by the size of the TCP options
+    if (iptr->options_size) TCPHSIZE += iptr->options_size;
+
+    // calculate full length of packet.. before we allocate memory for storage
+    int final_packet_size = sizeof(struct ip6_hdr) + TCPHSIZE + iptr->data_size;
+    unsigned char *final_packet = (unsigned char *)calloc(1, final_packet_size);
+    struct packettcp6 *p = (struct packettcp6 *)final_packet;
+
+    // ensure the final packet was allocated correctly
+    if (final_packet == NULL) return ret;
+    
+    // prepare IPv6 header
+    p->ip.ip6_ctlun.ip6_un2_vfc = 6;
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_TCP;
+
+
+    // Source, and destination IP addresses
+    memcpy(&p->ip.ip6_src, &iptr->source_ipv6, sizeof(struct in6_addr));
+    memcpy(&p->ip.ip6_dst, &iptr->destination_ipv6, sizeof(struct in6_addr));
+    
+    // TCP header below
+    // The source, and destination ports in question
+    p->tcp.source   = htons(iptr->source_port);
+    p->tcp.dest     = htons(iptr->destination_port);
+
+    // The ACK/SEQ relate to variables incremented during normal communications..
+    p->tcp.seq      = htonl(iptr->seq);
+    p->tcp.ack_seq	= htonl(iptr->ack);
+
+    // The TCP window relates to operating system emulation
+    p->tcp.window	= htons(iptr->tcp_window_size);
+    
+    // syn/ack used the most
+    p->tcp.syn  	= (iptr->flags & TCP_FLAG_SYN) ? 1 : 0;
+    p->tcp.ack	    = (iptr->flags & TCP_FLAG_ACK) ? 1 : 0;
+    p->tcp.psh  	= (iptr->flags & TCP_FLAG_PSH) ? 1 : 0;
+    p->tcp.fin  	= (iptr->flags & TCP_FLAG_FIN) ? 1 : 0;
+    p->tcp.rst	    = (iptr->flags & TCP_FLAG_RST) ? 1 : 0;
+
+    
+    p->tcp.check	= 0;	/*! set to 0 for later computing */
+    p->tcp.urg	    = 0;    
+    p->tcp.urg_ptr	= 0;
+    p->tcp.doff 	= TCPHSIZE >> 2;
+
+    /*
+    // Lets make sure we cover all header variables.. just to be sure it wont be computationally possible
+    // to filter out all packets....
+    __u16 	res1:4 // supposed to be unused..
+    __u16 	ece:1
+    __u16 	cwr:1
+    https://stackoverflow.com/questions/1480548/tcp-flags-present-in-the-header
+    The two flags, 'CWR' and 'ECE' are for Explicit Congestion Notification as defined in RFC 3168.
+    */
+
+    // TCP header checksum
+    if (p->tcp.check == 0) {
+        struct pseudo_tcp4 *p_tcp = NULL;
+        char *checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp4) + TCPHSIZE + iptr->data_size);
+
+        if (checkbuf == NULL) return -1;
+
+        p_tcp = (struct pseudo_tcp4 *)checkbuf;
+
+        //p_tcp->saddr 	= p->ip.saddr;
+        //p_tcp->daddr 	= p->ip.daddr;
+        p_tcp->mbz      = 0;
+        p_tcp->ptcl 	= IPPROTO_TCP;
+        p_tcp->tcpl 	= htons(TCPHSIZE + iptr->data_size);
+
+        memcpy(&p_tcp->tcp, &p->tcp, TCPHSIZE);
+        memcpy(checkbuf + sizeof(struct pseudo_tcp4), iptr->options, iptr->options_size);
+        memcpy(checkbuf + sizeof(struct pseudo_tcp4) + iptr->options_size, iptr->data, iptr->data_size);        
+
+        // put the checksum into the correct location inside of the header
+        // options size was already calculated into TCPHSIZE
+        p->tcp.check = (unsigned short)in_cksum((unsigned short *)checkbuf, TCPHSIZE + PSEUDOTCPHSIZE + iptr->data_size);
+    
+        free(checkbuf);
+    }
+
+    
+
+    // copy the TCP options to the final packet
+    if (iptr->options_size)
+        memcpy(final_packet + sizeof(struct packettcp6), iptr->options, iptr->options_size);
+
+    // copy the data to the final packet
+    if (iptr->data_size) {
+        //md5hash(iptr->data, iptr->data_size);
+        memcpy(final_packet + sizeof(struct packettcp6) + iptr->options_size, iptr->data, iptr->data_size);
+    }
+    
+
+    // put the final packet into the build instruction structure as completed..
+    iptr->packet = (char *)final_packet;
+    iptr->packet_size = final_packet_size;
+
+    // returning 1 here will mark it as GOOD
+    return (ret = 1);
+}
+
+
+
+//https://tools.ietf.org/html/rfc1323
+// Incomplete but within 1 day it should emulate Linux, Windows, and Mac...
+// we need access to the attack structure due to the timestampp generator having a response portion from the opposide sides packets
+// *** finish building tcp options data for the header
+int PacketTCP4BuildOptions(PacketBuildInstructions *iptr) {
+    // later we nede to access parameters in aptr to build correctly (os emulation)
+    AS_attacks *aptr = iptr->aptr;
+    // need to see what kind of packet by the flags....
+    // then determine which options are necessaray...
+    // low packet id (fromm 0 being syn connection) would require the tcp window size, etc
+
+    // options are here static.. i need to begin to generate the timestamp because that can be used by surveillance platforms
+    // to attempt to weed out fabricated connections ;) i disabled it to grab this raw array
+    unsigned char options[12] = {0x02, 0x04, 0x05, 0xb4, 0x01, 0x01, 0x04, 0x02, 0x01, 0x03,0x03, 0x07};
+    // this is preparing for when we have dynamic options...
+    char *current_options = NULL;
+
+    int current_options_size = 12;
+
+    // verify that we should even generate the options.. if not return 1 (no error)
+    if (!(iptr->flags & TCP_OPTIONS))
+        return 1;
+    /*
+    if (iptr->flags & TCP_OPTIONS_TIMESTAMP) {
+        current_options_size += 8;
+        // generate new options.. into current_options[_size]
+    }*/
+
+
+    current_options = (char *)calloc(1, current_options_size);
+    if (current_options == NULL) return -1;
+
+    PtrFree(&iptr->options);
+
+    // *** generate options using flags.. timestamp+window size
+    // until we generate using flags...
+    memcpy(current_options, options, 12);
+
+    iptr->options_size = current_options_size;
+    iptr->options = current_options;
+
+    return 1;
+}
+
+
 
 int test_icmp4(AS_context *ctx) {
     AS_attacks *aptr = NULL;

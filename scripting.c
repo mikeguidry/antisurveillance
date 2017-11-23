@@ -456,6 +456,7 @@ static PyObject *PyASC_BuildHTTP4(PyAS_Config* self, PyObject *args, PyObject *k
     self->connection_parameters.server_ttl = server_ttl ? server_ttl : 53;
     self->connection_parameters.max_packet_size_client = client_window_size ? client_window_size : (1500 - (20 * 2 + 12));
     self->connection_parameters.max_packet_size_server = server_window_size ? server_window_size : (1500 - (20 * 2 + 12));;
+
     gettimeofday(&self->connection_parameters.ts, NULL);
 
     // free all instructions used by this python module
@@ -770,12 +771,11 @@ static PyMethodDef PyASC_methods[] = {
     // tcp close connection into instructions
     {"instructionstcp4close", (PyCFunction)PyASC_InstructionsTCP4Close,    METH_VARARGS | METH_KEYWORDS,    "" },
     
-    // UDP can be thrown in to show DNS requests in case they begin filtering by checking for the TTL etc
-    //{"instructionsudp4send", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "" },
     
     // save instructions into an attack structure...
     {"instructionsbuildattack", (PyCFunction)PyASC_InstructionsBuildAttack,    METH_VARARGS | METH_KEYWORDS,    "" },
     
+    // build an http session and automatically add as an attack
     {"buildhttp4", (PyCFunction)PyASC_BuildHTTP4,    METH_VARARGS | METH_KEYWORDS,    "" },
 
     // turn on blackhole
@@ -794,6 +794,13 @@ static PyMethodDef PyASC_methods[] = {
 
     // obtain a list of all attacks (figure out whether to return it as an array, dict, or whatever)
     {"attacklist", (PyCFunction)PyASC_AttackList,    METH_NOARGS,    "" },
+
+
+    // UDP can be thrown in to show DNS requests in case they begin filtering by checking for the TTL etc
+    //{"instructionsudp4send", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "" },
+
+    // icmp can get inserted as well.. 
+    //{"instructionsicmp4send", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "" },
 
 
     // i wanna turn these into structures (getter/setters)

@@ -575,11 +575,12 @@ int BH_add_IP(AS_context *ctx, uint32_t ip) {
 
 // remove by IP
 int BH_del_IP(AS_context *ctx, uint32_t ip) {
-    BH_Queue *qptr = NULL, *qlast = NULL, *qnext = NULL;
+    BH_Queue *qptr = ctx->blackhole_queue, *qlast = NULL, *qnext = NULL;
     int ret = 0;
 
-    qptr = ctx->blackhole_queue;
     while (qptr != NULL) {
+
+        // is this the IP in question?
         if (qptr->ip == ip) {
             if (ctx->blackhole_queue == qptr) {
                 ctx->blackhole_queue = qptr->next;

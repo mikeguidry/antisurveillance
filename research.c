@@ -47,6 +47,9 @@ int pdiff(int x, int y) {
     return ret;
 }
 
+//cpoints is a basic map of the globe.. with somme countries and their general regions marked...
+//it is a extremely small way to pick regions of importance for analysis without containing a ton of information
+
 [00,11],[01,22],[21,31],[31,42],[41,53],[55,54],[54,53],[05,15],[14,22],[03,15],[24,35],[00,00]
 
 0                       1                                  2                         3                          4                              5
@@ -269,6 +272,7 @@ int Traceroute_Perform(AS_context *ctx) {
         // lets increase TTL every 5 seconds
         if ((ts - tptr->ts_activity) > 5) {
             tptr->current_ttl++;
+
             // make packet, or call funnction to handle that..
             // mark some identifier in tptr for Traceroute_Incoming()
         }

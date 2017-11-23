@@ -15,6 +15,7 @@ are built for on the wire sessions we want to automatically pull and reproduce..
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/ip6.h>
 #include <string.h>
 #include <errno.h>  
 #include "network.h"
@@ -573,7 +574,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     iptr->destination_ip = p->ip.daddr;
 
     // how much data is present in this packet?
-    data_size = ntohs(p->ip.tot_len) - sizeof(struct iphdr);
+    data_size = ntohs(p->ip.tot_len) - sizeof(struct packeticmp4);
 
     // set packet as OK (can disqualify from checksum)
     iptr->ok = 1;
@@ -793,6 +794,284 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 }
 
 
+// Process an IPv4 TCP/IP packet from wire or PCAP
+PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
+    PacketBuildInstructions *iptr = NULL;
+    struct packettcp6 *p = NULL;
+    int flags = 0;
+    int data_size = 0;
+    char *data = NULL;
+    char *sptr = NULL;
+    int tcp_header_size = 0;
+    //char Aip_src[INET6_ADDRSTRLEN];
+    //char Aip_dst[INET6_ADDRSTRLEN];
+
+    p = (struct packettcp6 *)pptr->buf;
+
+    // Determine which TCP flags are set in this packet
+    flags = 0;
+    if (p->tcp.syn) flags |= TCP_FLAG_SYN;
+    if (p->tcp.ack) flags |= TCP_FLAG_ACK;
+    if (p->tcp.psh) flags |= TCP_FLAG_PSH;
+    if (p->tcp.fin) flags |= TCP_FLAG_FIN;
+    if (p->tcp.rst) flags |= TCP_FLAG_RST;
+
+    // Lets do this here.. so we can append it to the list using a jump pointer so its faster
+    // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+
+    // ensure the type is set
+    iptr->type = PACKET_TYPE_TCP_6;
+
+    // source IP, and port from the IP/TCP headers
+    memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
+    iptr->source_port = ntohs(p->tcp.source);
+    
+    // destination IP, and port from the TCP/IP headers
+    memcpy(&iptr->destination_ipv6, &p->ip.ip6_dst, sizeof(struct in6_addr));
+    iptr->destination_port = ntohs(p->tcp.dest);
+
+    //inet_ntop(AF_INET6, &p->ip.ip6_src, &Aip_src, sizeof(Aip_src));
+    //inet_ntop(AF_INET6, &p->ip.ip6_dst, &Aip_dst, sizeof(Aip_dst));
+    //printf("src: %s dst: %s addr %s\n", Aip_src, Aip_dst, addr);
+
+
+    // Ensure this new structure has the proper flags which were set in this packet
+    iptr->flags = flags;
+
+    // IP packet TTL (time to live)..  (OS emu)
+    iptr->ttl = p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim;
+
+    // TCP window size (OS emu)
+    iptr->tcp_window_size = ntohs(p->tcp.window);
+
+    // start OK.. until checksum.. or disqualify for other reasons
+    iptr->ok = 1;
+
+    // total size from IPv4 header
+    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen);// - sizeof(struct ip6_hdr);
+    
+    // get tcp header size (so we know if it has options, or not)
+    tcp_header_size = (p->tcp.doff << 2);
+
+    data_size -= tcp_header_size;
+    
+    if (data_size > 0) {
+        // allocate memory for the data
+        if ((data = (char *)malloc(data_size )) == NULL) goto end;
+
+        // pointer to where the data starts in this packet being analyzed
+        sptr = (char *)(pptr->buf + sizeof(struct ip6_hdr) + tcp_header_size);
+
+        // copy into the newly allocated buffer the tcp/ip data..
+        memcpy(data, sptr, data_size);
+
+        // ensure the instructions structure has this new pointer containing the data
+        iptr->data = data;
+        data = NULL; // so we dont free it below..
+        iptr->data_size = data_size;
+    }
+
+    // ack/seq are important for tcp/ip (used to transmit lost packets, etc)
+    // in future for quantum insert protection it will be important as well...
+    iptr->seq = ntohl(p->tcp.seq);
+    iptr->ack = ntohl(p->tcp.ack_seq);
+
+    // if it has more than the tcp header structure size.. the rest is TCP/IP options
+    // *** finish this: other parts of the code needs to realize we modified tcp_header_size, etc
+    if (tcp_header_size > sizeof(struct tcphdr) && 1==0) {
+
+        // calculate options size by space remaining after the tcphdr structure
+        iptr->options_size = tcp_header_size - sizeof(struct tcphdr);
+
+        // allocate space for the options in its own separate memory space
+        if ((iptr->options = (char *)malloc(iptr->options_size)) == NULL) goto end;
+
+        // copy the options from the packet into the allocated space
+        memcpy(iptr->options, (void *)(pptr->buf + sizeof(struct packet)), iptr->options_size);
+
+        // calculate actual TCP header size without options
+        tcp_header_size = sizeof(struct tcphdr);
+    }
+
+    // lets move the packet buffer into this new instruction structure as well
+    iptr->packet = pptr->buf;
+    pptr->buf = NULL;
+    iptr->packet_size = pptr->size;
+    pptr->size = 0;
+        
+    // moved other analysis to the next function which builds the attack structure
+    end:;
+
+    return iptr;
+}
+
+
+
+
+// Process an IPv4 TCP/IP packet from wire or PCAP
+PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
+    PacketBuildInstructions *iptr = NULL;
+    struct packetudp6 *p = NULL;
+    int data_size = 0;
+    char *data = NULL;
+    char *sptr = NULL;
+    char *checkbuf = NULL;
+    struct pseudo_header_udp4 *udp_chk_hdr = NULL;
+    uint32_t pkt_chk = 0, our_chk = 0;
+    //char Aip_src[INET6_ADDRSTRLEN];
+    //char Aip_dst[INET6_ADDRSTRLEN];
+
+    p = (struct packetudp6 *)pptr->buf;
+
+    // Lets do this here.. so we can append it to the list using a jump pointer so its faster
+    // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+
+    // ensure the type is set
+    iptr->type = PACKET_TYPE_UDP_6;
+
+    // source IP, and port from the IP/TCP headers
+    memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
+    iptr->source_port = ntohs(p->udp.source);
+    
+    // destination IP, and port from the TCP/IP headers
+    memcpy(&iptr->destination_ipv6, &p->ip.ip6_dst, sizeof(struct in6_addr));
+    iptr->destination_port = ntohs(p->udp.dest);
+
+    //inet_ntop(AF_INET6, &p->ip.ip6_src, &Aip_src, sizeof(Aip_src));
+    //inet_ntop(AF_INET6, &p->ip.ip6_dst, &Aip_dst, sizeof(Aip_dst));
+    //printf("src: %s dst: %s addr %s\n", Aip_src, Aip_dst, addr);
+
+    // start OK.. until checksum.. or disqualify for other reasons
+    iptr->ok = 1;
+
+    // calculate data size from udp header
+    data_size = ntohs(p->udp.len) - sizeof(struct udphdr);
+    
+    if (data_size > 0) {
+        if ((data = (char *)malloc(data_size)) == NULL) goto end;
+
+        memcpy((void *)data, (void *)(pptr->buf + sizeof(struct packetudp6)), data_size);
+    }
+
+    
+    // ensure the structure will always have access to this data
+    iptr->data = data;
+    iptr->data_size = data_size;
+
+    // Keep note of the packets checksum..
+    pkt_chk = p->udp.check;
+
+    // Set it to 0 now so we can verify ourselves..
+    p->udp.check = 0;
+    
+    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
+
+    // copy udp hdr after the pseudo header for checksum
+    memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4)), &p->udp, sizeof(struct udphdr));
+
+    // if there is data then we copy it behind all headers inside of the checkbuf pointer
+    if (iptr->data_size)
+        memcpy((void *)(checkbuf + sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr)), iptr->data, iptr->data_size);
+        
+    // fill out the pseudo header for this UDP checksum
+    udp_chk_hdr = (struct pseudo_header_udp4 *)checkbuf;
+    udp_chk_hdr->protocol = IPPROTO_UDP;
+    udp_chk_hdr->source_address = iptr->source_ip;
+    udp_chk_hdr->destination_address = iptr->destination_ip;
+    udp_chk_hdr->placeholder = 0;
+    udp_chk_hdr->len = htons(sizeof(struct udphdr) + iptr->data_size);
+
+    // perform checksum functin on PSEUDO header we just set parameters for, the actual for the wire UDP header, and the data
+    our_chk = in_cksum((unsigned short *)checkbuf, sizeof(struct pseudo_header_udp4) + sizeof(struct udphdr) + iptr->data_size);
+    
+    if (pkt_chk != our_chk) iptr->ok = 0;
+        
+    // put the original checksum back regardless
+    p->udp.check = pkt_chk;
+
+    // free the buffer we allocated for the checksum
+    free(checkbuf);
+    
+    // Lets link the original data to this new structure..
+    iptr->packet = pptr->buf;
+    iptr->packet_size = pptr->size;
+
+    // Lets remove the pointer from the original structure so it doesnt get freed
+    pptr->buf = NULL;
+    pptr->size = 0;
+
+    end:;
+    
+    return iptr;
+}
+
+
+// Process an IPv4 ICMP packet from the wire, or a PCAP
+PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
+    PacketBuildInstructions *iptr = NULL;
+    struct packeticmp6 *p = (struct packeticmp6 *)pptr->buf;
+    char *data = NULL;
+    int data_size = 0;
+    unsigned short pkt_chk = 0, our_chk = 0;
+
+    //printf("Process ICMP4\n");
+
+    // allocate space for an instruction structure which analysis of this packet will create
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+    
+    // ensure the type is set
+    iptr->type = PACKET_TYPE_ICMP_6;
+
+    // get IP addreses out of the packet
+    memcpy(&iptr->source_ipv6, &p->ip.ip6_src, sizeof(struct in6_addr));
+    memcpy(&iptr->destination_ipv6, &p->ip.ip6_dst, sizeof(struct in6_addr));
+
+    // how much data is present in this packet?
+    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen) - sizeof(struct packeticmp6);
+
+    // set packet as OK (can disqualify from checksum)
+    iptr->ok = 1;
+
+    // use packet checksum from the packet
+    pkt_chk = p->icmp.checksum;
+
+    // copy data from the original packet
+    if (data_size) {
+        if ((data = (char *)malloc(data_size)) == NULL) goto end;
+        memcpy(data, (void *)(pptr->buf + sizeof(struct iphdr) + sizeof(struct icmphdr)), data_size);
+
+        iptr->data = data;
+        iptr->data_size = data_size;
+    }
+
+    // set to 0 in packet so we can  calculate correctly..
+    p->icmp.checksum = 0;
+
+    // ICMP checksum.. it can happen inline without copying to a new buffer.. no pseudo header
+    our_chk = (unsigned short)in_cksum((unsigned short *)&p->icmp, sizeof(struct icmphdr) + iptr->data_size);
+
+    // did the check equal what we expected?
+    if (pkt_chk != our_chk) iptr->ok = 0;
+
+    // set back the original checksum we used to verify against
+    p->icmp.checksum = pkt_chk;
+
+    // move original packet to this new structure
+    iptr->packet = pptr->buf;
+    iptr->packet_size = pptr->size;
+
+    //and unlink from original so it doesnt get freed
+    pptr->buf = NULL;
+    pptr->size = 0;
+
+    end:;
+
+    return iptr;
+}
+
+
 typedef PacketBuildInstructions *(*ProcessFunc)(PacketInfo *);
 
 // Find the function which will process this packet type correctly from the network wire, or a PCAP
@@ -811,13 +1090,18 @@ ProcessFunc Processor_Find(int ip_version, int protocol) {
         { 4, IPPROTO_TCP,   &ProcessTCP4Packet },
         { 4, IPPROTO_UDP,   &ProcessUDP4Packet },
         { 4, IPPROTO_ICMP,  &ProcessICMP4Packet },
-
+        { 6, IPPROTO_TCP,   &ProcessTCP6Packet },
+        { 6, IPPROTO_UDP,   &ProcessUDP6Packet },
+        { 6, IPPROTO_ICMP,   &ProcessICMP6Packet },
         { 0, 0, NULL}
     };
 
     while (PacketProcessors[i].ip_version != 0) {
-        if ((PacketProcessors[i].ip_version == ip_version) && (PacketProcessors[i].protocol == protocol))
+        //printf("P ver %d protocol %d\n", PacketProcessors[i].ip_version, PacketProcessors[i].protocol);
+        if ((PacketProcessors[i].ip_version == ip_version) && (PacketProcessors[i].protocol == protocol)) {
+          //  printf("found\n");
                 return PacketProcessors[i].Processor;
+        }
 
         i++;
     }
@@ -831,20 +1115,31 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
     ProcessFunc Processor;
     PacketInfo *pptr = NULL;
     struct packet *p = NULL;
+    struct packettcp6 *p6 = NULL;
     PacketBuildInstructions *iptr = NULL;
     PacketBuildInstructions *list = NULL, *llast = NULL;
     PacketBuildInstructions *ret = NULL;
+    int protocol = 0;
     
     // Enumerate for all packets in the list
     pptr = packets;
 
     while (pptr != NULL) {
-        // set structure for reading information from this packet
+
+        // set structure for reading information from this packet.. for ipv4, and ipv6
         p = (struct packet *)pptr->buf;
+        p6 = (struct packettcp6 *)pptr->buf;
+
+        // ipv6 is a little different.. so lets set protocol by whichever this is
+        if (p->ip.version == 4) {
+            protocol = p->ip.protocol;
+        } else if (p->ip.version == 6) {
+            protocol = p6->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt;
+        }
 
         // Analysis capabilities are limited so use this function to determine
         // if this packet type has been developed yet
-        if ((Processor = Processor_Find(p->ip.version, p->ip.protocol)) != NULL)
+        if ((Processor = Processor_Find(p->ip.version, protocol)) != NULL)
             if ((iptr = Processor(pptr)) != NULL) {
                 // If it processed OK, then lets add it to the list
                 // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
@@ -1194,7 +1489,7 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
     // ensure it knows which context it belongs to
     aptr->ctx = ctx;
 
-    // *** find a way to set IDs.. first byte can show where it has come from, etc
+    // *** find a way to set IDs..  first byte can show where it has come from, etc
     // Attack Identifier (for management)
     aptr->id = rand()%0xFFFFFFFF;
 

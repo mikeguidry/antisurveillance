@@ -1,3 +1,4 @@
+#include <netinet/ip6.h>
 
 
 // PacketInfo is the first structure packets get prepared into being read either from the wire, or from a PCAP.
@@ -50,9 +51,10 @@ typedef struct _packet_instructions {
     // IPv4
     uint32_t source_ip;
     uint32_t destination_ip;
+
     // IPv6
-    struct in6_addr source_ip6;
-    struct in6_addr destination_ip6;
+    struct in6_addr source_ipv6;
+    struct in6_addr destination_ipv6;
 
     // Ports for this packet (TCP/UDP)
     int source_port;
@@ -148,6 +150,24 @@ struct packeticmp4 {
     struct icmphdr icmp;
 };
 
+struct packettcp6 {
+    struct ip6_hdr ip;
+    struct tcphdr tcp;
+};
+
+struct packetudp6 {
+    struct ip6_hdr ip;
+    struct udphdr udp;
+};
+
+struct packeticmp6 {
+    struct ip6_hdr ip;
+    struct icmphdr icmp;
+};
+
+
+    
+
 #pragma pack(pop)
 
 enum {
@@ -222,9 +242,14 @@ void PacketQueue(AS_context *, AS_attacks *aptr);
 void PacketsFree(PacketInfo **packets);
 void BuildPackets(AS_attacks *aptr);
 int PacketTCP4BuildOptions(PacketBuildInstructions *iptr);
+
 int BuildSingleTCP4Packet(PacketBuildInstructions *iptr);
 int BuildSingleUDP4Packet(PacketBuildInstructions *iptr);
 int BuildSingleICMP4Packet(PacketBuildInstructions *iptr);
+int BuildSingleTCP6Packet(PacketBuildInstructions *iptr);
+int BuildSingleUDP6Packet(PacketBuildInstructions *iptr);
+int BuildSingleICMP6Packet(PacketBuildInstructions *iptr);
+
 unsigned short in_cksum(unsigned short *addr,int len);
 
 
