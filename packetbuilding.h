@@ -28,7 +28,6 @@ typedef struct _pkt_info {
 
 
 
-
 // This structure is used to contain analysis information after processing incoming PacketInfo packets.
 // It is also kept around to allow easy modifications to attack structures packets to ensure that they
 // are continously different, or have other adjustments.
@@ -249,12 +248,15 @@ enum {
 typedef struct _filter_information {
     int flags;
     int packet_flags;
+
     uint32_t source_ip;
     struct in6_addr source_ipv6;
     uint32_t destination_ip;
     struct in6_addr destination_ipv6;
+
     uint16_t source_port;
     uint16_t destination_port;
+
     int init;
 } FilterInformation;
 

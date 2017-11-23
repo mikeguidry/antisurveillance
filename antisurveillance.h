@@ -20,6 +20,9 @@ typedef struct _traceroute_spider TracerouteSpider;
 struct _traceroute_response;
 typedef struct _traceroute_response TracerouteResponse;
 
+struct _network_analysis_functions;
+typedef struct _network_analysis_functions NetworkAnalysisFunctions;
+
 
 // general attack structure...
 // should support everything from syn packets, to virtual connections
@@ -186,7 +189,8 @@ typedef struct _antisurveillance_context {
     // disable writing to disk (to queue for pcap save)
     int network_disabled;
 
-
+    NetworkAnalysisFunctions *IncomingPacketFunctions;
+    
 } AS_context;
 
 

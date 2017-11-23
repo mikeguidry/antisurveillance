@@ -182,6 +182,9 @@ AS_context *AS_ctx_new() {
     // initialize anything related to special attacks in attacks.c
     attacks_init(ctx);
 
+    // initialize traceroute filter & packet analysis function
+    Traceroute_Init(ctx);
+
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
@@ -282,7 +285,9 @@ AS_context *Antisurveillance_Init() {
         i = atoi(Eaggressive);
         if (i > 10) i = 10;
         if (i < 0) i = 0;
-        aggressive -= (20000 * i);
+
+        // aggressive-ness starts at quarter second, and decreases 10% for each level to 10 (which would be no sleep)
+        aggressive = (1000000 / 4) - (i * 25000);
         
         printf("Aggressive: %d [%d]\n", i, aggressive);
 

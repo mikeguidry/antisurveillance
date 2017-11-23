@@ -13,7 +13,6 @@ Command line (mainly C only) version will be here...
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
 #include "network.h"
 #include "antisurveillance.h"
 #include "pcap.h"
@@ -90,4 +89,3 @@ int main(int argc, char *argv[]) {
 
     exit(0);
 }
-

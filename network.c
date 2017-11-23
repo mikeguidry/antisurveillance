@@ -221,9 +221,7 @@ void *thread_network_flush(void *arg) {
         if (!count)
             sleep(1);
         else {
-            i = 150000 - (10000 * i);
-            if (i < 50000   ) i = 50000;
-            if (i > 150000) i = 150000;
+            i = (1000000 / 4) - (i * 25000);
             
             usleep(i);
         }
@@ -300,3 +298,52 @@ int prepare_read_socket(AS_context *ctx) {
     return (ctx->read_socket != 0);
 }
 */
+
+
+// this will take a buffer, and size expected to come directly fromm the network driver
+// it will process it through filters, and if passing will send to whatever functions, or subsystems
+// requested data of that statue
+// *** todo: maybe make a filter check which takes a packet buffer instead of
+// requiring the build instructions (less cycles)
+int process_packet(AS_context *ctx, char *packet, int size) {
+    PacketInfo *pptr = NULL;
+    NetworkAnalysisFunctions *nptr = ctx->IncomingPacketFunctions;
+    PacketBuildInstructions *iptr = NULL;
+    int ret = -1;
+
+    // if we dont have any subsystems waiting for packets.. no point
+    if (nptr == NULL) goto end;
+
+    // packet needs to be in this structure to get analyzed.. reusing pcap loading routines
+    if ((pptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) return -1;
+
+    // prepare the structure with the information
+    pptr->buf = packet;
+    pptr->size = size;
+
+    // analyze that packet, and turn it into a instructions structure
+    if ((iptr = PacketsToInstructions(pptr)) == NULL) goto end;
+
+    // loop looking for any subsystems where it may be required
+    while (nptr != NULL) {
+        // if the packet passes the filter then call its processing function
+        if (FilterCheck(&nptr->flt, iptr)) {
+
+            // maybe verify respoonse, and break the loop inn some case
+            nptr->incoming_function(ctx, iptr);
+        }
+
+        nptr = nptr->next;
+    }
+
+    // worked out alright.
+    ret = 1;
+
+    end:;
+
+    // free these structures since they are no longer required
+    PacketsFree(&pptr);
+    PacketBuildInstructionsFree(&iptr);
+
+    return ret;
+}

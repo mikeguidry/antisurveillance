@@ -28,79 +28,6 @@ I'll try to require as little hard coded information as possible.  I'd like ever
 */
 
 
-/*
-typedef struct _points { int x; int y; int n} MPoints;
-CPoints[] = {
-    {00,11,1},{01,22,2},{21,31,3},{31,42,4},{41,53,5},{55,54,6},{54,53,7},{05,15,8},{14,22,9},{03,15,10},{24,35,11},{00,00,00}
-};
-
-int pdiff(int x, int y) {
-    int ret = 0;
-    int i = 0, a = 0, z = 0;
-    MPoints points[16];
-
-    while (CPoints[i].n != 0) {
-        points[i].x = CPoints[i].x - x;
-        if (points[i].x < 0) points[i].x ~= points[i].x;
-        points[i].y = CPoints[i].y - y;
-        if (points[i].y < 0) points[i].y ~= points[i].y; 
-
-        i++;
-    }
-
-    for (a = 0; CPoints[a].id != 0; a++) {
-
-    }
-
-    return ret;
-}
-
-//cpoints is a basic map of the globe.. with somme countries and their general regions marked...
-//it is a extremely small way to pick regions of importance for analysis without containing a ton of information
-
-[00,11],[01,22],[21,31],[31,42],[41,53],[55,54],[54,53],[05,15],[14,22],[03,15],[24,35],[00,00]
-
-0                       1                                  2                         3                          4                              5
-
-
-
-
-
-
-
-1                     11                                  21                        31                         41                              51
-
-
-
-
-
-
-
-2                      12                                  22                        32                         42                            52
-
-
-
-
-
-
-3                     13                                   23                         33                         43                           53
-
-
-
-
-
-4                      14                                  24                       34                            44                           54
-
-
-
-5                     15                                25                            35                            45                          55
-
-
-
-*/
-
-
-
 
 
 // traceroutes are necessary to ensure a single nonde running this code can affect all mass surveillance programs worldwide
@@ -241,14 +168,29 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
 
     // we had a match.. lets link it in the spider web
     if (qptr != NULL) {
+
+        // if this hop responding matches an actual target in the queue... then that traceroute is completed
+        if ((rptr->hop && rptr->hop == qptr->target) ||
+            (!rptr->hop && !qptr->target && CompareIPv6Addresses(&rptr->hopv6, &qptr->targetv6))) {
+                qptr->completed = 1;
+        }
+
+
+        // allocate space for us to append this response to our interal spider web for analysis
         if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) != NULL) {
-            snew->hop = rptr->hop;
+            // we need to know which TTL later (for spider web analysis)
             snew->ttl = rptr->ttl;
+
+            // take note of the hops address (whether its ipv4, or 6)
+            snew->hop = rptr->hop;
             CopyIPv6Address(&snew->hopv6, &rptr->hopv6);
+
+            // take noote of the target ip address
             snew->target_ip = qptr->target;
             CopyIPv6Address(&qptr->targetv6, &rptr->targetv6);
         }
 
+        // determine if we have already started a structure for this hop in the spider web
         if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
             // we found it as a spider.. so we can add it to a branch
             snew->branches = sptr->branches;
@@ -399,80 +341,84 @@ int Traceroute_Perform(AS_context *ctx) {
 
     // loop until we run out of elements
     while (tptr != NULL) {
-        // lets increase TTL every 10 seconds.. id like to perform thousands of these at all times.. so 10 seconds isnt a big deal...
-        // thats 5 minutes till MAX ttl (30)
+        // if we have reached max ttl then mark this as completed.. otherwise it could be marked completed if we saw a hop which equals the target
+        if (tptr->current_ttl > MAX_TTL) tptr->completed = 1;
 
-        if ((ts - tptr->ts_activity) > 10) {
-            tptr->current_ttl++;
+        if (!tptr->completed) {
+            // lets increase TTL every 10 seconds.. id like to perform thousands of these at all times.. so 10 seconds isnt a big deal...
+            // thats 5 minutes till MAX ttl (30)
+            if ((ts - tptr->ts_activity) > 10) {
+                tptr->current_ttl++;
 
-            // lets merge these two variables nicely into a 32bit variable for the ICMP packet  (to know which request when it comes back)
-            // using it like this allows us to perform mass scans using a small amount of space
-            // it ensures we can keep a consistent queue of active traceroutes
-            packet_data = (((tptr->identifier << 16) & 0xFFFF0000) | (tptr->current_ttl & 0x0000FFFF));
+                // lets merge these two variables nicely into a 32bit variable for the ICMP packet  (to know which request when it comes back)
+                // using it like this allows us to perform mass scans using a small amount of space
+                // it ensures we can keep a consistent queue of active traceroutes
+                packet_data = (((tptr->identifier << 16) & 0xFFFF0000) | (tptr->current_ttl & 0x0000FFFF));
 
-            icmp.type = ICMP_ECHO;
-            icmp.code = 0;
-            // i forgot about these.. might be able to use them as identifer/ttl
-            icmp.un.echo.sequence = tptr->identifier;
-            icmp.un.echo.id = tptr->current_ttl;
+                icmp.type = ICMP_ECHO;
+                icmp.code = 0;
+                // i forgot about these.. might be able to use them as identifer/ttl
+                icmp.un.echo.sequence = tptr->identifier;
+                icmp.un.echo.id = tptr->current_ttl;
 
-            // make packet, or call funnction to handle that..
-            // mark some identifier in tptr for Traceroute_Incoming()
+                // make packet, or call funnction to handle that..
+                // mark some identifier in tptr for Traceroute_Incoming()
 
-            if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
-                if (tptr->target != 0) {
-                    iptr->type = PACKET_TYPE_ICMP_4;
-                    iptr->destination_ip = tptr->target;
-                    iptr->source_ip = get_local_ipv4();
-                } else {
-                    iptr->type = PACKET_TYPE_ICMP_6;
-                    CopyIPv6Address(&iptr->destination_ipv6, &tptr->targetv6);
-                    get_local_ipv6(&iptr->source_ipv6);
-                }
-
-                // copy ICMP parameters into this instruction packet
-                memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
-
-                /*
-
-                iptr->data_size = sizeof(uint32_t);
-                iptr->data = (char *)calloc(1, iptr->data_size);
-                if (iptr->data != NULL) *(uint32_t *)(iptr->data) = packet_data;
-
-                */
-
-                // ok so we need a way to queue an outgoing instruction without an attack structure....
-                // lets build a packet from the instructions we just designed
-                // lets build whichever type this is by calling the function directly from packetbuilding.c
-                // for either ipv4, or ipv6
-                if (iptr->type & PACKET_TYPE_ICMP_6)
-                    i = BuildSingleICMP6Packet(iptr);
-
-                else if (iptr->type & PACKET_TYPE_ICMP_4)
-                    i = BuildSingleICMP4Packet(iptr);
-
-                if (i == 1) {
-                    if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
-                        optr->buf = iptr->packet;
-                        optr->type = iptr->type;
-                        optr->size = iptr->packet_size;
-
-                        iptr->packet = NULL;
-                        iptr->packet_size = 0;
-
-                        // *** this is blocking... maybe change later 
-                        AttackQueueAdd(ctx, optr, 0);
+                if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+                    if (tptr->target != 0) {
+                        iptr->type = PACKET_TYPE_ICMP_4;
+                        iptr->destination_ip = tptr->target;
+                        iptr->source_ip = get_local_ipv4();
+                    } else {
+                        iptr->type = PACKET_TYPE_ICMP_6;
+                        CopyIPv6Address(&iptr->destination_ipv6, &tptr->targetv6);
+                        get_local_ipv6(&iptr->source_ipv6);
                     }
+
+                    // copy ICMP parameters into this instruction packet
+                    memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
+
+                    /*
+
+                    iptr->data_size = sizeof(uint32_t);
+                    iptr->data = (char *)calloc(1, iptr->data_size);
+                    if (iptr->data != NULL) *(uint32_t *)(iptr->data) = packet_data;
+
+                    */
+
+                    // ok so we need a way to queue an outgoing instruction without an attack structure....
+                    // lets build a packet from the instructions we just designed
+                    // lets build whichever type this is by calling the function directly from packetbuilding.c
+                    // for either ipv4, or ipv6
+                    if (iptr->type & PACKET_TYPE_ICMP_6)
+                        i = BuildSingleICMP6Packet(iptr);
+
+                    else if (iptr->type & PACKET_TYPE_ICMP_4)
+                        i = BuildSingleICMP4Packet(iptr);
+
+                    if (i == 1) {
+                        if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
+                            optr->buf = iptr->packet;
+                            optr->type = iptr->type;
+                            optr->size = iptr->packet_size;
+
+                            iptr->packet = NULL;
+                            iptr->packet_size = 0;
+
+                            // *** this is blocking... maybe change later 
+                            AttackQueueAdd(ctx, optr, 0);
+                        }
+                    }
+
+                    // dont need this anymore..
+                    PacketBuildInstructionsFree(&iptr);
+
+
+                } else {
+                    // maybe issue w memory? lets roll back and let the next round try
+                    tptr->current_ttl--;
+                    break;
                 }
-
-                // dont need this anymore..
-                PacketBuildInstructionsFree(&iptr);
-
-
-            } else {
-                // maybe issue w memory? lets roll back and let the next round try
-                tptr->current_ttl--;
-                break;
             }
         }
 
@@ -544,3 +490,38 @@ void get_local_ipv6(struct in6_addr *dst) {
 }
 
 
+// initialize traceroute research subsystem
+// this has to prepare the incoming packet filter, and structure so we get iniformation from the wire
+int Traceroute_Init(AS_context *ctx) {
+    NetworkAnalysisFunctions *nptr = NULL;
+    FilterInformation *flt = NULL;
+    int ret = -1;
+
+    flt = (FilterInformation *)calloc(1, sizeof(FilterInformation));
+    nptr = (NetworkAnalysisFunctions *)calloc(1, sizeof(NetworkAnalysisFunctions));
+
+    if (!flt || !nptr) goto end;
+
+    // lets just ensure we obtain all ICMP packet information since we'll have consistent ipv4/ipv6 requests happening
+    FilterPrepare(flt, FILTER_PACKET_ICMP, 0);
+
+    // prepare structure used by the network engine to ensure w get the packets we are looking for
+    nptr->incoming_function = &Traceroute_Incoming;
+    nptr->flt = flt;
+
+    // insert so the network functionality will begin calling our function for these paackets
+    nptr->next = ctx->IncomingPacketFunctions;
+    ctx->IncomingPacketFunctions = nptr;
+
+    ret = 1;
+
+    end:;
+
+    // free structures if they were not used for whatever reasons
+    if (ret != 1) {
+        PtrFree(&flt);
+        PtrFree(&nptr);
+    }
+
+    return ret;
+}

@@ -78,6 +78,8 @@ typedef struct _traceroute_queue {
 
     // identifier to tie this to the responses since we will perform mass amounts
     uint32_t identifier;
+
+    int completed;
 } TracerouteQueue;
 
 
@@ -150,3 +152,4 @@ int Traceroute_Perform(AS_context *ctx);
 int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr);
 void get_local_ipv6(struct in6_addr *dst);
 uint32_t get_local_ipv4();
+int Traceroute_Init(AS_context *ctx);

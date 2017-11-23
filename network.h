@@ -8,6 +8,12 @@ typedef struct _pkt_info PacketInfo;
 struct _antisurveillance_context;
 typedef struct _antisurveillance_context AS_context;
 
+struct _packet_instructions;
+typedef struct _packet_instructions PacketBuildInstructions;
+
+struct _filter_information;
+typedef struct _filter_information FilterInformation;
+
 
 // this is the queue which shouldnt have anything to do with processing, or other functions.. its where
 // all attacks go to get submitted directly to the wire.. 
@@ -42,6 +48,21 @@ typedef struct _incoming_packet_queue {
 
 } IncomingPacketQueue;
 
+typedef int (*PacketIncomingFunc)(AS_context *, PacketBuildInstructions *iptr);
+
+// all packets being read off of the wire will go through these functions to get delivered to wherever they belong
+// traceroute for instance will have a filter which if passes then its function will obtain the packets
+typedef struct _network_analysis_functions {
+    struct _network_analysis_functions *next;
+
+    // this has to be a pointer how we are declaring...
+    // wont matter later after header cleanup
+    FilterInformation *flt;
+
+    PacketIncomingFunc incoming_function;
+} NetworkAnalysisFunctions;
+
+
 int prepare_socket();
 void *thread_network_flush(void *arg);
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr);
@@ -49,3 +70,4 @@ void *AS_queue_threaded(void *arg);
 int AttackQueueAdd(AS_context *,AttackOutgoingQueue *optr, int only_try);
 int FlushAttackOutgoingQueueToNetwork(AS_context *);
 void ClearPackets(AS_context *ctx);
+int process_packet(AS_context *ctx, char *packet, int size);
