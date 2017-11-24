@@ -249,8 +249,11 @@ typedef struct _filter_information {
     int flags;
     int packet_flags;
 
+    int is_source_ipv6;
     uint32_t source_ip;
     struct in6_addr source_ipv6;
+
+    int is_destination_ipv6;
     uint32_t destination_ip;
     struct in6_addr destination_ipv6;
 

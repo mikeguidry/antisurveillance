@@ -17,13 +17,17 @@ signal.signal(signal.SIGINT, signal_handler)
 def perform(a,b):
 	count = 0
 	while (count < b or b == 0):
-		if ((count % 50000) == 0):
+		if (count and (count % 50000) == 0):
 			print("AS_perform() - Count is %d") % count
 			d = a.networkcount()
 			e = a.attackcount()
-			print("network {} attack {}").format(d,e)
+			print("Network Queue Count {} Attack Count {}").format(d,e)
 		a.attackperform()
 		count = count + 1
+
+	# if looping infinite.. then we must control the timing so it doesnt use up the entire CPU
+	if (b == 0):
+		sleep(0.5)
 
 #build an HTTP session and add it as an attack.. itll get enabled immediately
 def build_http(a): 
@@ -121,14 +125,13 @@ def init():
 
 	#iterate 30 times AS_perform() (pushes packets to outgoing queue, etc)
 	#You can loop this and it would go on forever...right now the app can be used perfectly.
-	perform(a,0)
+	perform(a,30)
 
 	# how many packets did that generate?
-	print("network queue count: %d") % a.networkcount()
+	print("Network Queue Count before dumping PCAP: %d") % a.networkcount()
 
 	#pcap saving to open it in wireshark
 	a.pcapsave("py_output.pcap")
-
 
 	#could turn network dumping on...
 	#a.networkon()

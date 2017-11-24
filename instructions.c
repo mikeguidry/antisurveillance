@@ -111,18 +111,34 @@ int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
     if (fptr->flags == 0 || fptr->init != 1) return 1;
 
     // verify client IP
-    if (fptr->flags & FILTER_CLIENT_IP)
-        if (iptr->source_ip != fptr->source_ip)
-            if (!(fptr->flags & FILTER_PACKET_FAMILIAR) ||
-             ((fptr->flags & FILTER_PACKET_FAMILIAR) && (iptr->destination_ip != fptr->source_ip)))
-                goto end;
+    if (fptr->flags & FILTER_CLIENT_IP) {
+        if (!fptr->is_source_ipv6) {
+            if (iptr->source_ip != fptr->source_ip)
+                if (!(fptr->flags & FILTER_PACKET_FAMILIAR) ||
+                ((fptr->flags & FILTER_PACKET_FAMILIAR) && (iptr->destination_ip != fptr->source_ip)))
+                    goto end;
+        } else if (fptr->is_source_ipv6) {
+            if (!CompareIPv6Addresses(&iptr->source_ipv6, &fptr->source_ipv6))
+                if (!(fptr->flags & FILTER_PACKET_FAMILIAR) ||
+                ((fptr->flags & FILTER_PACKET_FAMILIAR) && (!CompareIPv6Addresses(&iptr->destination_ipv6, &fptr->source_ipv6))))
+                    goto end;
+        }
+    }
 
     // verify server IP
-    if (fptr->flags & FILTER_SERVER_IP)
-        if (iptr->destination_ip != fptr->destination_ip)
-            if (!(fptr->flags & FILTER_PACKET_FAMILIAR) ||
-             ((fptr->flags & FILTER_PACKET_FAMILIAR) && (iptr->source_ip != fptr->destination_ip)))
-                goto end;
+    if (fptr->flags & FILTER_SERVER_IP) {
+        if (!fptr->is_destination_ipv6) {
+            if (iptr->destination_ip != fptr->destination_ip)
+                if (!(fptr->flags & FILTER_PACKET_FAMILIAR) ||
+                ((fptr->flags & FILTER_PACKET_FAMILIAR) && (iptr->source_ip != fptr->destination_ip)))
+                    goto end;
+        } else if (fptr->is_destination_ipv6) {
+            if (!CompareIPv6Addresses(&iptr->destination_ipv6, &fptr->destination_ipv6))
+                if (!(fptr->flags & FILTER_PACKET_FAMILIAR) ||
+                ((fptr->flags & FILTER_PACKET_FAMILIAR) && (!CompareIPv6Addresses(&iptr->source_ipv6, &fptr->destination_ipv6))))
+                    goto end;            
+        }
+    }
 
     // verify server port (for instance www 80)
     if (fptr->flags & FILTER_SERVER_PORT)
@@ -152,48 +168,25 @@ int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
             if (!(iptr->flags & TCP_FLAG_RST)) goto end;
     }
 
-    if (fptr->flags & FILTER_PACKET_TCP) {
-        // make sure the packet is big enough to contain the IP header
-        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
+    // are we filtering by TCP?  If so.. is it either TCP 4, or 6?
+    if (fptr->flags & FILTER_PACKET_TCP)
+        if (!(iptr->type & PACKET_TYPE_TCP_4) && !(iptr->type & PACKET_TYPE_TCP_6)) goto end;
 
-        // ensure it is TCP
-        if (ip->protocol != IPPROTO_TCP) goto end;
-    }
+    // are we filtering by UDP?  If so.. is it either IPv4, or IPv6?
+    if (fptr->flags & FILTER_PACKET_UDP)
+        if (!(iptr->type & PACKET_TYPE_UDP_4) && !(iptr->type & PACKET_TYPE_UDP_6)) goto end;
 
-    if (fptr->flags & FILTER_PACKET_UDP) {
-        // make sure the packet is big enough to contain the IP header
-        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
-        
-        // ensure it is UDP
-        if (ip->protocol != IPPROTO_UDP) goto end;
-    }
+    // are we looking for ICMP? if so.. check if it matches either IPv4, or IPv6 ICMP
+    if (fptr->flags & FILTER_PACKET_ICMP)
+        if (!(iptr->type & PACKET_TYPE_ICMP_4) && !(iptr->type & PACKET_TYPE_ICMP_6)) goto end;
 
-    if (fptr->flags & FILTER_PACKET_ICMP) {
-        // make sure the packet is big enough to contain the IP header
-        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
+    // is this packet IPv4?
+    if (fptr->flags & FILTER_PACKET_IPV4)
+        if (!(iptr->type & PACKET_TYPE_IPV4)) goto end;
 
-        // ensure it is ICMP
-        if (ip->protocol != IPPROTO_ICMP) goto end;
-    }
-
-    if (fptr->flags & FILTER_PACKET_IPV4) {
-        // make sure the packet is big enough to contain the IP header
-        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
-
-        if (ip->version != 4) goto end;
-    }
-
-    if (fptr->flags & FILTER_PACKET_IPV6) {
-        // make sure the packet is big enough to contain the IP header
-        if (iptr->packet_size < sizeof(struct iphdr)) goto end;
-
-        if (ip->version != 6) goto end;
-    }
-
-    /*
-    if (fptr->flags & FILTER_PACKET_DNS) {
-        if (iptr->size < (sizeof(struct iphdr) + sizeof(struct udphdr)) goto end;
-    }*/
+    // is this packet IPv6?
+    if (fptr->flags & FILTER_PACKET_IPV6)
+        if (!(iptr->type & PACKET_TYPE_IPV6)) goto end;
 
     ret = 1;
 

@@ -107,13 +107,10 @@ static int PyASC_init(PyAS_Config *self, PyObject *args, PyObject *kwds) {
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|K", kwlist, &ctx))
         return -1;
 
-    if (ctx) {
-        printf("Initialization CTX: %X\n", ctx);
-        self->ctx = ctx;
-    }
+    if (ctx) self->ctx = ctx;
 
     // some global defaults... *** todo: retrieve fromm C side, or double check its used everywhere
-    self->replay_count = 99999;
+    self->replay_count = 99999999;
     self->replay_interval = 1;
 
     return 0;
@@ -125,9 +122,9 @@ static PyObject *PyASC_DIE(PyAS_Config* self){
     exit(-1);
 }
 
-
 // disable the system temporarily
 static PyObject *PyASC_Disable(PyAS_Config* self){
+
     if (self->ctx) self->ctx->paused = 1;
 
     Py_INCREF(Py_None);
@@ -192,16 +189,11 @@ static PyObject *PyASC_PCAPsave(PyAS_Config* self, PyObject *Pfilename){
 
 // count outgoing network queue
 static PyObject *PyASC_NetworkCount(PyAS_Config* self){
-        long ret = 0;
+    long ret = 0;
 
-        if (self->ctx) ret = L_count((LINK *)self->ctx->network_queue);
-    
-        if (ret) {
-            return PyInt_FromLong(ret);
-        } else {
-            Py_INCREF(Py_None);
-            return Py_None; 
-        }
+    if (self->ctx) ret = L_count((LINK *)self->ctx->network_queue);
+
+    return PyInt_FromLong(ret);
 }
 
 // count outgoing network queue
@@ -341,17 +333,22 @@ static PyObject *PyASC_FilterPrepare(PyAS_Config* self, PyObject *args, PyObject
     int packet_flags = 0;
     int familiar = 0;
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ssiii", kwd_list,  &source_ip, &destination_ip,
-    &source_port, &destination_port, &packet_flags)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ssiii", kwd_list,  &source_ip, &destination_ip, &source_port, &destination_port, &packet_flags)) {
         PyErr_Print();
         return NULL;
     }
 
-    if (source_ip)
-        FilterPrepare(&self->flt, FILTER_CLIENT_IP, inet_addr(source_ip));
+    if (source_ip) {
+        // prepare either IPv4, or IPv6 client ip checking
+        IP_prepare(source_ip, &self->flt.source_ip, &self->flt.source_ipv6, &self->flt.is_source_ipv6);
+        self->flt.flags |= FILTER_CLIENT_IP;
+    }
 
-    if (destination_ip)
-        FilterPrepare(&self->flt, FILTER_SERVER_IP, inet_addr(destination_ip));
+    if (destination_ip) {
+        // prepare either IPv4, or IPv6 server ip checking
+        IP_prepare(destination_ip, &self->flt.destination_ip, &self->flt.destination_ipv6, &self->flt.is_destination_ipv6);
+        self->flt.flags |= FILTER_SERVER_IP;
+    }
 
     if (source_port)
         FilterPrepare(&self->flt, FILTER_CLIENT_PORT, source_port);
