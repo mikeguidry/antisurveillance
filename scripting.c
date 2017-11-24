@@ -850,6 +850,25 @@ static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *k
     
 }
 
+
+// enable flushing the network queue to the live wire
+static PyObject *PyASC_ScriptEnable(PyAS_Config* self){
+    if (self->ctx) self->ctx->script_enable = 1;
+
+    Py_INCREF(Py_None);
+    return Py_None; 
+}
+
+// enable flushing the network queue to the live wire
+static PyObject *PyASC_ScriptDisable(PyAS_Config* self){
+    if (self->ctx) self->ctx->script_enable = 0;
+
+    Py_INCREF(Py_None);
+    return Py_None; 
+}
+
+
+
 // ------------------
 
 static PyMethodDef PyASC_methods[] = {
@@ -948,13 +967,11 @@ static PyMethodDef PyASC_methods[] = {
     // obtain a list of all attacks (figure out whether to return it as an array, dict, or whatever)
     {"attacklist", (PyCFunction)PyASC_AttackList,    METH_NOARGS,    "" },
 
+    // enable antiscript to continue executing in C, calling script_perform() inn the python script
+    {"scriptenable", (PyCFunction)PyASC_ScriptEnable,    METH_NOARGS,    "enable continous execution, and script_perform()" },
 
-    // UDP can be thrown in to show DNS requests in case they begin filtering by checking for the TTL etc
-    //{"instructionsudp4send", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "" },
-
-    // icmp can get inserted as well.. 
-    //{"instructionsicmp4send", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "" },
-
+    // disabling script_perform() thus it would exit after the script_perform() which called this, or a python queue script would disable
+    {"scriptdisable", (PyCFunction)PyASC_ScriptDisable,    METH_NOARGS,    "enable continous execution, and script_perform()" },
 
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
@@ -1055,6 +1072,7 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
     // The script has not been loaded before (the pointer isnt in the structure)
     if (!eptr->pModule) {
 
+        printf("Loading script for the first time\n");
         // initialize python paths etc that we require for operating
         // I'm no python expert. I had to add some directories my first time playing with it.. and here we are.
         PyRun_SimpleString("import sys");
@@ -1167,8 +1185,10 @@ int Scripting_Perform(AS_context *ctx) {
 
     while (sptr != NULL) {
 
-        if (sptr->perform)
-            python_call_function(sptr, "loop", 4);
+        if (sptr->perform) {
+            //python_call_function(sptr, "loop", 4);
+            PythonLoadScript(sptr, NULL, "script_perform", NULL);
+        }
         
         sptr = sptr->next;
     }
@@ -1223,6 +1243,11 @@ AS_scripts *Scripting_New(AS_context *ctx) {
     // add to script list
     sctx->next = ctx->scripts;
     ctx->scripts = sctx;
+
+    // ***
+    // mark as perform.. in future we should check whether or not the script has script_perform()
+    // or remove this completely and have it verify against every script once after loading
+    sctx->perform = 1;
 
     return sctx;
 }

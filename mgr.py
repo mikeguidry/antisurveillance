@@ -64,6 +64,28 @@ def other_build_http(a):
 	print("new attack ID %d") % ret
 
 
+# if this were to be a script which would get called periodically after init() is completed...
+# then use script_enable().. and script_perform() would get called every iteration
+# and the program would not exit...
+def script_enable(a):
+	a.scriptenable()
+
+# this is the function that gets called every iteration if running from the C side.. (Scripting_Perform())
+#this is irrelevant if your returning 1, or not doing anything in C that loops...
+# the software will call AS_perform() itself out of the this scope.. so no need to call the one above in python
+# otherwise the script has full control.. including the timing.. so use some or it might eat all CPU
+def script_perform():
+	sleep(0.1)
+	a = antisurveillance.manager()
+	a.setctx(ctx)
+
+	# how many packets did that generate?
+	print("network queue count: %d") % a.networkcount()
+
+	#print("script_perform()\n")
+	return 0
+
+
 #main function that gets called from anti
 #it should perform the duties.. and it could loop to continue executing
 def init():
@@ -110,10 +132,8 @@ def init():
 	# i was calling disable() because it was running the C code right after.. it ignores it now if it returns 1 here
 	#a.disable()
 
+	script_enable(a)
+
 	return 1
 	
 
-# this is the function that gets called every iteration if running from the C side.. (Scripting_Perform())
-#this is irrelevant if your returning 1, or not doing anything in C that loops...
-def script_perform():
-	return 0

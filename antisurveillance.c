@@ -199,7 +199,6 @@ AS_context *AS_ctx_new() {
 int Subsystems_Perform(AS_context *ctx) {
     Traceroute_Perform(ctx);
     BH_Perform(ctx);
-    Scripting_Perform(ctx);
 }
 
 int Test_Generate(AS_context *ctx, int argc, char *argv[]) {

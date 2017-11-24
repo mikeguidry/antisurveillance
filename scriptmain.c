@@ -18,6 +18,7 @@ The version which is based around being controlled by python, and/or executing p
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "pcap.h"
@@ -27,6 +28,13 @@ The version which is based around being controlled by python, and/or executing p
 #include "utils.h"
 #include "scripting.h"
 
+//https://stackoverflow.com/questions/17766550/ctrl-c-interrupt-event-handling-in-linux
+volatile sig_atomic_t flag = 0;
+void ctrlc_exit(int sig){ // can be called asynchronously
+    flag=1;
+}
+
+
 int main(int argc, char *argv[]) {
     int i = 0, done = 0;
     AS_context *ctx = Antisurveillance_Init();
@@ -34,23 +42,29 @@ int main(int argc, char *argv[]) {
     char *script = "mgr";
     AS_scripts *sctx = NULL;    
 
+    signal(SIGINT, ctrlc_exit); 
+
     if (argc > 1) {
         script = argv[1];
     }
 
-    // finnd another way to get this later...
+    // find another way to get this later...
     sctx = ctx->scripts;
 
-    while (!done) {
-        // Execute the main script
-        i = PythonLoadScript(sctx, "mgr", "init", NULL);
+    // call the init() function in the script
+    PythonLoadScript(sctx, script, "init", NULL);
 
-        if (!sctx->perform) {
-            done = 1;
-        } else {
-            // execute a scripting loop
+    while (ctx->script_enable) {
+            // call AS_perform() once to iterate all attacks
+            AS_perform(ctx);
+
+            // now call the script in case it wants to make any changes.. or disable the system
             Scripting_Perform(ctx);
-        }
+
+            if (flag) {
+                printf("Caught Ctrl-C...\n");
+                break;
+            }
     }
 
     // completed... finish routines to free all memory, scripting, and other subsystems..

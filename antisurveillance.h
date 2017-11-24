@@ -189,6 +189,9 @@ typedef struct _antisurveillance_context {
     // disable writing to disk (to queue for pcap save)
     int network_disabled;
 
+    // instead of exiting.. continue executing calling script_perform() every iteration
+    int script_enable;
+
     NetworkAnalysisFunctions *IncomingPacketFunctions;
     
 } AS_context;
