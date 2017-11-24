@@ -203,6 +203,21 @@ static PyObject *PyASC_NetworkCount(PyAS_Config* self){
             return Py_None; 
         }
 }
+
+// count outgoing network queue
+static PyObject *PyASC_AttackCount(PyAS_Config* self){
+        long ret = 0;
+
+        if (self->ctx) ret = L_count((LINK *)self->ctx->attack_list);
+    
+        if (ret) {
+            return PyInt_FromLong(ret);
+        } else {
+            Py_INCREF(Py_None);
+            return Py_None; 
+        }
+}
+
     
 
 // clear the outgoing network queue
@@ -975,6 +990,7 @@ static PyMethodDef PyASC_methods[] = {
 
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
+    {"attackcount", (PyCFunction)PyASC_AttackCount,    METH_NOARGS,    "count attacks" },
     {NULL}  /* Sentinel */
 };
 
@@ -1048,9 +1064,13 @@ void PyASC_Initialize(void) {
 
     if (PyType_Ready(&PyASCType) < 0) return;
 
+    // initialize base module name.. antisurveillance
     if ((m = Py_InitModule3("antisurveillance", module_methods, "Anti surveillance management")) == NULL) return;
 
     Py_INCREF(&PyASCType);
+
+    // create the object? or class? under antisurveillance...
+    // so you can perform a = antisurveillance.manager(args)
     PyModule_AddObject(m, "manager", (PyObject *)&PyASCType);
 }
 
@@ -1068,11 +1088,10 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
     char buf[1024];
     int i = 0;
     PyObject *pCtx = NULL;
+    PyObject *pPerform = NULL;
     
     // The script has not been loaded before (the pointer isnt in the structure)
     if (!eptr->pModule) {
-
-        printf("Loading script for the first time\n");
         // initialize python paths etc that we require for operating
         // I'm no python expert. I had to add some directories my first time playing with it.. and here we are.
         PyRun_SimpleString("import sys");
@@ -1101,6 +1120,13 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
         // we set the context as a global script variable so it bridges properly to the correct structures for management
         pCtx = PyLong_FromVoidPtr((void *)eptr->ctx);
         PyObject_SetAttrString(pModule, "ctx", pCtx);
+
+        // lets check if it has a script_perform() function.. if so we will use it later
+        pPerform = PyObject_GetAttrString(pModule,"script_perform");
+        if (pPerform && PyCallable_Check(pPerform)) {
+            eptr->perform = 1;
+        }
+
     }
     
     // If the module didn't load properly.. then theres no reason to attempt to execute anything
@@ -1176,7 +1202,7 @@ int python_call_function(AS_scripts *mptr,  char *message, int size) {
 }
 
 
-// perform one iteration of all scripts (callinng their 'script_perform' function) with the message "loop" (size 4)
+// perform one iteration of all scripts (callinng their 'script_perform' function)
 int Scripting_Perform(AS_context *ctx) {
     int ret = -1;
     AS_scripts *sptr = NULL;
@@ -1184,7 +1210,6 @@ int Scripting_Perform(AS_context *ctx) {
     if ((ctx == NULL) || ((sptr = ctx->scripts) == NULL)) return 0;
 
     while (sptr != NULL) {
-
         if (sptr->perform) {
             //python_call_function(sptr, "loop", 4);
             PythonLoadScript(sptr, NULL, "script_perform", NULL);
@@ -1206,7 +1231,6 @@ int Scripting_Init(AS_context *ctx) {
     
     // initialize python required function
     Py_Initialize();
-
 
     ret = 1;
 
@@ -1243,11 +1267,6 @@ AS_scripts *Scripting_New(AS_context *ctx) {
     // add to script list
     sctx->next = ctx->scripts;
     ctx->scripts = sctx;
-
-    // ***
-    // mark as perform.. in future we should check whether or not the script has script_perform()
-    // or remove this completely and have it verify against every script once after loading
-    sctx->perform = 1;
 
     return sctx;
 }

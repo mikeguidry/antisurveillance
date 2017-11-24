@@ -363,7 +363,7 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
         // if we are about to replay this attack again from the first packet due to a repeat count.. then
         // verify enough time has elapsed to match our repeat interval (IN seconds)
         timeval_subtract(&time_diff, &aptr->ts, &tv);
-        if (time_diff.tv_usec < aptr->repeat_interval) {
+        if (pkt->wait_time && time_diff.tv_usec < pkt->wait_time) {
             // we are on the first packet and it has NOT been long enough...
             return;
         }
@@ -391,7 +391,7 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
         // Is it too soon to send this packet? (we check its milliseconds)
         timeval_subtract(&time_diff, &aptr->ts, &tv);
 
-        if (time_diff.tv_usec < pkt->wait_time) return;
+        if (pkt->wait_time && time_diff.tv_usec < pkt->wait_time) return;
     }
 
     // Queue this packet into the outgoing queue for the network wire

@@ -2,29 +2,38 @@
 # itll be easy enough for a child to use.
 
 import antisurveillance
+
+import signal
+import sys
 from pprint import pprint
-from time import sleep
+from time import sleep, time
+
+def signal_handler(signal, frame):
+        print('You pressed Ctrl+C!')
+        sys.exit(0)
+signal.signal(signal.SIGINT, signal_handler)
 
 # iterates all attack structures X times, or 0 forever.. but ensure you have other ways to kill it.. just allowing it
 def perform(a,b):
 	count = 0
 	while (count < b or b == 0):
-		if ((count % 10) == 0):
+		if ((count % 50000) == 0):
 			print("AS_perform() - Count is %d") % count
+			d = a.networkcount()
+			e = a.attackcount()
+			print("network {} attack {}").format(d,e)
 		a.attackperform()
 		count = count + 1
-		if (b == 0):
-			sleep(0.05)
 
 #build an HTTP session and add it as an attack.. itll get enabled immediately
-def build_http(a):
+def build_http(a): 
 	server_body = open("server_body", 'rU').read()
 	client_body = open("client_body", 'rU').read()
 	src_ip = "10.0.0.1"
 	dst_ip = "10.0.0.2"
 	src_port = 31337
 	dst_port = 80
-	ret = a.buildhttp(src_ip, src_port, dst_ip, dst_port, client_body, server_body)
+	ret = a.buildhttp(src_ip, src_port, dst_ip, dst_port, client_body, server_body, count=99999)
 
 	print("new attack ID %d") % ret
 
@@ -59,7 +68,7 @@ def other_build_http(a):
 
 	#now build the attack structure around those instructions we just designed
 	#skip adjustments is for replaying attacks not wanting to generate new IPs
-	ret = a.instructionsbuildattack(count=999, interval=1, skip_adjustments=0)
+	ret = a.instructionsbuildattack(count=999999999, interval=1, skip_adjustments=0)
 
 	print("new attack ID %d") % ret
 
@@ -71,16 +80,15 @@ def script_enable(a):
 	a.scriptenable()
 
 # this is the function that gets called every iteration if running from the C side.. (Scripting_Perform())
-#this is irrelevant if your returning 1, or not doing anything in C that loops...
 # the software will call AS_perform() itself out of the this scope.. so no need to call the one above in python
 # otherwise the script has full control.. including the timing.. so use some or it might eat all CPU
 def script_perform():
-	sleep(0.1)
+	#sleep(0.1)
 	a = antisurveillance.manager()
 	a.setctx(ctx)
 
 	# how many packets did that generate?
-	print("network queue count: %d") % a.networkcount()
+	print("network %05d attack %05d ") % (a.networkcount(), a.attackcount())
 
 	#print("script_perform()\n")
 	return 0
@@ -113,7 +121,7 @@ def init():
 
 	#iterate 30 times AS_perform() (pushes packets to outgoing queue, etc)
 	#You can loop this and it would go on forever...right now the app can be used perfectly.
-	perform(a,100)
+	perform(a,0)
 
 	# how many packets did that generate?
 	print("network queue count: %d") % a.networkcount()
@@ -132,7 +140,7 @@ def init():
 	# i was calling disable() because it was running the C code right after.. it ignores it now if it returns 1 here
 	#a.disable()
 
-	script_enable(a)
+	#script_enable(a)
 
 	return 1
 	

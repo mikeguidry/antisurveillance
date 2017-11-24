@@ -11,7 +11,7 @@ OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 $(ODIR)/%.o: %.c $(DEPS) scriptmain.o cmdline.o
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-antiscript: $(OBJ) scriptmain.o
+pyanti: $(OBJ) scriptmain.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 anti: $(OBJ) cmdline.o
@@ -23,4 +23,4 @@ anti_static: $(OBJ) cmdline.o
 clean:
 	rm -f anti $(ODIR)/*.o *~ core $(INCDIR)/*~ 
 
-all: clean anti antiscript
+all: clean anti pyanti

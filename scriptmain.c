@@ -42,6 +42,7 @@ int main(int argc, char *argv[]) {
     char *script = "mgr";
     AS_scripts *sctx = NULL;    
 
+    // allow ctrl-c to stop script (if can you loop forever)
     signal(SIGINT, ctrlc_exit); 
 
     if (argc > 1) {

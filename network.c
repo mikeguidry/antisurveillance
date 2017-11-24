@@ -328,7 +328,6 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     while (nptr != NULL) {
         // if the packet passes the filter then call its processing function
         if (FilterCheck(&nptr->flt, iptr)) {
-
             // maybe verify respoonse, and break the loop inn some case
             nptr->incoming_function(ctx, iptr);
         }

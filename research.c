@@ -342,7 +342,7 @@ int Traceroute_Perform(AS_context *ctx) {
     // loop until we run out of elements
     while (tptr != NULL) {
         // if we have reached max ttl then mark this as completed.. otherwise it could be marked completed if we saw a hop which equals the target
-        if (tptr->current_ttl > MAX_TTL) tptr->completed = 1;
+        if (tptr->current_ttl >= MAX_TTL) tptr->completed = 1;
 
         if (!tptr->completed) {
             // lets increase TTL every 10 seconds.. id like to perform thousands of these at all times.. so 10 seconds isnt a big deal...
