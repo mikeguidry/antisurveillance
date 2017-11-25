@@ -175,8 +175,10 @@ void AS_Clear_All(AS_context *ctx) {
 AS_context *AS_ctx_new() {
     AS_context *ctx = NULL;
 
+    // seed random number generator by current time (not secure but no biggie here)
     srand(time(0));
 
+    // allocate memory for the main context
     if ((ctx = (AS_context *)calloc(1, sizeof(AS_context))) == NULL) return NULL;
     
     // initialize anything related to special attacks in attacks.c
@@ -201,7 +203,11 @@ AS_context *AS_ctx_new() {
 
 // perform iterations of other subsystems...
 int Subsystems_Perform(AS_context *ctx) {
+    // first we process any incoming packets.. do this BEFORE traceroute since it awaits data
+    network_process_incoming_buffer(ctx);
+    // now move any current traceroute research forward
     Traceroute_Perform(ctx);
+    // now apply any changes, or further the blackhole attacks
     BH_Perform(ctx);
 }
 

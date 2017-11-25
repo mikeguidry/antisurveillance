@@ -207,6 +207,15 @@ static PyObject *PyASC_AttackCount(PyAS_Config* self){
     return PyInt_FromLong(ret);
 }
 
+// count outgoing network queue
+static PyObject *PyASC_TracerouteCount(PyAS_Config* self){
+    long ret = 0;
+
+    if (self->ctx) ret = L_count((LINK *)self->ctx->traceroute_queue);
+
+    return PyInt_FromLong(ret);
+}
+
     
 
 // clear the outgoing network queue
@@ -786,6 +795,27 @@ static PyObject *PyASC_ScriptDisable(PyAS_Config* self){
 
 
 
+static PyObject *PyASC_TracerouteQueue(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"target",0};
+    int ret = 0;
+    char *target = NULL;
+    int is_ipv6;
+    uint32_t targetv4;
+    struct in6_addr targetv6;
+    
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwd_list, &target)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    IP_prepare(target, &targetv4, &targetv6, &is_ipv6);
+    if (self->ctx)
+        Traceroute_Queue(self->ctx, target, &targetv6);
+
+    return PyInt_FromLong(ret);
+}
+
 // ------------------
 
 static PyMethodDef PyASC_methods[] = {
@@ -893,9 +923,13 @@ static PyMethodDef PyASC_methods[] = {
     // merge one attack into another's structure
     {"attackmerge", (PyCFunction)PyASC_MergeAttacks, METH_VARARGS|METH_KEYWORDS, "merges one attack into another (think DNS before WWW,etc)" },
 
+    // queue an address for traceroute research
+    {"traceroutequeue", (PyCFunction)PyASC_TracerouteQueue, METH_VARARGS|METH_KEYWORDS, "queue a traceroute" },
+
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
     {"attackcount", (PyCFunction)PyASC_AttackCount,    METH_NOARGS,    "count attacks" },
+    {"traceroutecount", (PyCFunction)PyASC_TracerouteCount,    METH_NOARGS,    "count active traceroutes" },
 
     {NULL}  /* Sentinel */
 };

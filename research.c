@@ -154,12 +154,15 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
     TracerouteSpider *sptr = NULL, *snew = NULL;
 
+    printf("Traceroute Analyze Single responsse %p\n", rptr);
+
     // if the pointer was NULL.. lets just return with 0 (no error...)
     if (rptr == NULL) return ret;
 
     while (qptr != NULL) {
         // found a match since we are more than likely doing mass amounts of traceroutes...
         if (qptr->identifier == rptr->identifier) {
+            printf("FOUND queue for this response! qptr  %p\n", qptr);
             break;
         }
 
@@ -172,6 +175,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
         // if this hop responding matches an actual target in the queue... then that traceroute is completed
         if ((rptr->hop && rptr->hop == qptr->target) ||
             (!rptr->hop && !qptr->target && CompareIPv6Addresses(&rptr->hopv6, &qptr->targetv6))) {
+                printf("Traceroute completed %p\n", qptr);
                 qptr->completed = 1;
         }
 
@@ -192,10 +196,12 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
 
         // determine if we have already started a structure for this hop in the spider web
         if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
+            printf("couldnt find spider\n");
             // we found it as a spider.. so we can add it to a branch
             snew->branches = sptr->branches;
             sptr->branches = snew;
         } else {
+            printf("found spider linked as a branch\n");
             // lets link directly to main list .. first time seeing this hop
             snew->next = ctx->traceroute_spider;
             ctx->traceroute_spider = snew;
@@ -221,6 +227,8 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     TracerouteQueue *tptr = NULL;
     int ret = -1;
 
+    printf("Traceroute Queue %d %d\n", target, *(int *)(targetv6));
+
     // allocate memory for this new traceroute target we wish to add into the system
     if ((tptr = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) goto end;
 
@@ -231,6 +239,9 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 
     // we start at ttl 1.. itll inncrement to that when processing
     tptr->current_ttl = 0;
+
+    // create a random identifier to find this packet when it comes from many hops
+    tptr->identifier = rand()%0xFFFFFFFF;
 
     // later we wish to allow this to be set by scripting, or this function
     // for example: if we wish to find close routes later to share... we can set to max = 5-6
@@ -249,43 +260,40 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 }
 
 
-
 // if we have active traceroutes, then this function should take the incoming packet
 // analyze it,  and determine if it relates to any active traceroute missions
 // It should handle all types of packets... id say UDP/ICMP... 
 // its a good thing since it wont have to analyze ALL tcp connections ;)
-int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr) {
+int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
-    PacketBuildInstructions *iptr = NULL;
-    PacketInfo *pnext = NULL;
+    //PacketBuildInstructions *iptr = NULL;
+    //PacketInfo *pnext = NULL;
     TracerouteResponse *rptr = NULL;
+    TraceroutePacketData *pdata = NULL;
 
     // when we extract the identifier from the packet.. put it here..
     uint32_t identifier = 0;
     // ttl has to be extracted as well (possibly from the identifier)
     int ttl = 0;
 
-    // analyze the packet to ensure it IS one of our traceroutes.. just inn casae a filter, or other way let it through
-    // im not rewriting code here when ive already designed all of the analysis for other parts..
-    // if its linked to something, lets unlink.. turn into PacketBuildInstructions type
-    // so we can easily have access to all parameters of this packet..
-    pnext = pptr->next;
-    pptr->next = NULL;
-
-    // if we cant analyze it, then we are done here
-    if ((iptr = PacketsToInstructions(pptr)) == NULL) goto end;
+    //printf("Got packet from network! data size %d\n", iptr->data_size);
 
     // data isnt big enough to contain the identifier
-    if (iptr->data_size < sizeof(uint32_t)) goto end;
+    if (iptr->data_size < sizeof(TraceroutePacketData)) goto end;
 
+    pdata = (TraceroutePacketData *)iptr->data;
     // extract identifier+ttl here fromm the packet characteristics, or its data.. if its not a traceroute, just goto end
-    identifier = *(uint32_t *)(iptr->data);
+    //identifier = *(uint32_t *)(iptr->data);
 
     // ttl = right 16 bits
-    ttl = (identifier & 0x0000FFFF);
+    //ttl = (identifier & 0x0000FFFF);
 
     // identifier = left 16 bits
-    identifier = (identifier & 0xFFFF0000) >> 16;
+    //identifier = (identifier & 0xFFFF0000) >> 16;
+    ttl = pdata->ttl;
+    identifier = pdata->identifier;
+
+    //printf("incoming icmp ttl %d identifier %X\n", ttl, identifier);
 
     // allocate a new structure for traceroute analysis functions to deal with it later
     if ((rptr = (TracerouteResponse *)calloc(1, sizeof(TracerouteResponse))) == NULL) goto end;
@@ -300,16 +308,18 @@ int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr) {
     rptr->next = ctx->traceroute_responses;
     ctx->traceroute_responses = rptr;
 
+    //printf("Created a TRACEROUTE response structure for this one\n");
+
     // thats about it for the other function to determine the original target, and throw it into the spider web
     ret = 1;
 
     end:;
 
     // free this since we wont need it anymore later
-    PacketBuildInstructionsFree(&iptr);
+    //PacketBuildInstructionsFree(&iptr);
 
     // put this pointer back if it was there.. means the packet is in a chain linked w othters -- dont ruin that
-    if (pnext) pptr->next = pnext;
+    //if (pnext) pptr->next = pnext;
 
     return ret;
 }
@@ -320,12 +330,13 @@ int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr) {
 // iterate through all current queued traceroutes handling whatever circumstances have surfaced for them individually
 int Traceroute_Perform(AS_context *ctx) {
     TracerouteQueue *tptr = ctx->traceroute_queue;
-    TracerouteResponse *rptr = ctx->traceroute_responses;
+    TracerouteResponse *rptr = ctx->traceroute_responses, *rnext = NULL;
     uint32_t packet_data = 0;
     struct icmphdr icmp;
     PacketBuildInstructions *iptr = NULL;
     AttackOutgoingQueue *optr = NULL;
     int i = 0;
+    TraceroutePacketData *pdata = NULL;
 
     memset(&icmp, 0, sizeof(struct icmphdr));
 
@@ -339,12 +350,19 @@ int Traceroute_Perform(AS_context *ctx) {
     // loop until we run out of elements
     while (tptr != NULL) {
         // if we have reached max ttl then mark this as completed.. otherwise it could be marked completed if we saw a hop which equals the target
-        if (tptr->current_ttl >= MAX_TTL) tptr->completed = 1;
+        if (tptr->current_ttl >= MAX_TTL) {
+            printf("traceroute completed\n");
+            tptr->completed = 1;
+        }
 
         if (!tptr->completed) {
             // lets increase TTL every 10 seconds.. id like to perform thousands of these at all times.. so 10 seconds isnt a big deal...
             // thats 5 minutes till MAX ttl (30)
-            if ((ts - tptr->ts_activity) > 10) {
+            if ((ts - tptr->ts_activity) > 1) {
+
+                //tptr->ts_activity = time(0);
+
+                printf("traceroute activity timer.. increasing ttl %d\n", tptr->current_ttl);
                 tptr->current_ttl++;
 
                 // lets merge these two variables nicely into a 32bit variable for the ICMP packet  (to know which request when it comes back)
@@ -375,13 +393,18 @@ int Traceroute_Perform(AS_context *ctx) {
                     // copy ICMP parameters into this instruction packet
                     memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
 
-                    /*
+                    
 
-                    iptr->data_size = sizeof(uint32_t);
+                    iptr->data_size = sizeof(TraceroutePacketData);
                     iptr->data = (char *)calloc(1, iptr->data_size);
-                    if (iptr->data != NULL) *(uint32_t *)(iptr->data) = packet_data;
+                    if (iptr->data != NULL) {
+                        pdata = (TraceroutePacketData *)iptr->data;
+                        pdata->identifier = tptr->identifier;
+                        pdata->ttl = tptr->current_ttl;
+                        printf("%d %X\n", pdata->ttl, pdata->identifier);   
+                    }
 
-                    */
+                    
 
                     // ok so we need a way to queue an outgoing instruction without an attack structure....
                     // lets build a packet from the instructions we just designed
@@ -426,6 +449,27 @@ int Traceroute_Perform(AS_context *ctx) {
 
         tptr = tptr->next;
     }
+
+
+    // now process all queued responses we have
+    rptr = ctx->traceroute_responses;
+
+    // loop until all responsses have been analyzed
+    while (rptr != NULL) {
+        // call this function which will take care of the response, and build the traceroute spider for strategies
+        TracerouteAnalyzeSingleResponse(ctx, rptr);
+
+        // get pointer to next so we have it after freeing
+        rnext = rptr->next;
+
+        // free this response structure..
+        free(rptr);
+
+        // move to next
+        rptr = rnext;
+    }
+
+    ctx->traceroute_responses = NULL;
 
 
     end:;

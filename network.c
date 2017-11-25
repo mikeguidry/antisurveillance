@@ -1,4 +1,4 @@
-/*
+    /*
 
 This is where functionality for writing information directly to the networking device is located.  It will also contain
 functions for sniffing the network interface for information.  The information can be used as new attack parameters, or
@@ -23,6 +23,8 @@ protection to be developed, and this can become the 'third party server' for hun
 #include <netinet/ip_icmp.h>
 #include <linux/if_packet.h>
 #include <sys/ioctl.h>
+#include <fcntl.h>
+#include <net/ethernet.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
@@ -50,17 +52,24 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
     // if disabled (used to store after as a pcap) fromm python scripts
     // beware.. if things are marked to be cleared it wont until this flag gets removed and the code below gets executed
     // maybe change later.. ***
-    if (ctx->network_disabled) return 0;
+    if (ctx->network_disabled) {
+        //printf("network disabled\n");
+        return 0;
+    }
 
     // we need some raw sockets.
     if (ctx->raw_socket <= 0) {
-        if (prepare_socket(ctx) <= 0) return -1;
+        if (prepare_socket(ctx) <= 0) {
+            //printf("no raw socket\n");
+            return -1;
+        }
     }
     
     while (optr != NULL) {
 
 #ifdef TESTING_DONT_FREE_OUTGOING
         if (optr->submitted) {
+            //printf("testing dont submit outgoing\n");
             optr = optr->next;
             continue;
         }
@@ -100,6 +109,8 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
 
         if (ctx->network_queue_last == optr)
             ctx->network_queue_last = NULL;
+
+        //printf("pushed packet\n");
 
         // move to the next link
         optr = onext;
@@ -218,14 +229,18 @@ void *thread_network_flush(void *arg) {
         
         pthread_mutex_unlock(&ctx->network_queue_mutex);
 
-        //if (count)printf("Count: %d\n", count);
+        //if (count)printf("Network Thread Outgoing count flushed: %d\n", count);
         // if none.. then lets sleep..  
-        if (!count)
+        if (!count) {
+            //printf("didnt push any\n");
             sleep(1);
-        else {
+        } else {
+            
             i = (1000000 / 4) - (i * 25000);
             
-            usleep(i);
+            //printf("usleep %d\n", i);
+            if (i > 0 && (i <= 1000000))
+                usleep(i);
         }
     }
 }
@@ -263,9 +278,10 @@ int prepare_read_socket(AS_context *ctx) {
     int sockfd = 0;
     struct ifreq ifr;
     struct sockaddr_ll sll;
-    char network[] = "wifi0";
+    char network[] = "wlp2s0";
     int protocol= IPPROTO_TCP;
     int sockopt = 1;
+    int flags = 0;
 
     // set ifr structure to 0
     memset (&ifr, 0, sizeof (struct ifreq));
@@ -301,7 +317,7 @@ int prepare_read_socket(AS_context *ctx) {
     sll.sll_protocol = htons (protocol);
 
     // bind to it
-    if (bind(sockfd, (struct sockaddr *) &sll, sizeof(sll)) != 0) goto end;
+    //if (bind(sockfd, (struct sockaddr *) &sll, sizeof(sll)) != 0) goto end;
 
     // set the socket to reuse 
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof(sockopt)) == -1) goto end;
@@ -309,8 +325,16 @@ int prepare_read_socket(AS_context *ctx) {
     // bind to do the network device
     if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, network, IFNAMSIZ-1) == -1) goto end;
 
+    // set non blocking
+    //https://stackoverflow.com/questions/1543466/how-do-i-change-a-tcp-socket-to-be-non-blocking
+    flags = fcntl(sockfd, F_GETFL, flags);
+    flags |= O_NONBLOCK;
+    flags = fcntl(sockfd, F_SETFL, flags);
+
     // other parts of this application require this socket
     ctx->read_socket = sockfd;
+
+    //printf("open socket %d\n", sockfd);
 
     end:;
     
@@ -333,23 +357,63 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     NetworkAnalysisFunctions *nptr = ctx->IncomingPacketFunctions;
     PacketBuildInstructions *iptr = NULL;
     int ret = -1;
+    char Asrc_ip[16], Adst_ip[16];
+    FILE *fd;
+    char fname[1024];
 
     // if we dont have any subsystems waiting for packets.. no point
-    if (nptr == NULL) goto end;
+    if (nptr == NULL) {
+        printf("NULL pointer\n");
+        goto end;
+    }
 
+
+    sprintf(fname, "packets/pkt_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
+
+
+
+    packet += sizeof(struct ether_header);
+    size -= sizeof(struct ether_header);
+
+    if ((fd = fopen(fname, "wb")) != NULL) {
+        fwrite(packet, size, 1, fd);
+        fclose(fd);
+    }
+
+    /*if (size < 40) {
+        printf("small pkt?\n");
+        goto end;
+    }*/
+
+    
     // packet needs to be in this structure to get analyzed.. reusing pcap loading routines
-    if ((pptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) return -1;
+    if ((pptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) {
+        printf("couldnt alloc memory for processinng packet\n");
+        return -1;
+    }
 
     // duplicate the packet data.. putting it into this packet structure
-    if (PtrDuplicate(packet, size, &pptr->buf, &pptr->size) == 0) goto end;
+    if (PtrDuplicate(packet, size, &pptr->buf, &pptr->size) == 0) {
+        printf("couldnt duplicate data required for processing\n");
+        goto end;
+    }
 
     // analyze that packet, and turn it into a instructions structure
-    if ((iptr = PacketsToInstructions(pptr)) == NULL) goto end;
+    if ((iptr = PacketsToInstructions(pptr)) == NULL) {
+        printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
+        goto end;
+    }
 
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
+
+        //strcpy(Asrc_ip, inet_ntoa(iptr->source_ip));
+        //strcpy(Adst_ip, inet_ntoa(iptr->destination_ip));
+
+        //printf("%s:%d -> %s:%d\n", Asrc_ip, iptr->source_port, Adst_ip, iptr->destination_port);
+
         // if the packet passes the filter then call its processing function
-        if (FilterCheck(&nptr->flt, iptr)) {
+        if (FilterCheck(nptr->flt, iptr)) {
             // maybe verify respoonse, and break the loop inn some case
             nptr->incoming_function(ctx, iptr);
         }
@@ -378,6 +442,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
     int cur_packet = 0;
     int packet_size = 0;
 
+    
     // lock thread so we dont attempt to read or write while another thread is
     pthread_mutex_lock(&ctx->network_incoming_mutex);
 
@@ -390,8 +455,13 @@ int network_process_incoming_buffer(AS_context *ctx) {
     // unlock thread...
     pthread_mutex_unlock(&ctx->network_incoming_mutex);
 
+    if (nptr == NULL) goto end;
+
+    //printf("network_process_incoming_buffer: first link %p\n", nptr);
+
     // now lets process all packets we have.. each is a cluster of packets
     while (nptr != NULL) {
+
         // lets loop for every packet in this structure..
         while (cur_packet < nptr->cur_packet) {
             // sptr starts at the beginning of the buffer
@@ -422,7 +492,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
         nptr = nnext;
     }
 
-
+end:;
     return ret;
 }
 
@@ -435,6 +505,8 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
     int r = 0;
     int ret = 0;
 
+    //printf("network_fill_incoming_buffer %d %p\n", read_socket, nptr);
+
     // reset using our buffer..
     sptr = (char *)&nptr->buf;
     // no need since calloc
@@ -444,10 +516,12 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
     // read until we run out of packets, or we fill our buffer size by 80%
     do {
         //r = recv(sptr, max_buf_size - size, )
-        r = recvfrom(read_socket, sptr, nptr->max_buf_size - nptr->size, 0, NULL, NULL);
+        r = recvfrom(read_socket, sptr, nptr->max_buf_size - nptr->size, MSG_DONTWAIT, NULL, NULL);
 
         // if no more packets.. lets break and send it off for processing
         if (r <= 0) break;
+
+        //printf("read packet\n");
 
         // set where this packet begins, and  ends
         nptr->packet_starts[nptr->cur_packet] = nptr->size;
@@ -472,6 +546,8 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
     ret = (nptr->cur_packet > 0);
 
     end:;
+
+    //printf("network_fill_incoming_buffer ret %d\n", ret);
     return ret;
 }
 
@@ -483,6 +559,7 @@ void *thread_read_network(void *arg) {
     int paused = 0;
     int sleep_interval = 0;
 
+    //printf("network reading thread\n");
     // open raw reading socket
     i = prepare_read_socket(ctx);
 
@@ -491,6 +568,8 @@ void *thread_read_network(void *arg) {
 
     // lets read forever.. until we stop it for some reason
     while (1) {
+
+        //printf("while\n");
         // only alllocate a buffer if we dont have one already... (no need to keep doing it if no packets were found)
         if (nptr == NULL) {
             // if we cannot allocate a buffer for some reason...
@@ -503,6 +582,8 @@ void *thread_read_network(void *arg) {
         }
 
         if (network_fill_incoming_buffer(ctx->read_socket, nptr)) {
+
+            //printf("got packets\n");
             // now lets get the packets into the actual queue as fast as possible
             // we read untiil there isnt anything left before we lock the mutex
             pthread_mutex_lock(&ctx->network_incoming_mutex);    
@@ -521,6 +602,8 @@ void *thread_read_network(void *arg) {
                 // buffer is completely empty.. set it, and the last pointer to this one
                 ctx->incoming_queue = ctx->incoming_queue_last = nptr;
             }
+
+            //printf("packets queued for processing\n");
             
             // lets unlink just in case.. so we allocate a new one
             nptr = NULL;
@@ -557,6 +640,8 @@ void *thread_read_network(void *arg) {
 
     // free nptr if it wasnt passed along before getting here
     PtrFree(&nptr);
+
+    printf("network reading thread ending\n");
 
     // exit thread
     pthread_exit(NULL);

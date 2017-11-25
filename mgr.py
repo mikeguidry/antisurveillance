@@ -11,7 +11,11 @@ import sys
 #support ctrl-c to stop infinite loop in perform()
 def signal_handler(signal, frame):
         print('You pressed Ctrl+C!')
-        sys.exit(0)
+
+	mgr = antisurveillance.manager()
+	mgr.exit()
+	sys.exit(0)
+		
 #install signal handler for SIGINT (ctrl-c)		
 signal.signal(signal.SIGINT, signal_handler)
 
@@ -96,6 +100,17 @@ def script_perform():
 	# how many packets did that generate?
 	print("network %05d attack %05d ") % (a.networkcount(), a.attackcount())
 
+	cnt = a.traceroutecount()
+	if (cnt == 0):
+		print("traceroute count 0 .. adding\n");
+		a.traceroutequeue(target="8.8.8.8")
+		a.traceroutequeue(target="9.9.9.9")
+		a.traceroutequeue(target="4.2.2.1")
+		a.traceroutequeue(target="1.2.3.4")
+		a.traceroutequeue(target="172.217.9.14")
+
+	sleep(1)
+
 	return 0
 
 
@@ -115,18 +130,18 @@ def init():
 	#a.pcapload(filename="tcp6.pcap")
 
 	#turn networking off so that we will dump all packets, and they wont get wrote to the live internet
-	a.networkoff()
+	#a.networkoff()
 
 	#build an HTTP session
-	build_http(a)
+	#build_http(a)
 
 	#build http session using the raw way (meant for other protocols as well)
 	#this can work for POP/SMTP/etc
-	other_build_http(a)
+	#other_build_http(a)
 
 	#iterate 30 times AS_perform() (pushes packets to outgoing queue, etc)
 	#You can loop this and it would go on forever...right now the app can be used perfectly.
-	perform(a,30)
+	perform(a,10)
 
 	# how many packets did that generate?
 	print("Network Queue Count before dumping PCAP: %d") % a.networkcount()
@@ -148,7 +163,7 @@ def init():
 	#a.enable() 
 
 	# do we wish to make the system continue executing? calling our perform()?
-	#script_enable(a)
+	script_enable(a)
 
 	return 1
 	

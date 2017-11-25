@@ -148,8 +148,18 @@ typedef struct _traceroute_response {
 
 
 
+// *** later we either wanna encrypt this, or hide it in regular traceroute type packets (read traceroute sources)
+typedef struct _traceroute_data {
+    uint32_t identifier;
+    int ttl;
+} TraceroutePacketData;
+
+
+
+
 int Traceroute_Perform(AS_context *ctx);
-int Traceroute_Incoming(AS_context *ctx, PacketInfo *pptr);
+int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 void get_local_ipv6(struct in6_addr *dst);
 uint32_t get_local_ipv4();
 int Traceroute_Init(AS_context *ctx);
+int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6);

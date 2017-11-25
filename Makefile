@@ -11,10 +11,10 @@ OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 $(ODIR)/%.o: %.c $(DEPS) scriptmain.o cmdline.o
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-pyanti: $(OBJ) scriptmain.o
+pyanti: $(OBJ) obj/scriptmain.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
-anti: $(OBJ) cmdline.o
+anti: $(OBJ) obj/cmdline.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 anti_static: $(OBJ) cmdline.o
