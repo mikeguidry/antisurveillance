@@ -263,37 +263,57 @@ int prepare_read_socket(AS_context *ctx) {
     int sockfd = 0;
     struct ifreq ifr;
     struct sockaddr_ll sll;
+    char network[] = "wifi0";
+    int protocol= IPPROTO_TCP;
+    int sockopt = 1;
 
+    // set ifr structure to 0
     memset (&ifr, 0, sizeof (struct ifreq));
 
+    // if we have a read socket.. then we wanna make sure its OK.. quick IOCTL call would do it
     if (ctx->read_socket != 0) {
         // if this works properly.. it should already have been initialized
         if (ioctl (ctx->read_socket, SIOCGIFINDEX, &ifr) == 0) goto end;
+
+        // close it if not..
         close(ctx->read_socket);
+
+        // set to 0 since its stale
         ctx->read_socket = 0;
     }
 
+    // initialize a new socket
     if ((sockfd = socket(PF_PACKET, SOCK_RAW, htons(ETHER_TYPE))) == -1) goto end;
+
+    // set the socket inside of the context structure
+    ctx->read_socket = sockfd;
     
-    strncpy ((char *) ifr.ifr_name, interface.c_str (), IFNAMSIZ);
+    // copy the interface we want to use into the ifr structure
+    // *** find this automatically
+    strncpy ((char *) ifr.ifr_name, network, IFNAMSIZ);
+
+    // call ioctl to use this ifr structure (and network interface)
     if (ioctl (sockfd, SIOCGIFINDEX, &ifr) != 0) goto end;
 
-    
+    // prepare sockaddr for binding to this interface
     sll.sll_family = AF_PACKET;
     sll.sll_ifindex = ifr.ifr_ifindex;
     sll.sll_protocol = htons (protocol);
 
+    // bind to it
     if (bind(sockfd, (struct sockaddr *) &sll, sizeof(sll)) != 0) goto end;
 
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof sockopt) == -1) goto end;
+    // set the socket to reuse 
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof(sockopt)) == -1) goto end;
     
-    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, ifName, IFNAMSIZ-1) == -1) goto end;
+    // bind to do the network device
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, network, IFNAMSIZ-1) == -1) goto end;
 
+    // other parts of this application require this socket
     ctx->read_socket = sockfd;
 
     end:;
     
-
     // if it failed for any reason...
     if (ctx->read_socket == 0 && sockfd) close(sockfd);
 
@@ -320,9 +340,8 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     // packet needs to be in this structure to get analyzed.. reusing pcap loading routines
     if ((pptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) return -1;
 
-    // prepare the structure with the information
-    pptr->buf = packet;
-    pptr->size = size;
+    // duplicate the packet data.. putting it into this packet structure
+    if (PtrDuplicate(packet, size, &pptr->buf, &pptr->size) == 0) goto end;
 
     // analyze that packet, and turn it into a instructions structure
     if ((iptr = PacketsToInstructions(pptr)) == NULL) goto end;
@@ -335,6 +354,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
             nptr->incoming_function(ctx, iptr);
         }
 
+        // move to the next network filter to see if it wants the packet
         nptr = nptr->next;
     }
 
@@ -350,13 +370,118 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     return ret;
 }
 
+// this will process the incoming buffers
+int network_process_incoming_buffer(AS_context *ctx) {
+    IncomingPacketQueue *nptr = NULL, *nnext = NULL;
+    int ret = 0;
+    char *sptr = NULL;
+    int cur_packet = 0;
+    int packet_size = 0;
+
+    // lock thread so we dont attempt to read or write while another thread is
+    pthread_mutex_lock(&ctx->network_incoming_mutex);
+
+    // lets pop the buffer we need to read first from the list
+    nptr = ctx->incoming_queue;
+
+    // set all to NULL so its awaiting for future packets...
+    ctx->incoming_queue = ctx->incoming_queue_last = NULL;
+
+    // unlock thread...
+    pthread_mutex_unlock(&ctx->network_incoming_mutex);
+
+    // now lets process all packets we have.. each is a cluster of packets
+    while (nptr != NULL) {
+        // lets loop for every packet in this structure..
+        while (cur_packet < nptr->cur_packet) {
+            // sptr starts at the beginning of the buffer
+            sptr = (char *)(&nptr->buf);
+
+            //increase it to the startinng place of this packet
+            sptr += nptr->packet_starts[cur_packet];
+
+            // calculate the size of this particular packet we are going to process
+            packet_size = nptr->packet_ends[cur_packet] - nptr->packet_starts[cur_packet];
+
+            // call the function which processes it by turning it into a packet structure
+            // it will then send to the correct functions for analysis, and processing afterwards
+            // for whichever subsystem may want it
+            process_packet(ctx, sptr, packet_size);
+
+            // move to the next packet
+            cur_packet++;
+        }
+
+        // we are finished processing that cluster... we can free it
+        nnext = nptr->next;
+
+        // free this structure since we are finished with it
+        free(nptr);
+        
+        // go to the next cluster of packets we are processing
+        nptr = nnext;
+    }
+
+
+    return ret;
+}
+
+
+// this attempts to get one cluster of packets from the read socket..
+// it can get called from the threaded version, or in general from a function
+// which just needs to read on its own timing (or from python)/loops
+int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
+    char *sptr = NULL;
+    int r = 0;
+    int ret = 0;
+
+    // reset using our buffer..
+    sptr = (char *)&nptr->buf;
+    // no need since calloc
+    nptr->cur_packet = 0;
+    nptr->size = 0;
+
+    // read until we run out of packets, or we fill our buffer size by 80%
+    do {
+        //r = recv(sptr, max_buf_size - size, )
+        r = recvfrom(read_socket, &nptr->buf, nptr->max_buf_size - nptr->size, 0, NULL, NULL);
+
+        // if no more packets.. lets break and send it off for processing
+        if (r <= 0) break;
+
+        // set where this packet begins, and  ends
+        nptr->packet_starts[nptr->cur_packet] = nptr->size;
+        nptr->packet_ends[nptr->cur_packet] = (nptr->size + r);
+
+        // prep for the next packet
+        nptr->cur_packet++;
+
+        // increase by the amount we read..
+        sptr += r;
+        // increase the size of our buffer (for pushing to queue)
+        nptr->size += r;
+
+        // if we have used 90% of the buffer size...
+        if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) break;
+
+        // we only have positions for a max of 1024 packets with this buffer
+        if (nptr->cur_packet >= 1024) break;
+    } while (r);
+
+    // did we get some packets?
+    ret = (nptr->cur_packet > 0);
+
+    end:;
+    return ret;
+}
+
+// thread to read constantly from the network
 void *thread_read_network(void *arg) {
     AS_context *ctx = (AS_context *)arg;
     int i = 0;
-    char *sptr = NULL;
-    int r = 0;
-    IncomingBufferQueue *nptr = NULL;
+    IncomingPacketQueue *nptr = NULL;
     int paused = 0;
+    int sleep_interval = 0;
 
     // open raw reading socket
     i = prepare_read_socket(ctx);
@@ -366,65 +491,40 @@ void *thread_read_network(void *arg) {
 
     // lets read forever.. until we stop it for some reason
     while (1) {
-        // if we cannot allocate a buffer for some reason...
-        if ((nptr = (IncomingBufferQueue *)calloc(1, sizeof(IncomingBufferQueue))) == NULL) {
-            printf("cannot allocate buffer space!\n");
-            goto end;
+        // only alllocate a buffer if we dont have one already... (no need to keep doing it if no packets were found)
+        if (nptr == NULL) {
+            // if we cannot allocate a buffer for some reason...
+            if ((nptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue))) == NULL) {
+                printf("cannot allocate buffer space for reading incoming packets!\n");
+                goto end;
+            }
+
+            nptr->max_buf_size = MAX_BUF_SIZE;
         }
 
-        nptr->max_buf_size = MAX_BUF_SIZE;
-
-        // reset using our buffer..
-        sptr = (char *)&nptr->buf;
-        // no need since calloc
-        //nptr->cur_packet = 0;
-        //nptr->size = 0;
-
-        // read until we run out of packets, or we fill our buffer size by 80%
-        do {
-            //r = recv(sptr, max_buf_size - size, )
-            r = recvfrom(sockfd, &nptr->buf, nptr->max_buf_size - nptr->size, 0, NULL, NULL);
-
-            // if no more packets.. lets break and send it off for processing
-            if (r <= 0) break;
-
-            // set where this packet begins
-            nptr->packet_starts[nptr->cur_packet++] = size;
-
-            // increase by the amount we read..
-            sptr += r;
-            // increase the size of our buffer (for pushing to queue)
-            nptr->size += r;
-
-            // if we have used 90% of the buffer size...
-            if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) break;
-            // we only have positions for a max of 1024 packets with this buffer
-            if (nptr->cur_packet >= 1024) break;
-        } while (r);
-
-        // now lets get the packets into the actual queue as fast as possible
-        // we read untiil there isnt anything left before we lock the mutex
-        pthread_mutex_lock(&ctx->network_incoming_mutex);    
-    
-        // link ordered... (maybe slow?) lets try..
-        L_link_ordered((LINK **)&ctx->incoming_queue, (LINK *)nptr);
-
-/*
-        // alternate if slow.. itll be quick
-        // find the last buffer we queued if it exists
-        if (ctx->incoming_queue_last) {
-            // set the next of that to this new one
-            incoming_queue_last->next = nptr;
-            // set the last as this one for the next queue
-            ctx->incoming_queue_last = nptr;
-        } else {
-            // buffer is completely empty.. set it, and the last pointer to this one
-            incoming_queue = incoming_queue_last = nptr;
-        }
-*/
+        if (network_fill_incoming_buffer(ctx->read_socket, nptr)) {
+            // now lets get the packets into the actual queue as fast as possible
+            // we read untiil there isnt anything left before we lock the mutex
+            pthread_mutex_lock(&ctx->network_incoming_mutex);    
         
-        // lets unlink just in case
-        nptr = NULL;
+            // link ordered... (maybe slow?) lets try..
+            //L_link_ordered((LINK **)&ctx->incoming_queue, (LINK *)nptr);
+
+            // alternate if slow.. itll be quick
+            // find the last buffer we queued if it exists
+            if (ctx->incoming_queue_last) {
+                // set the next of that to this new one
+                ctx->incoming_queue_last->next = nptr;
+                // set the last as this one for the next queue
+                ctx->incoming_queue_last = nptr;
+            } else {
+                // buffer is completely empty.. set it, and the last pointer to this one
+                ctx->incoming_queue = ctx->incoming_queue_last = nptr;
+            }
+            
+            // lets unlink just in case.. so we allocate a new one
+            nptr = NULL;
+        }
 
         // get paused variable from network disabled
         paused = (ctx->network_disabled || ctx->paused);
@@ -432,12 +532,14 @@ void *thread_read_network(void *arg) {
         // no more variables which we have to worry about readwrite from diff threads
         pthread_mutex_unlock(&ctx->network_incoming_mutex);
 
-        // if paused.. lets sleep for half a second each time we end up here..
+        // if paused.. lets sleep for 1/10th a second each time we end up here..
         if (paused) {
-            usleep(500000);
+            usleep(100000);
         } else {
-            // timing change w aggressive-ness
-            usleep((1000000 / 4) - (ctx->aggressive * 25000));
+            sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
+            if (sleep_interval > 0)
+                // timing change w aggressive-ness
+                usleep(sleep_interval);
         }
     }
 
@@ -448,13 +550,10 @@ void *thread_read_network(void *arg) {
     pthread_mutex_lock(&ctx->network_incoming_mutex);
 
     // so we know this thread no longer is executing for other logic
-    ctx->network_read_threadded = 0;
+    ctx->network_read_threaded = 0;
     
     // unlock mutex..
     pthread_mutex_unlock(&ctx->network_incoming_mutex);
-
-    // free buffer if it was allocated
-    PtrFree(&buf);
 
     // free nptr if it wasnt passed along before getting here
     PtrFree(&nptr);

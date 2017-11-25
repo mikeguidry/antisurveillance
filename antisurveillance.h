@@ -172,8 +172,8 @@ typedef struct _antisurveillance_context {
     int network_write_threaded;
     int network_read_threaded;
 
-    IncomingBufferQueue *incoming_queue;
-    IncomingBufferQueue *incoming_queue_last;
+    IncomingPacketQueue *incoming_queue;
+    IncomingPacketQueue *incoming_queue_last;
 
     int aggressive;
 
