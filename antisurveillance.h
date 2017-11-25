@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <Python.h>
 #include <netinet/ip6.h>
+#include <net/if.h>
+
 struct _packet_info;
 struct _packet_instructions;
 //typedef struct _packet_info PacketInfo;
@@ -23,6 +25,7 @@ typedef struct _traceroute_response TracerouteResponse;
 struct _network_analysis_functions;
 typedef struct _network_analysis_functions NetworkAnalysisFunctions;
 
+struct ifreq;
 
 // general attack structure...
 // should support everything from syn packets, to virtual connections
@@ -199,7 +202,12 @@ typedef struct _antisurveillance_context {
     int script_enable;
 
     NetworkAnalysisFunctions *IncomingPacketFunctions;
-    
+
+    uint32_t my_addr_ipv4;
+    struct in6_addr my_addr_ipv6;
+
+    struct ifreq if_mac;
+
 } AS_context;
 
 

@@ -2,6 +2,9 @@
 
 The version which is based around being controlled by python, and/or executing python queue scripts goes here.
 
+This is proof that some lines of code on the Internet without anyone agreeing can change the world.  Money cannot solve
+the issues that allow these attacks.
+
 */
 
 #include <stdio.h>

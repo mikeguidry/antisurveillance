@@ -48,6 +48,7 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
     int count = 0;
     AttackOutgoingQueue *optr = ctx->network_queue, *onext = NULL;
     struct sockaddr_in rawsin;
+    struct ether_header *ethhdr = NULL;
 
     // if disabled (used to store after as a pcap) fromm python scripts
     // beware.. if things are marked to be cleared it wont until this flag gets removed and the code below gets executed
@@ -81,10 +82,12 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
             rawsin.sin_family       = AF_INET;
             rawsin.sin_port         = optr->dest_port;
             rawsin.sin_addr.s_addr  = optr->dest_ip;
+            
         
             // write the packet to the raw network socket.. keeping track of how many bytes
             int bytes_sent = sendto(ctx->raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
 
+            printf("sendto bytes sent %d errno %d socket %d\n", bytes_sent, errno, ctx->raw_socket);
             // I need to perform some better error checking than just the size..
             if (bytes_sent != optr->size) break;
 
@@ -141,6 +144,8 @@ void ClearPackets(AS_context *ctx) {
 // This is so we can attempt to add the packet to the outgoing list, and if it would block then we can
 // create a thread... if thread fails for some reason (memory, etc) then itll block for its last call here
 int AttackQueueAdd(AS_context *ctx, AttackOutgoingQueue *optr, int only_try) {
+    //if (ctx == NULL) return -1;
+
     if (only_try) {
         if (pthread_mutex_trylock(&ctx->network_queue_mutex) != 0)
             return 0;
@@ -245,7 +250,7 @@ void *thread_network_flush(void *arg) {
     }
 }
 
-// Open a raw socket and use the global variable to store it
+// prepare raw outgoing socket (requires root)..
 int prepare_socket(AS_context *ctx) {
     int rawsocket = 0;
     int one = 1;
@@ -259,7 +264,7 @@ int prepare_socket(AS_context *ctx) {
     }
     
     // open raw socket
-    if ((rawsocket = socket(PF_INET, SOCK_RAW, IPPROTO_TCP)) <= 0)
+    if ((rawsocket = socket(AF_INET, SOCK_RAW, IPPROTO_TCP)) <= 0)
         return -1;
 
     // ensure the operating system knows that we will include the IP header within our data buffer
@@ -272,8 +277,11 @@ int prepare_socket(AS_context *ctx) {
     return rawsocket;
 }
 
-#define ETHER_TYPE 0x0800
+
 // http://yusufonlinux.blogspot.com/2010/11/data-link-access-and-zero-copy.html
+// https://austinmarton.wordpress.com/2011/09/14/sending-raw-ethernet-packets-from-a-specific-interface-in-c-on-linux/
+
+// prepare raw incoming socket.. we perform our own filtering so we want all packets
 int prepare_read_socket(AS_context *ctx) {
     int sockfd = 0;
     struct ifreq ifr;
@@ -282,9 +290,16 @@ int prepare_read_socket(AS_context *ctx) {
     int protocol= IPPROTO_TCP;
     int sockopt = 1;
     int flags = 0;
+    struct ifreq if_mac;
+    struct ifreq if_ip;
+    int one = 1;
+
 
     // set ifr structure to 0
     memset (&ifr, 0, sizeof (struct ifreq));
+    memset(&if_mac, 0, sizeof(struct ifreq));
+    memset(&if_ip, 0, sizeof(struct ifreq));
+    
 
     // if we have a read socket.. then we wanna make sure its OK.. quick IOCTL call would do it
     if (ctx->read_socket != 0) {
@@ -299,37 +314,50 @@ int prepare_read_socket(AS_context *ctx) {
     }
 
     // initialize a new socket
-    if ((sockfd = socket(PF_PACKET, SOCK_RAW, htons(ETHER_TYPE))) == -1) goto end;
+    if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) goto end;
 
     // set the socket inside of the context structure
-    ctx->read_socket = sockfd;
-    
+    //ctx->read_socket = sockfd;
+    /*
     // copy the interface we want to use into the ifr structure
     // *** find this automatically
-    strncpy ((char *) ifr.ifr_name, network, IFNAMSIZ);
+    strncpy((char *) ifr.ifr_name, network, IFNAMSIZ);
+    strncpy((char *)if_mac.ifr_name, network, IFNAMSIZ);
+    strncpy((char *)if_ip.ifr_name, network, IFNAMSIZ);
 
     // call ioctl to use this ifr structure (and network interface)
-    if (ioctl (sockfd, SIOCGIFINDEX, &ifr) != 0) goto end;
+    if (ioctl(sockfd, SIOCGIFINDEX, &ifr) != 0) goto end;
+    if (ioctl(sockfd, SIOCGIFHWADDR, &if_mac) < 0) goto end;
+    if (ioctl(sockfd, SIOCGIFADDR, &if_ip) < 0) goto end;
+
+//sll.sll_ifindex = 
 
     // prepare sockaddr for binding to this interface
     sll.sll_family = AF_PACKET;
     sll.sll_ifindex = ifr.ifr_ifindex;
     sll.sll_protocol = htons (protocol);
+    
+
+    printf("interface index %d\n", sll.sll_ifindex);
+    printf("IP: %u\n", ((struct sockaddr_in *)&if_ip.ifr_addr)->sin_addr);
 
     // bind to it
-    //if (bind(sockfd, (struct sockaddr *) &sll, sizeof(sll)) != 0) goto end;
+    if (bind(sockfd, (struct sockaddr *) &sll, sizeof(sll)) != 0) goto end;
 
     // set the socket to reuse 
     if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof(sockopt)) == -1) goto end;
     
     // bind to do the network device
     if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, network, IFNAMSIZ-1) == -1) goto end;
-
+*/
     // set non blocking
     //https://stackoverflow.com/questions/1543466/how-do-i-change-a-tcp-socket-to-be-non-blocking
     flags = fcntl(sockfd, F_GETFL, flags);
     flags |= O_NONBLOCK;
     flags = fcntl(sockfd, F_SETFL, flags);
+
+    // ensure the operating system knows that we will include the IP header within our data buffer
+    //if (setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) return -1;
 
     // other parts of this application require this socket
     ctx->read_socket = sockfd;
@@ -357,7 +385,6 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     NetworkAnalysisFunctions *nptr = ctx->IncomingPacketFunctions;
     PacketBuildInstructions *iptr = NULL;
     int ret = -1;
-    char Asrc_ip[16], Adst_ip[16];
     FILE *fd;
     char fname[1024];
 
@@ -367,15 +394,12 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         goto end;
     }
 
-
     sprintf(fname, "packets/pkt_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
-
-
 
     packet += sizeof(struct ether_header);
     size -= sizeof(struct ether_header);
 
-    if ((fd = fopen(fname, "wb")) != NULL) {
+    if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
         fclose(fd);
     }
@@ -401,14 +425,19 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     // analyze that packet, and turn it into a instructions structure
     if ((iptr = PacketsToInstructions(pptr)) == NULL) {
         printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
+            if (1==1 && (fd = fopen(fname, "wb")) != NULL) {
+        fwrite(packet, size, 1, fd);
+        fclose(fd);
+    }
+
         goto end;
     }
 
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
 
-        //strcpy(Asrc_ip, inet_ntoa(iptr->source_ip));
-        //strcpy(Adst_ip, inet_ntoa(iptr->destination_ip));
+        //printf("SRC IP: %u protocol %d\n", iptr->source_ip, iptr->flags);
+        //printf("DST: %u\n", iptr->destination_ip);
 
         //printf("%s:%d -> %s:%d\n", Asrc_ip, iptr->source_port, Adst_ip, iptr->destination_port);
 
@@ -505,7 +534,7 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
     int r = 0;
     int ret = 0;
 
-    //printf("network_fill_incoming_buffer %d %p\n", read_socket, nptr);
+    printf("network_fill_incoming_buffer %d %p\n", read_socket, nptr);
 
     // reset using our buffer..
     sptr = (char *)&nptr->buf;
@@ -516,10 +545,13 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
     // read until we run out of packets, or we fill our buffer size by 80%
     do {
         //r = recv(sptr, max_buf_size - size, )
-        r = recvfrom(read_socket, sptr, nptr->max_buf_size - nptr->size, MSG_DONTWAIT, NULL, NULL);
+        r = recvfrom(read_socket, sptr, nptr->max_buf_size - nptr->size, 0, NULL, NULL);
 
         // if no more packets.. lets break and send it off for processing
-        if (r <= 0) break;
+        if (r <= 0) {
+            //printf("NO packets to read\n");
+            break;
+        }
 
         //printf("read packet\n");
 
@@ -581,9 +613,11 @@ void *thread_read_network(void *arg) {
             nptr->max_buf_size = MAX_BUF_SIZE;
         }
 
+        printf("wanna read from %d\n", ctx->read_socket);
+
         if (network_fill_incoming_buffer(ctx->read_socket, nptr)) {
 
-            //printf("got packets\n");
+            printf("got packets\n");
             // now lets get the packets into the actual queue as fast as possible
             // we read untiil there isnt anything left before we lock the mutex
             pthread_mutex_lock(&ctx->network_incoming_mutex);    

@@ -101,14 +101,16 @@ def script_perform():
 	print("network %05d attack %05d ") % (a.networkcount(), a.attackcount())
 
 	cnt = a.traceroutecount()
-	if (cnt == 0):
-		print("traceroute count 0 .. adding\n");
-		a.traceroutequeue(target="8.8.8.8")
-		a.traceroutequeue(target="9.9.9.9")
-		a.traceroutequeue(target="4.2.2.1")
-		a.traceroutequeue(target="1.2.3.4")
-		a.traceroutequeue(target="172.217.9.14")
+	#if (cnt == 0):
+	#	print("traceroute count 0 .. adding");
+	#	a.traceroutequeue(target="8.8.8.8")
+	#	a.traceroutequeue(target="9.9.9.9")
+	#	a.traceroutequeue(target="4.2.2.1")
+	#	a.traceroutequeue(target="1.2.3.4")
+	#	a.traceroutequeue(target="172.217.9.14")
 
+	#cnt = a.traceroutecount()
+	print("cnt is %d") % cnt
 	sleep(1)
 
 	return 0
@@ -164,6 +166,8 @@ def init():
 
 	# do we wish to make the system continue executing? calling our perform()?
 	script_enable(a)
+
+	a.traceroutequeue(target="8.8.8.8")
 
 	return 1
 	

@@ -211,7 +211,7 @@ static PyObject *PyASC_AttackCount(PyAS_Config* self){
 static PyObject *PyASC_TracerouteCount(PyAS_Config* self){
     long ret = 0;
 
-    if (self->ctx) ret = L_count((LINK *)self->ctx->traceroute_queue);
+    if (self->ctx) ret = Traceroute_Count(self->ctx);
 
     return PyInt_FromLong(ret);
 }
@@ -809,9 +809,15 @@ static PyObject *PyASC_TracerouteQueue(PyAS_Config* self, PyObject *args, PyObje
         return NULL;
     }
 
+
     IP_prepare(target, &targetv4, &targetv6, &is_ipv6);
-    if (self->ctx)
-        Traceroute_Queue(self->ctx, target, &targetv6);
+    
+    if (self->ctx) {
+        printf("S Q %s\n", target);
+        printf("is ipv6? %d target: %u\n", is_ipv6, targetv4);
+
+        Traceroute_Queue(self->ctx, targetv4, &targetv6);
+    }
 
     return PyInt_FromLong(ret);
 }

@@ -81,11 +81,15 @@ int DataPrepare(char **data, char *ptr, int size) {
 int PtrDuplicate(char *ptr, int size, char **dest, int *dest_size) {
     char *buf = NULL;
     
-    if ((ptr == NULL) || (size <= 0))
+    if ((ptr == NULL) || (size <= 0)) {
+        printf("ERR pptr %p size %d\n", ptr, size);
         return 0;
+    }
 
-    if ((buf = (char *)malloc(size )) == NULL)
+    if ((buf = (char *)malloc(size )) == NULL) {
+        printf("ERR couldnt allocate!\n");
         return -1;
+    }
 
     memcpy(buf, ptr, size);
 

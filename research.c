@@ -13,6 +13,7 @@
 #include "antisurveillance.h"
 #include "packetbuilding.h"
 #include "research.h"
+#include "utils.h"
 
 /*
 
@@ -153,6 +154,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     int ret = 0;
     TracerouteQueue *qptr = ctx->traceroute_queue;
     TracerouteSpider *sptr = NULL, *snew = NULL;
+    struct in_addr src;
 
     printf("Traceroute Analyze Single responsse %p\n", rptr);
 
@@ -160,28 +162,36 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     if (rptr == NULL) return ret;
 
     while (qptr != NULL) {
+        printf("qptr ident: %X  rptr ident %X\n", qptr->identifier, rptr->identifier);
         // found a match since we are more than likely doing mass amounts of traceroutes...
         if (qptr->identifier == rptr->identifier) {
             printf("FOUND queue for this response! qptr  %p\n", qptr);
+            //exit(0);
             break;
         }
 
         qptr = qptr->next;
     }
 
+    src.s_addr = rptr->hop;
+    printf("Response IP: %s\n", inet_ntoa(src));
+    
     // we had a match.. lets link it in the spider web
     if (qptr != NULL) {
 
         // if this hop responding matches an actual target in the queue... then that traceroute is completed
+        
         if ((rptr->hop && rptr->hop == qptr->target) ||
             (!rptr->hop && !qptr->target && CompareIPv6Addresses(&rptr->hopv6, &qptr->targetv6))) {
-                printf("Traceroute completed %p\n", qptr);
+                printf("------------------\nTraceroute completed %p [%u %u]\n-------------------\n", qptr, rptr->hop, qptr->target);
                 qptr->completed = 1;
         }
 
 
         // allocate space for us to append this response to our interal spider web for analysis
         if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) != NULL) {
+
+            printf("~~~~~~~~~~~~~~~~~~~~~~~~\nallocagted structure for it!\n");
             // we need to know which TTL later (for spider web analysis)
             snew->ttl = rptr->ttl;
 
@@ -196,12 +206,12 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
 
         // determine if we have already started a structure for this hop in the spider web
         if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
-            printf("couldnt find spider\n");
+            printf("--------------\nFound Spider %p [%u]\n", sptr, rptr->hop);
             // we found it as a spider.. so we can add it to a branch
             snew->branches = sptr->branches;
             sptr->branches = snew;
         } else {
-            printf("found spider linked as a branch\n");
+            printf("---------------\nCouldnt find spider... added new %u\n", rptr->hop);
             // lets link directly to main list .. first time seeing this hop
             snew->next = ctx->traceroute_spider;
             ctx->traceroute_spider = snew;
@@ -227,13 +237,14 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     TracerouteQueue *tptr = NULL;
     int ret = -1;
 
-    printf("Traceroute Queue %d %d\n", target, *(int *)(targetv6));
+    printf("\nTraceroute Queue %u\n", target);
 
     // allocate memory for this new traceroute target we wish to add into the system
     if ((tptr = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) goto end;
 
     // which IP are we performing traceroutes on
     tptr->target = target;
+    printf("Queuing target: %u\n", target);
     // if its an ipv6 addres pasased.. lets copy it (this function will verify its not NULL)
     CopyIPv6Address(&tptr->targetv6, targetv6);
 
@@ -242,6 +253,8 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 
     // create a random identifier to find this packet when it comes from many hops
     tptr->identifier = rand()%0xFFFFFFFF;
+
+    printf("queued: %X\n", tptr->identifier);
 
     // later we wish to allow this to be set by scripting, or this function
     // for example: if we wish to find close routes later to share... we can set to max = 5-6
@@ -266,22 +279,62 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 // its a good thing since it wont have to analyze ALL tcp connections ;)
 int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
+    struct in_addr cnv;
     //PacketBuildInstructions *iptr = NULL;
     //PacketInfo *pnext = NULL;
     TracerouteResponse *rptr = NULL;
     TraceroutePacketData *pdata = NULL;
+    FILE *fd=NULL;
+    char fname[32];
 
     // when we extract the identifier from the packet.. put it here..
     uint32_t identifier = 0;
     // ttl has to be extracted as well (possibly from the identifier)
     int ttl = 0;
 
-    //printf("Got packet from network! data size %d\n", iptr->data_size);
+    //printf("incoming\n");
+
+    if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
+        //printf("ipv4 Getting our own packets.. probably loopback\n");
+        return 0;
+    }
+
+    if (!iptr->source_ip && CompareIPv6Addresses(&ctx->my_addr_ipv6, &iptr->source_ipv6)) {
+        //printf("ipv6 Getting our own packets.. probably loopback\n");
+        return 0;
+    }
+    sprintf(fname, "packets/incoming_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
+    if ((fd = fopen(fname, "wb")) != NULL) {
+        fwrite(iptr->data, 1, iptr->data_size, fd);
+        fclose(fd);
+    }
+        
 
     // data isnt big enough to contain the identifier
-    if (iptr->data_size < sizeof(TraceroutePacketData)) goto end;
+    if (iptr->data_size < sizeof(TraceroutePacketData)) {
+        goto end;
+    }
 
-    pdata = (TraceroutePacketData *)iptr->data;
+    if (iptr->data_size > sizeof(TraceroutePacketData) && ((iptr->data_size >= sizeof(TraceroutePacketData) + 28))) {
+    // (sizeof(struct iphdr) + sizeof(struct icmphdr) + sizeof(TraceroutePacketData))) {
+        pdata = (TraceroutePacketData *)(iptr->data + 28);//(sizeof(struct iphdr) + sizeof(struct icmphdr)));
+
+    } else {
+        pdata = (TraceroutePacketData *)iptr->data;
+    }
+
+    //printf("Got packet from network! data size %d\n", iptr->data_size);
+    printf("\n\n---------------------------\nTraceroute Incoming\n");
+
+    cnv.s_addr = iptr->source_ip;
+    printf("SRC: %s\n", inet_ntoa(cnv));
+
+    cnv.s_addr = iptr->destination_ip;
+    printf("DST: %s\n", inet_ntoa(cnv));
+    
+
+
+    
     // extract identifier+ttl here fromm the packet characteristics, or its data.. if its not a traceroute, just goto end
     //identifier = *(uint32_t *)(iptr->data);
 
@@ -292,8 +345,9 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     //identifier = (identifier & 0xFFFF0000) >> 16;
     ttl = pdata->ttl;
     identifier = pdata->identifier;
+    printf("pdata msg: %s\n", pdata->msg);
 
-    //printf("incoming icmp ttl %d identifier %X\n", ttl, identifier);
+    printf("incoming icmp ttl %d identifier %X\n", ttl, identifier);
 
     // allocate a new structure for traceroute analysis functions to deal with it later
     if ((rptr = (TracerouteResponse *)calloc(1, sizeof(TracerouteResponse))) == NULL) goto end;
@@ -308,7 +362,7 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     rptr->next = ctx->traceroute_responses;
     ctx->traceroute_responses = rptr;
 
-    //printf("Created a TRACEROUTE response structure for this one\n");
+    printf("Created a TRACEROUTE response structure for this one\n");
 
     // thats about it for the other function to determine the original target, and throw it into the spider web
     ret = 1;
@@ -337,6 +391,7 @@ int Traceroute_Perform(AS_context *ctx) {
     AttackOutgoingQueue *optr = NULL;
     int i = 0;
     TraceroutePacketData *pdata = NULL;
+    TracerouteSpider *sptr = NULL;
 
     memset(&icmp, 0, sizeof(struct icmphdr));
 
@@ -347,6 +402,7 @@ int Traceroute_Perform(AS_context *ctx) {
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
 
+    printf("Traceroute_Perform: Queue %d [completed %d]\n", L_count((LINK *)tptr), tptr->completed);
     // loop until we run out of elements
     while (tptr != NULL) {
         // if we have reached max ttl then mark this as completed.. otherwise it could be marked completed if we saw a hop which equals the target
@@ -380,14 +436,19 @@ int Traceroute_Perform(AS_context *ctx) {
                 // mark some identifier in tptr for Traceroute_Incoming()
 
                 if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+
+                    iptr->ttl = tptr->current_ttl;
+                    
                     if (tptr->target != 0) {
                         iptr->type = PACKET_TYPE_ICMP_4;
                         iptr->destination_ip = tptr->target;
-                        iptr->source_ip = get_local_ipv4();
+                        iptr->source_ip = ctx->my_addr_ipv4;
                     } else {
                         iptr->type = PACKET_TYPE_ICMP_6;
+                        // destination is the target
                         CopyIPv6Address(&iptr->destination_ipv6, &tptr->targetv6);
-                        get_local_ipv6(&iptr->source_ipv6);
+                        // source is our ip address
+                        CopyIPv6Address(&iptr->source_ipv6, &ctx->my_addr_ipv6);
                     }
 
                     // copy ICMP parameters into this instruction packet
@@ -398,10 +459,11 @@ int Traceroute_Perform(AS_context *ctx) {
                     iptr->data_size = sizeof(TraceroutePacketData);
                     iptr->data = (char *)calloc(1, iptr->data_size);
                     if (iptr->data != NULL) {
+                        
                         pdata = (TraceroutePacketData *)iptr->data;
+                        memcpy(&pdata->msg, "hello", 5);
                         pdata->identifier = tptr->identifier;
                         pdata->ttl = tptr->current_ttl;
-                        printf("%d %X\n", pdata->ttl, pdata->identifier);   
                     }
 
                     
@@ -410,10 +472,12 @@ int Traceroute_Perform(AS_context *ctx) {
                     // lets build a packet from the instructions we just designed
                     // lets build whichever type this is by calling the function directly from packetbuilding.c
                     // for either ipv4, or ipv6
-                    if (iptr->type & PACKET_TYPE_ICMP_6)
+                    if (iptr->type & PACKET_TYPE_ICMP_6) {
+                        printf("building icmp6\n");
                         i = BuildSingleICMP6Packet(iptr);
-                    else if (iptr->type & PACKET_TYPE_ICMP_4)
+                    } else if (iptr->type & PACKET_TYPE_ICMP_4) {
                         i = BuildSingleICMP4Packet(iptr);
+                    }
 
                     if (i == 1) {
                         if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
@@ -423,6 +487,9 @@ int Traceroute_Perform(AS_context *ctx) {
 
                             iptr->packet = NULL;
                             iptr->packet_size = 0;
+
+                            optr->dest_ip = iptr->destination_ip;
+                            optr->ctx = ctx;
 
                             // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
                             if (AttackQueueAdd(ctx, optr, 1) == 0) {
@@ -451,7 +518,7 @@ int Traceroute_Perform(AS_context *ctx) {
     }
 
 
-    // now process all queued responses we have
+    // now process all queued responses we have from incoming network traffic on a different thread
     rptr = ctx->traceroute_responses;
 
     // loop until all responsses have been analyzed
@@ -472,21 +539,38 @@ int Traceroute_Perform(AS_context *ctx) {
     ctx->traceroute_responses = NULL;
 
 
+    printf("Traceroute Spider count: %d\n", L_count((LINK *)ctx->traceroute_spider));
+
+    // enumerate spider and list information
+    sptr = ctx->traceroute_spider;
+    while (sptr != NULL) {
+        printf("spider hop %u branches %p next %p\n", sptr->hop, sptr->branches, sptr->next);
+        sptr = sptr->next;
+    }
+
     end:;
     return ret;
 }
 
+int Spider_Print(AS_context *ctx) {
+    TracerouteSpider *sptr = NULL;
+
+}
 
 //http://www.binarytides.com/get-local-ip-c-linux/
 uint32_t get_local_ipv4() {
     const char* google_dns_server = "8.8.8.8";
     int dns_port = 53;
     uint32_t ret = 0;
+    
      
     struct sockaddr_in serv;
      
-    int sock = socket ( AF_INET, SOCK_DGRAM, 0);
-     if (sock < 0) return 0;
+    int sock = 0;
+    
+    return inet_addr("192.168.0.100");
+    
+    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) return 0;
      
     memset( &serv, 0, sizeof(serv) );
     serv.sin_family = AF_INET;
@@ -558,6 +642,10 @@ int Traceroute_Init(AS_context *ctx) {
     // insert so the network functionality will begin calling our function for these paackets
     nptr->next = ctx->IncomingPacketFunctions;
     ctx->IncomingPacketFunctions = nptr;
+    
+    // get our own ip addresses for packet building
+    ctx->my_addr_ipv4 = get_local_ipv4();
+    get_local_ipv6(&ctx->my_addr_ipv6);
 
     ret = 1;
 
@@ -569,5 +657,24 @@ int Traceroute_Init(AS_context *ctx) {
         PtrFree(&nptr);
     }
 
+    return ret;
+}
+
+// count the amount of non completed (active) traceroutes in queue
+int Traceroute_Count(AS_context *ctx) {
+    TracerouteQueue *qptr = ctx->traceroute_queue;
+    int ret = 0;
+
+    // loop until we enuerate the entire list of queued traceroute activities
+    while (qptr != NULL) {
+        // check if they are completed.. if not we increase the counter
+        if (!qptr->completed) {
+            ret++;
+        } 
+
+        qptr = qptr->next;
+    }
+    
+    // return count
     return ret;
 }
