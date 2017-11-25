@@ -448,6 +448,7 @@ int Traceroute_Perform(AS_context *ctx) {
     int i = 0;
     TraceroutePacketData *pdata = NULL;
     TracerouteSpider *sptr = NULL;
+    int tcount  = 0;
 
     memset(&icmp, 0, sizeof(struct icmphdr));
 
@@ -461,13 +462,15 @@ int Traceroute_Perform(AS_context *ctx) {
     printf("Traceroute_Perform: Queue %d [completed %d]\n", L_count((LINK *)tptr), tptr->completed);
     // loop until we run out of elements
     while (tptr != NULL) {
+
+        
         // if we have reached max ttl then mark this as completed.. otherwise it could be marked completed if we saw a hop which equals the target
         if (tptr->current_ttl >= MAX_TTL) {
             //printf("traceroute completed\n");
             tptr->completed = 1;
         }
 
-        if (!tptr->completed) {
+        if (!tptr->completed && tptr->enabled) {
             // lets increase TTL every 10 seconds.. id like to perform thousands of these at all times.. so 10 seconds isnt a big deal...
             // thats 5 minutes till MAX ttl (30)
             if ((ts - tptr->ts_activity) > 1) {
@@ -602,23 +605,101 @@ int Traceroute_Perform(AS_context *ctx) {
 
     Spider_Print(ctx);
 
+    tcount = Traceroute_Count(ctx);
+
+    // if we are below our max active.. lets try to activate some more
+    if (tcount < MAX_ACTIVE_TRACEROUTES) {
+        
+        // how many to ativate?
+        tcount = MAX_ACTIVE_TRACEROUTES - tcount;
+
+    
+        tptr = ctx->traceroute_queue;
+        while (tptr != NULL) {
+            if (!tptr->completed && !tptr->enabled) {
+                if (!tcount) break;
+
+                tptr->enabled = 1;
+
+                tcount--;
+            }
+
+            tptr = tptr->next;
+        }
+    }
+
     end:;
     return ret;
 }
 
 int Spider_Print(AS_context *ctx) {
     TracerouteSpider *sptr = NULL;
+    int count = 0;
+    FILE *fd = NULL, *fd2 = NULL;
+    char fname[32];
+    TracerouteSpider *bptr = NULL;
+    char Ahop[16], Atarget[16];
+    struct in_addr conv;
 
-    
+    sprintf(fname, "traceroute.bin", "wb");
+    fd = fopen(fname, "wb");
+    sprintf(fname, "traceroute.txt", "w");
+    fd2 = fopen(fname, "w");
+
+
 
     // enumerate spider and list information
     sptr = ctx->traceroute_spider;
     while (sptr != NULL) {
-        printf("spider hop %u branches %p [count %d] next %p\n", sptr->hop, sptr->branches, branch_count(sptr->branches), sptr->next);
+        if (fd) {
+            
+            fwrite(&sptr->hop, sizeof(uint32_t), 1, fd);
+            fwrite(&sptr->target_ip, sizeof(uint32_t), 1, fd);
+            fwrite(&sptr->ttl, sizeof(int), 1, fd);
+        }
+        if (fd2) {
+            conv.s_addr = sptr->hop;
+            strcpy((char *)&Ahop, inet_ntoa(conv));
+            conv.s_addr = sptr->target_ip;
+            strcpy((char *)&Atarget, inet_ntoa(conv));
+            fprintf(fd2, "HOP,%s,%s,%d\n", Ahop, Atarget, sptr->ttl);
+        }
+
+        count = branch_count(sptr->branches);
+        if (count > 1) {
+            printf("spider hop %u branches %p [count %d] next %p\n", sptr->hop, sptr->branches, count, sptr->next);
+        }
+
+        bptr = sptr->branches;
+        if (fd)
+            fwrite(&count, sizeof(int), 1, fd);
+
+        while (bptr != NULL) {
+            if (fd) {
+                fwrite(&sptr->hop, sizeof(uint32_t), 1, fd);
+                fwrite(&sptr->target_ip, sizeof(uint32_t), 1, fd);
+                fwrite(&sptr->ttl, sizeof(int), 1, fd);
+            }
+            if (fd2) {
+                conv.s_addr = bptr->hop;
+                strcpy((char *)&Ahop, inet_ntoa(conv));
+                conv.s_addr = bptr->target_ip;
+                strcpy((char *)&Atarget, inet_ntoa(conv));
+                fprintf(fd2, "BRANCH,%s,%s,%d\n", Ahop, Atarget, sptr->ttl);
+            }
+
+            bptr = bptr->branches;
+        }
+
         sptr = sptr->next;
     }
 
     printf("Traceroute Spider count: %d\n", L_count((LINK *)ctx->traceroute_spider));
+
+    if (fd) fclose(fd);
+    if (fd2) fclose(fd2);
+
+    return 0;
 }
 
 //http://www.binarytides.com/get-local-ip-c-linux/
@@ -732,7 +813,7 @@ int Traceroute_Count(AS_context *ctx) {
     // loop until we enuerate the entire list of queued traceroute activities
     while (qptr != NULL) {
         // check if they are completed.. if not we increase the counter
-        if (!qptr->completed) {
+        if (!qptr->completed && qptr->enabled) {
             ret++;
         } 
 

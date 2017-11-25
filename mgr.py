@@ -24,10 +24,18 @@ signal.signal(signal.SIGINT, signal_handler)
 
 def traceroute_random_ip(a):
 	cnt = a.traceroutecount()
-	while (cnt < 30):
+	while (cnt < 300):
     		ip = socket.inet_ntoa(struct.pack('>I', random.randint(1, 0xffffffff)))
 		a.traceroutequeue(target=ip)
 		cnt = cnt + 1
+
+#add DNS results from top 5000 sites into traceroute queue
+def top_sites_research(a):
+	for ip in  open("top_sites_ips.txt").readlines():
+		print("adding %s") % ip
+		a.traceroutequeue(target=ip)
+
+	print("b")
 
 # iterates all attack structures X times, or 0 forever.. but ensure you have other ways to kill it.. just allowing it
 def perform(a,b):
@@ -110,7 +118,7 @@ def script_perform():
 	# how many packets did that generate?
 	print("network %05d attack %05d ") % (a.networkcount(), a.attackcount())
 
-	traceroute_random_ip(a)
+	#traceroute_random_ip(a)
 	#cnt = a.traceroutecount()
 	#if (cnt == 0):
 		#print("traceroute count 0 .. adding");
@@ -179,7 +187,8 @@ def init():
 	# do we wish to make the system continue executing? calling our perform()?
 	script_enable(a)
 
-	a.traceroutequeue(target="8.8.8.8")
+	#a.traceroutequeue(target="8.8.8.8")
+	top_sites_research(a)
 
 	return 1
 	

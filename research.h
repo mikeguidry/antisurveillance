@@ -1,4 +1,5 @@
 
+#define MAX_ACTIVE_TRACEROUTES 30
 
 // one single dns record (response about a hostname, prepared to stay on record)
 // it can be reused for preparing further attacks against the same sites, etc
@@ -82,6 +83,9 @@ typedef struct _traceroute_queue {
     uint32_t identifier;
 
     int completed;
+
+    // so we dont do too many at once.. so we can insert a huge list and let it analyze
+    int enabled;
 } TracerouteQueue;
 
 
