@@ -444,7 +444,7 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
     // read until we run out of packets, or we fill our buffer size by 80%
     do {
         //r = recv(sptr, max_buf_size - size, )
-        r = recvfrom(read_socket, &nptr->buf, nptr->max_buf_size - nptr->size, 0, NULL, NULL);
+        r = recvfrom(read_socket, sptr, nptr->max_buf_size - nptr->size, 0, NULL, NULL);
 
         // if no more packets.. lets break and send it off for processing
         if (r <= 0) break;

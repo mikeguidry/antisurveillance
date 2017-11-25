@@ -148,7 +148,7 @@ def init():
 	#a.enable() 
 
 	# do we wish to make the system continue executing? calling our perform()?
-	script_enable(a)
+	#script_enable(a)
 
 	return 1
 	
