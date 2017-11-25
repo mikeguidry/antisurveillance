@@ -21,6 +21,8 @@ def signal_handler(signal, frame):
 #install signal handler for SIGINT (ctrl-c)        
 signal.signal(signal.SIGINT, signal_handler)
 
+#traceroute a randop IP whenever the queue is completed.. this will help us have more data
+#for IP generation strategies to ensure we affect the most surveillance platforms
 def traceroute_random_ip(a):
     cnt = a.traceroutecount()
     while (cnt < 300):
@@ -29,6 +31,9 @@ def traceroute_random_ip(a):
         cnt = cnt + 1
 
 #add DNS results from top sites into traceroute queue
+#the purpose is so we can automatically target mass surveillance platforms worldwide
+# in all countries without requiring any data ahead of time except some IPs
+# to start to help us get routes, and then we will add random IPs afterwards
 def top_sites_research(a):
     lines = open("top1m_resolved.txt").readlines()
     random.shuffle(lines)
@@ -138,9 +143,11 @@ def script_perform():
 #main function that gets called from anti
 #it should perform the duties.. and it could loop to continue executing
 def init():
+    # get a pointer? inn python?  to the manager so we can interface w it
+    a = antisurveillance.manager()
+
     # this should be removed and done completely in C.. i need to see how the object is allocated and hook it or somethiing..
     # would rather work on other stuff first ***
-    a = antisurveillance.manager()
     a.setctx(ctx)
 
     #pprint(a)

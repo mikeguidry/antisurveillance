@@ -123,6 +123,7 @@ typedef struct _traceroute_spider {
 
     // what was being tracerouted to conclude this entry
     uint32_t target_ip;
+    struct in6_addr target_ipv6;
 
     // TTL (hops) in which it was found
     int ttl;
@@ -185,3 +186,6 @@ int Traceroute_Init(AS_context *ctx);
 int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6);
 int Traceroute_Count(AS_context *ctx, int);
 int Spider_Print(AS_context *ctx);
+
+int Traceroute_Search(TracerouteSpider *start, TracerouteSpider *looking_for, int distance);
+int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second);

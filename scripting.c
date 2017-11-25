@@ -751,6 +751,62 @@ static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *k
 }
 
 
+
+static PyObject *PyASC_TracerouteDistance(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"first_address","second_address","check_targets", 0};
+    int ret = 0;
+    char *first_address = NULL;
+    struct in6_addr first_ipv6;
+    int first_is_ipv6 = 0;
+    uint32_t first_ipv4 = 0;
+
+    char *second_address = NULL;
+    struct in6_addr second_ipv6;
+    int second_is_ipv6 = 0;
+    uint32_t second_ipv4 = 0;
+
+    TracerouteSpider *Sfirst = NULL, *Ssecond = NULL;
+
+    int check_targets = 0;
+    
+    // check_targets means check ->target as well as ->hop (we wanna scan by the actual client/server address instead of routes)
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "ss|i", kwd_list, &first_address, &second_address, &check_targets)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    IP_prepare(first_address, &first_ipv4, &first_ipv6, &first_is_ipv6);
+    IP_prepare(second_address, &second_ipv4, &second_ipv6, &second_is_ipv6); 
+
+    // make sure both are the same type of address (cant mix 4, and 6)
+    if (first_is_ipv6 != second_is_ipv6) return NULL;
+
+    if (self->ctx) {
+
+        Sfirst = Traceroute_Find(self->ctx, first_ipv4, &first_ipv6, check_targets);
+        Ssecond = Traceroute_Find(self->ctx, second_ipv4, &second_ipv6, check_targets);
+
+        if (!Sfirst || !Ssecond) {
+            printf("couldn't find both traeroutes to start distance check\n");
+            return NULL;
+        }
+        
+        ret = Traceroute_Compare(self->ctx, Sfirst, Ssecond);
+
+        printf("traceroute compmare returned %d for %p : %p\n", ret, Sfirst, Ssecond);
+    }
+
+
+    return PyInt_FromLong(ret);
+}
+
+
+
+
+
+
+
 static PyObject *PyASC_MergeAttacks(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"destination_attack_id","source_attack_id",0};
     long destination_id = 0, source_id = 0;
@@ -931,6 +987,8 @@ static PyMethodDef PyASC_methods[] = {
 
     // queue an address for traceroute research
     {"traceroutequeue", (PyCFunction)PyASC_TracerouteQueue, METH_VARARGS|METH_KEYWORDS, "queue a traceroute" },
+
+    {"traceroutedistance", (PyCFunction)PyASC_TracerouteDistance, METH_VARARGS|METH_KEYWORDS, "find distance between two traceroute analysis structures" },
 
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },

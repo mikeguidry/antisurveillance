@@ -34,51 +34,83 @@ int Traceroute_Search(TracerouteSpider *start, TracerouteSpider *looking_for, in
     TracerouteSpider *search = NULL;
     TracerouteSpider *search_branch = NULL;
     int cur_distance = distance;
+    int ret = 0;
+    int ttl_diff = 0;
 
+    if (distance > MAX_TTL) return 0;
+
+    if (!start || !looking_for) return 0;
+
+    printf("Traceroute_Search: start %p [%u] looking for %p [%u] distnace: %d\n", 
+    start, start->hop, looking_for, looking_for->hop, distance);
+    
+    // use context here and use the next list..
     search = start;
     
+    // first we search all branches, and perform it recursively as well...
     while (search != NULL) {
 
         if (search->branches) {
             cur_distance++;
+            
             search_branch = search->branches;
 
             while (search_branch != NULL) {
 
-                
+                if (search_branch->hop == looking_for->hop) return cur_distance;
 
-                search_branch = search_branch->next;
+                ret = Traceroute_Search(search_branch, looking_for, cur_distance+1);
+
+                // if it was found..
+                if (ret) return ret;
+
+                search_branch = search_branch->branches;
             }
+
+            cur_distance--;
         }
 
         search = search->next;
     }
-    
 
+    // next we wanna search fromm the  identifiers list (it could be 2 routers away) so distance of 2..
+    search = start->identifiers;
+
+    cur_distance++;
+    while (search != NULL) {
+
+        if (start->hop == looking_for->hop) {
+            ttl_diff = start->ttl - looking_for->ttl;
+
+            if (ttl_diff < 0) ttl_diff = abs(ttl_diff);
+
+            if (ttl_diff) {
+                ret = ttl_diff + cur_distance;
+                break;
+            }
+
+            search_branch = search->branches;
+
+            while (search_branch != NULL) {
+                // we wanna check branches of that traceroute (identifier) we are checking    
+
+                ret = Traceroute_Search(search_branch, looking_for, cur_distance+1);
+
+                    // if it was found..
+                if (ret) return ret;
+
+                search_branch = search_branch->branches;
+            }
+        }
+
+        search = search->identifiers;
+    }
+
+    cur_distance--;
+
+    return ret;
 }
-/*
-192.168.0.1
-cox_nola
-houston
-site1
 
-
-192.168.0.1
-cox_nola
-houston
-la
-site2
-
-
-
-192.168.0.1 <b> 192.168.0.1 <b> 192.168.0.1 <b> .....
-
-
-identifier  <b> identifier
-
-need to sort by identifiers as wll
-
-*/
 // traceroutes are necessary to ensure a single nonde running this code can affect all mass surveillance programs worldwide
 // it allows us to ensure we cover all places we expect them to be.. in the world today: if we expect it to be there.. then it
 // probably is (for mass surveillance programs)
@@ -87,37 +119,23 @@ need to sort by identifiers as wll
 // the other strategy will be using two nodes running this code which will be on diff parts of the world so we ca ensure eah side of the packets
 // get processed correctly.. in the begininng (before they modify) it wont matter.. later once they attempt to filter out, and procecss
 // it might matter but it'll make the entire job/technology that much more difficult
-int Traceroute_Compare(AS_context *ctx, TracerouteQueue *first, TracerouteQueue *second) {
+int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second) {
     int ret = 0;
-    TracerouteQueue *srch_main = NULL;
-    TracerouteQueue *srch_branch = NULL;
+    TracerouteSpider *srch_main = NULL;
+    TracerouteSpider *srch_branch = NULL;
     int distance = 0;
-/*
+
     // make sure both were passed correctly
     if (!first || !second) return -1;
 
     // if they are the same..
-    //if (first->hop == second->hop) return 0;
+    if (first->hop == second->hop) return 1;
 
-    // doesnt matter which node we start from since they are looking for each other..
-    // enumerating through the branch list itself wont add any values.. so it will be the same on either side
-    //srch = first;
+    distance = Traceroute_Search(first, second, 0);
 
-    while (srch != NULL) {
+    printf("distance: %d\n", distance);
 
-        // go into a branch...
-        if (srch->branches) {
-            distance++;
-            srch_branch = srch->branches;
-            while (!srch_branch) {
-
-            }
-
-        }
-
-
-        srch = srch->next;
-    }
+    ret = distance;
 
 
 
@@ -144,6 +162,7 @@ int Traceroute_Compare(AS_context *ctx, TracerouteQueue *first, TracerouteQueue 
     // this means in the future the analysis system will have information for continuinng the process
     // with those nodes
 
+    // also can find missing TTL from search, and resend those packets once, and then mark it as no more retry
     
 
     // find similar hops (if exist) .. if so
@@ -163,7 +182,7 @@ int Traceroute_Compare(AS_context *ctx, TracerouteQueue *first, TracerouteQueue 
     // for generatinng IPs it will be  important to attack particular countries, etc
     // especially when identities get involded (which would be better to keep particular to the region)..
     // especially chinese characters etc
-*/
+
     end:;
 
     return ret;
@@ -311,8 +330,8 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
                 // this used to mean its completed when TTL was done in order... now that we are randomizing.. it just means
                 // anything ABOVE the ttl that responded is useless... and we only complete when all are done...
                 //printf("------------------\nTraceroute completed %p [%u %u]\n-------------------\n", qptr, rptr->hop, qptr->target);
-                qptr->completed = 1;
-                /*
+                //qptr->completed = 1;
+                
                 //for when randomization of ttl is done
                             for (i = 0; i < MAX_TTL; i++) {
                                 if (qptr->ttl_list[i] >= rptr->ttl) qptr->ttl_list[i] = 0;
@@ -320,7 +339,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
                             }
 
                             if (!left) qptr->completed = 1;
-                */
+                
 
         }
 
@@ -443,11 +462,23 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     }
 
     // this randomizes ttls so routes that get a lot of packets wont get them all at once
-    /*
+    
     i = 0;
-    // now we must randomize the TTLs
-    while (i < MAX_TTL) {
-        n = rand()%MAX_TTL;
+    // now we must randomize the TTLs.. lets do the first 15 hops.. since thats where the MAJORITY will be
+    // this means we wont send too many hosts several ICMP packets
+    // example: if it respoonds at 26.. we disqualify 27-30
+    //          but we may send it 25,24,23 like this... but if randomize 0-15.. 
+    //          we will probably get the majority low.. and we can go fromm 0-30 at 15+
+    //          i was mainly worried about too many packets going to the 0-3 (internal near the commputer sending)
+    // I believe this will allow us to perform more traceroutes overall.. since we are not going in a consistent pack
+    //   of 50 to each route everytime
+
+    // its even quite possible this could decrease the amount of packets required.. by disqualifying higher ttls
+    // earlier... ill try to incorporate further strategies later...
+
+    
+    while (i < 15) {
+        n = rand()%15;
         ttl = tptr->ttl_list[n];
 
         tptr->ttl_list[n] = tptr->ttl_list[i];
@@ -455,7 +486,20 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
         tptr->ttl_list[i] = ttl;
 
         i++;
-    }*/
+    }
+
+    i = 20;
+    // lets randomize the last third...
+    while (i < MAX_TTL) {
+        n = i + (rand()%(MAX_TTL - i));
+        ttl = tptr->ttl_list[n];
+
+        tptr->ttl_list[n] = tptr->ttl_list[i];
+
+        tptr->ttl_list[i] = ttl;
+
+        i++;
+    }
 
     end:;
     return ret;
@@ -613,6 +657,12 @@ int Traceroute_Perform(AS_context *ctx) {
 
                 //printf("traceroute activity timer.. increasing ttl %d\n", tptr->current_ttl);
                 tptr->current_ttl++;
+
+                // in case we have more in a row for this queue that are 0 (because it responded fromm a higher ttl already)
+                // and we just need its lower hops...
+                while ((tptr->current_ttl < MAX_TTL) && tptr->ttl_list[tptr->current_ttl] == 0) {
+                    tptr->current_ttl++;
+                }
 
                 if (tptr->ttl_list[tptr->current_ttl] != 0) {
 
@@ -961,4 +1011,39 @@ int Traceroute_Count(AS_context *ctx, int return_completed) {
     }    
     // return count
     return ret;
+}
+
+
+// find a traceroute structure by address.. and maybe check ->target as well (traceroute queue IP as well as hops)
+TracerouteSpider *Traceroute_Find(AS_context *ctx, uint32_t address, struct  in6_addr *addressv6, int check_targets) {
+    TracerouteSpider *ret = NULL;
+    TracerouteSpider *sptr = ctx->traceroute_spider;
+
+    while (sptr != NULL) {
+
+
+        if (address && sptr->hop == address) {
+            //printf("Checking %u against %u", address, sptr->hop);
+            break;
+        }
+        if (!address && CompareIPv6Addresses(addressv6, &sptr->hopv6)) {
+            break;
+        }
+
+        if (check_targets && address && sptr->target_ip == address) {
+            printf("Checking targets %u against %u", address, sptr->target_ip);
+            break;
+        }
+        if (check_targets && !address && CompareIPv6Addresses(addressv6, &sptr->target_ipv6)) break;
+
+        sptr = sptr->next;
+    }
+
+    if (sptr == NULL) {
+        printf("couldnt find %u\n", address);
+    }
+
+
+    return sptr;
+
 }
