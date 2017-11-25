@@ -1457,7 +1457,7 @@ PacketBuildInstructions *ThreadedInstructionsFindConnection(AS_context *ctx, Pac
     }
 
     // We need to loop a second time waiting for each thread to complete...
-    // This COULD be threeaded off itself, and merge into the attack list later..
+    // This COULD be threaded off itself, and merge into the attack list later..
     // Update this later once scripting is completed.. to allow control from
     // another mechanism
     for (i = 0; i < threads; i++) {        

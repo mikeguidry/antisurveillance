@@ -3,14 +3,16 @@
 
 import antisurveillance
 
-import signal
-import sys
 from pprint import pprint
 from time import sleep, time
+import signal
+import sys
 
+#support ctrl-c to stop infinite loop in perform()
 def signal_handler(signal, frame):
         print('You pressed Ctrl+C!')
         sys.exit(0)
+#install signal handler for SIGINT (ctrl-c)		
 signal.signal(signal.SIGINT, signal_handler)
 
 # iterates all attack structures X times, or 0 forever.. but ensure you have other ways to kill it.. just allowing it
@@ -94,7 +96,6 @@ def script_perform():
 	# how many packets did that generate?
 	print("network %05d attack %05d ") % (a.networkcount(), a.attackcount())
 
-	#print("script_perform()\n")
 	return 0
 
 
@@ -140,10 +141,14 @@ def init():
 	#just be sure the counts are high enoough for each attack structure...
 	#perform(a,99999) or (a,0) forever...
 
-	# i was calling disable() because it was running the C code right after.. it ignores it now if it returns 1 here
+	# disable all tasks which happen from perform, and network flushing..
 	#a.disable()
 
-	#script_enable(a)
+	# re-activate everything...
+	#a.enable() 
+
+	# do we wish to make the system continue executing? calling our perform()?
+	script_enable(a)
 
 	return 1
 	

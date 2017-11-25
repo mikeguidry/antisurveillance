@@ -166,8 +166,14 @@ typedef struct _antisurveillance_context {
     AttackOutgoingQueue *network_queue;
     AttackOutgoingQueue *network_queue_last;
     pthread_mutex_t network_queue_mutex;
-    pthread_t network_thread;
-    int network_threaded;
+    pthread_t network_write_thread;
+    pthread_mutex_t network_incoming_mutex;
+    pthread_t network_read_thread;
+    int network_write_threaded;
+    int network_read_threaded;
+
+    IncomingBufferQueue *incoming_queue;
+    IncomingBufferQueue *incoming_queue_last;
 
     int aggressive;
 

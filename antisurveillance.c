@@ -107,7 +107,7 @@ int AS_perform(AS_context *ctx) {
     AS_remove_completed(ctx);
 
     // flush network packets queued to wire
-    if (!ctx->network_threaded)
+    if (!ctx->network_write_threaded)
         FlushAttackOutgoingQueueToNetwork(ctx);
 
     // traceroute, blackhole, scripting?, timers?
@@ -189,8 +189,8 @@ AS_context *AS_ctx_new() {
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
     // start network queue thread
-    if (pthread_create(&ctx->network_thread, NULL, thread_network_flush, (void *)ctx) == 0)
-        ctx->network_threaded = 1;
+    if (pthread_create(&ctx->network_write_thread, NULL, thread_network_flush, (void *)ctx) == 0)
+        ctx->network_write_threaded = 1;
 
     return ctx;
 }

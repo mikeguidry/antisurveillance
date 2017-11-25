@@ -18,8 +18,10 @@ protection to be developed, and this can become the 'third party server' for hun
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
+#include <net/if.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
+#include <linux/if_packet.h>
 #include <sys/ioctl.h>
 #include "network.h"
 #include "antisurveillance.h"
@@ -254,7 +256,8 @@ int prepare_socket(AS_context *ctx) {
 
     return rawsocket;
 }
-/*
+
+#define ETHER_TYPE 0x0800
 // http://yusufonlinux.blogspot.com/2010/11/data-link-access-and-zero-copy.html
 int prepare_read_socket(AS_context *ctx) {
     int sockfd = 0;
@@ -297,7 +300,7 @@ int prepare_read_socket(AS_context *ctx) {
     // return if it was successful
     return (ctx->read_socket != 0);
 }
-*/
+
 
 
 // this will take a buffer, and size expected to come directly fromm the network driver
@@ -345,4 +348,119 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     PacketBuildInstructionsFree(&iptr);
 
     return ret;
+}
+
+void *thread_read_network(void *arg) {
+    AS_context *ctx = (AS_context *)arg;
+    int i = 0;
+    char *sptr = NULL;
+    int r = 0;
+    IncomingBufferQueue *nptr = NULL;
+    int paused = 0;
+
+    // open raw reading socket
+    i = prepare_read_socket(ctx);
+
+    // if sock didnt open, or we cant allocae space for reading packets
+    if (!i) goto end;
+
+    // lets read forever.. until we stop it for some reason
+    while (1) {
+        // if we cannot allocate a buffer for some reason...
+        if ((nptr = (IncomingBufferQueue *)calloc(1, sizeof(IncomingBufferQueue))) == NULL) {
+            printf("cannot allocate buffer space!\n");
+            goto end;
+        }
+
+        nptr->max_buf_size = MAX_BUF_SIZE;
+
+        // reset using our buffer..
+        sptr = (char *)&nptr->buf;
+        // no need since calloc
+        //nptr->cur_packet = 0;
+        //nptr->size = 0;
+
+        // read until we run out of packets, or we fill our buffer size by 80%
+        do {
+            //r = recv(sptr, max_buf_size - size, )
+            r = recvfrom(sockfd, &nptr->buf, nptr->max_buf_size - nptr->size, 0, NULL, NULL);
+
+            // if no more packets.. lets break and send it off for processing
+            if (r <= 0) break;
+
+            // set where this packet begins
+            nptr->packet_starts[nptr->cur_packet++] = size;
+
+            // increase by the amount we read..
+            sptr += r;
+            // increase the size of our buffer (for pushing to queue)
+            nptr->size += r;
+
+            // if we have used 90% of the buffer size...
+            if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) break;
+            // we only have positions for a max of 1024 packets with this buffer
+            if (nptr->cur_packet >= 1024) break;
+        } while (r);
+
+        // now lets get the packets into the actual queue as fast as possible
+        // we read untiil there isnt anything left before we lock the mutex
+        pthread_mutex_lock(&ctx->network_incoming_mutex);    
+    
+        // link ordered... (maybe slow?) lets try..
+        L_link_ordered((LINK **)&ctx->incoming_queue, (LINK *)nptr);
+
+/*
+        // alternate if slow.. itll be quick
+        // find the last buffer we queued if it exists
+        if (ctx->incoming_queue_last) {
+            // set the next of that to this new one
+            incoming_queue_last->next = nptr;
+            // set the last as this one for the next queue
+            ctx->incoming_queue_last = nptr;
+        } else {
+            // buffer is completely empty.. set it, and the last pointer to this one
+            incoming_queue = incoming_queue_last = nptr;
+        }
+*/
+        
+        // lets unlink just in case
+        nptr = NULL;
+
+        // get paused variable from network disabled
+        paused = (ctx->network_disabled || ctx->paused);
+
+        // no more variables which we have to worry about readwrite from diff threads
+        pthread_mutex_unlock(&ctx->network_incoming_mutex);
+
+        // if paused.. lets sleep for half a second each time we end up here..
+        if (paused) {
+            usleep(500000);
+        } else {
+            // timing change w aggressive-ness
+            usleep((1000000 / 4) - (ctx->aggressive * 25000));
+        }
+    }
+
+    end:;
+
+    
+    // lets lock mutex sinnce we will change some variables
+    pthread_mutex_lock(&ctx->network_incoming_mutex);
+
+    // so we know this thread no longer is executing for other logic
+    ctx->network_read_threadded = 0;
+    
+    // unlock mutex..
+    pthread_mutex_unlock(&ctx->network_incoming_mutex);
+
+    // free buffer if it was allocated
+    PtrFree(&buf);
+
+    // free nptr if it wasnt passed along before getting here
+    PtrFree(&nptr);
+
+    // exit thread
+    pthread_exit(NULL);
+
+    return;
 }

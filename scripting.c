@@ -103,7 +103,7 @@ static int PyASC_init(PyAS_Config *self, PyObject *args, PyObject *kwds) {
     void *ctx = NULL;
 
     static char *kwlist[] = { "ctx", NULL};
-
+    
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|K", kwlist, &ctx))
         return -1;
 
@@ -196,18 +196,15 @@ static PyObject *PyASC_NetworkCount(PyAS_Config* self){
     return PyInt_FromLong(ret);
 }
 
+
 // count outgoing network queue
 static PyObject *PyASC_AttackCount(PyAS_Config* self){
-        long ret = 0;
+    long ret = 0;
 
-        if (self->ctx) ret = L_count((LINK *)self->ctx->attack_list);
-    
-        if (ret) {
-            return PyInt_FromLong(ret);
-        } else {
-            Py_INCREF(Py_None);
-            return Py_None; 
-        }
+    if (self->ctx) ret = L_count((LINK *)self->ctx->attack_list);
+
+
+    return PyInt_FromLong(ret);
 }
 
     
@@ -547,124 +544,6 @@ err:;
     return PyInt_FromLong(ret);
 }
 
-// this is sortof redundant... it only takes 4 other commands (2 of the same)
-static PyObject *PyASC_BuildHTTP6(PyAS_Config* self, PyObject *args, PyObject *kwds) {
-    static char *kwd_list[] = {
-    "client_ip", "client_port", "destination_ip", "destination_port", 
-    "client_body", "client_body_size", "server_body", "server_body_size",
-    "count", "interval",
-    // these are not required
-    "client_ttl", "server_ttl", 
-    "client_window_size", "server_window_size","client_seq", "server_seq", "client_identifier",
-    "server_identifier", "client_os","server_os", "gzip_enable", "gzip_percentage","gzip_size",
-    "gzip_injections", 0};
-
-    char *client_ip = NULL, *destination_ip = NULL;
-    char *server_body = NULL, *client_body = NULL;
-    int client_body_size = 0, server_body_size = 0;
-    int client_port = 0, destination_port = 0, client_ttl = 0, server_ttl = 0, client_window_size = 0;
-    int server_window_size = 0;
-    unsigned long client_seq = 0, server_seq = 0, client_identifier = 0, server_identifier = 0;
-    int client_os = 0, server_os = 0;
-    int count = self->replay_count;
-    int interval = self->replay_interval;
-    AS_attacks *aptr = NULL;
-
-    // *** finish implementing gzip here.. it has to create a new thread if the percentage matches
-    // is gzip attack enabled? default yes
-    int gzip_enable = 1;
-    // what percentage chance does this http session get affected? (Default 30)
-    int gzip_percentage = 30;
-    // default to 100megs
-    int gzip_size = 1024*1024*100;
-    // injections = rand between 1-5
-    int gzip_injections = 1+ (rand()%5);
-
-    int ret = 0;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sisis#s#|iiiiiikkkkiiiiii", kwd_list,  
-    &client_ip, &client_port, &destination_ip, &destination_port, &client_body, &client_body_size,
-    &server_body, &server_body_size, &count, &interval, &client_ttl, &server_ttl, &client_window_size,
-    &server_window_size, &client_seq, &server_seq, &client_identifier, &server_identifier, &client_os,
-    &server_os, &gzip_enable, &gzip_percentage, &gzip_size, &gzip_injections)) {
-        PyErr_Print();
-        return NULL;
-    }
-
-    memset((void *)&self->connection_parameters, 0, sizeof(ConnectionProperties));
-
-    // the new connection needs these variables prepared
-    IP_prepare(destination_ip, &self->connection_parameters.server_ip, &self->connection_parameters.server_ipv6, &self->connection_parameters.is_ipv6);
-    IP_prepare(client_ip, &self->connection_parameters.client_ip, &self->connection_parameters.client_ipv6, &self->connection_parameters.is_ipv6);
-    self->connection_parameters.server_port = destination_port;
-    self->connection_parameters.client_port = client_port;
-    self->connection_parameters.server_identifier = server_identifier ? server_identifier : rand()%0xFFFFFFFF;
-    self->connection_parameters.client_identifier = client_identifier ? client_identifier : rand()%0xFFFFFFFF;
-    self->connection_parameters.server_seq = server_seq ? server_seq : rand()%0xFFFFFFFF;
-    self->connection_parameters.client_seq = client_seq ? client_seq : rand()%0xFFFFFFFF;
-
-    self->connection_parameters.client_ttl = client_ttl ? client_ttl : 64;// *** set efault ttl somewhere
-    self->connection_parameters.server_ttl = server_ttl ? server_ttl : 53;
-    self->connection_parameters.max_packet_size_client = client_window_size ? client_window_size : (1500 - (20 * 2 + 12));
-    self->connection_parameters.max_packet_size_server = server_window_size ? server_window_size : (1500 - (20 * 2 + 12));;
-
-    gettimeofday(&self->connection_parameters.ts, NULL);
-
-    // free all instructions used by this python module
-    PacketBuildInstructionsFree(&self->instructions);
-
-    
-    // open the connection...
-    if (GenerateTCPConnectionInstructions(&self->connection_parameters, &self->instructions) != 1) { ret = -2; goto err; }
-
-    // now we must send data from client to server (http request)
-    if (GenerateTCPSendDataInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT, client_body, client_body_size) != 1) { ret = -3; goto err; }
-
-    // now we must send data from the server to the client (web page body)
-    if (GenerateTCPSendDataInstructions(&self->connection_parameters, &self->instructions, FROM_SERVER, server_body, server_body_size) != 1) { ret = -4; goto err; }
-
-    // now lets close the connection from client side first
-    if (GenerateTCPCloseConnectionInstructions(&self->connection_parameters, &self->instructions, FROM_CLIENT) != 1) { ret = -5; goto err; }
-
-
-    // now lets create the attak structure to begin...
-    if ((aptr = (AS_attacks *)calloc(1, sizeof(AS_attacks))) == NULL) goto err;
-
-    aptr->ctx = self->ctx;
-    aptr->id = rand()%5000;
-    pthread_mutex_init(&aptr->pause_mutex, NULL);  
-    aptr->type = ATTACK_SESSION;
-
-    aptr->count = count;
-    aptr->repeat_interval = interval;
-
-    // that concludes all packets
-    aptr->packet_build_instructions = self->instructions;
-    // lets unlink it from our structure..
-    self->instructions = NULL;
-
-    // now lets build the low level packets for writing to the network interface
-    BuildPackets(aptr);
-
-
-    if (aptr != NULL) {
-        // link it in.
-        aptr->next = self->ctx->attack_list;
-        self->ctx->attack_list = aptr;
-
-        // lets return the ID
-        ret = aptr->id;
-
-    }
-err:;
-
-    if (ret <= 0) {
-        PacketBuildInstructionsFree(&self->instructions);
-    }
-
-    return PyInt_FromLong(ret);
-}
-
 
 // start a new instruction set (removing anything previously not saved, etc)
 static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyObject *kwds) {
@@ -863,6 +742,32 @@ static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *k
 }
 
 
+static PyObject *PyASC_MergeAttacks(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"destination_attack_id","source_attack_id",0};
+    long destination_id = 0, source_id = 0;
+    AS_attacks *dst = NULL;
+    AS_attacks *src = NULL;
+    int ret = 0;
+    
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "kk", kwd_list, &destination_id, &source_id)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (self->ctx) {
+        dst = AttackFind(self->ctx, destination_id, NULL, NULL, NULL, 0, 0, 0, 0);
+        src = AttackFind(self->ctx, source_id, NULL, NULL, NULL, 0, 0, 0, 0);
+
+        if (dst && src) {
+            ret = MergeAttacks(dst, src);
+        }
+    }
+
+
+    return PyInt_FromLong(ret);
+}
+
 // enable flushing the network queue to the live wire
 static PyObject *PyASC_ScriptEnable(PyAS_Config* self){
     if (self->ctx) self->ctx->script_enable = 1;
@@ -985,9 +890,13 @@ static PyMethodDef PyASC_methods[] = {
     // disabling script_perform() thus it would exit after the script_perform() which called this, or a python queue script would disable
     {"scriptdisable", (PyCFunction)PyASC_ScriptDisable,    METH_NOARGS,    "enable continous execution, and script_perform()" },
 
+    // merge one attack into another's structure
+    {"attackmerge", (PyCFunction)PyASC_MergeAttacks, METH_VARARGS|METH_KEYWORDS, "merges one attack into another (think DNS before WWW,etc)" },
+
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
     {"attackcount", (PyCFunction)PyASC_AttackCount,    METH_NOARGS,    "count attacks" },
+
     {NULL}  /* Sentinel */
 };
 

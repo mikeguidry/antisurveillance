@@ -795,3 +795,29 @@ AS_attacks *AttackFind(AS_context *ctx, int id, char *source_ip, char *destinati
 
     return aptr;
 }
+
+
+// Merge two attack structures together.. mainly for putting DNS, and WWW sessions into a single (so you can push live DNS to wire, and then
+// after those packets are completed, then you could flush the session).. right now if thhey are separated.. the DNS might not complete before
+// the www session gets pushed to the wire..
+// Just making sure there is no way to solve these attacks fromm the mass surveillance point of view...
+// Moves instructions from source into dst.. and removes the rest of src's structure
+
+// beware: TCP ACK/SEQ etc will get messed up...maybe ill redesign structures to have another encapsulation with the build instructions
+//   which  will bring those values (base ones, etc needed for modification) along when merged..
+// another option is to allow moving one attack into another but keeping the other ordered..
+// I just realized if you move DNS into WWW itll be BEHIND www... and if you move WWW into DNS then it wont rewrite ACK/SEQ, and other values
+// properly in all cases.. so ill have to revisit this ***
+int MergeAttacks(AS_attacks *dst, AS_attacks *src) {
+    if (!dst || !src || !src->packet_build_instructions) return 0;
+    // link the source instructions into the destination
+    L_link_ordered((LINK **)&dst->packet_build_instructions, (LINK *)src->packet_build_instructions);
+
+    // unlink from source structure
+    src->packet_build_instructions = NULL;
+
+    // mark the source's structure as completed so that it gets freed gracefully
+    src->completed = 1;
+    
+    return 1;
+}

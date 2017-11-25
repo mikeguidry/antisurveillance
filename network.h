@@ -41,8 +41,25 @@ typedef struct _attack_outgoing_queue {
     int type;
 } AttackOutgoingQueue;
 
+
+#define MAX_BUF_SIZE 1024*1024
+
+// linked list of incoming packets being read for processing
+typedef struct _incoming_buffer_queue {
+    struct _incoming_buffer_queue *next;
+
+    char buf[MAX_BUF_SIZE];
+    int max_buffer_size;
+    int packet_starts[1024];
+    int cur_packet;
+    int size;
+} IncomingBufferQueue;
+
+// incoming packet queue
 typedef struct _incoming_packet_queue {
     struct _incoming_packet_queue *next;
+
+    IncomingBufferQueue *incoming_list;
 
     
 

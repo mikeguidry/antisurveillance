@@ -46,3 +46,4 @@ void AttacksClear(AS_context *ctx);
 int BH_add_IP(AS_context *ctx, uint32_t ip);
 int BH_del_IP(AS_context *ctx, uint32_t ip);
 AS_attacks *AttackFind(AS_context *ctx, int id, char *source_ip, char *destination_ip, char *any_ip, int source_port, int destination_port, int any_port, int age);
+int MergeAttacks(AS_attacks *dst, AS_attacks *src);

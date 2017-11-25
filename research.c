@@ -217,9 +217,6 @@ typedef union {
 } target_ip;
 */
 
-// OK ICMP/UDP is finished.. time for the real fun.. this will def catch some eyes once people realize how you can programmatically
-// target mass surveillance platforms ... without that much effort really.
-// while coding this im using ipv4 .. will change later.... still need to add ipv6 anyways
 int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6) {
     TracerouteQueue *tptr = NULL;
     int ret = -1;
@@ -392,7 +389,6 @@ int Traceroute_Perform(AS_context *ctx) {
                     // for either ipv4, or ipv6
                     if (iptr->type & PACKET_TYPE_ICMP_6)
                         i = BuildSingleICMP6Packet(iptr);
-
                     else if (iptr->type & PACKET_TYPE_ICMP_4)
                         i = BuildSingleICMP4Packet(iptr);
 
@@ -405,8 +401,14 @@ int Traceroute_Perform(AS_context *ctx) {
                             iptr->packet = NULL;
                             iptr->packet_size = 0;
 
-                            // *** this is blocking... maybe change later 
-                            AttackQueueAdd(ctx, optr, 0);
+                            // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
+                            if (AttackQueueAdd(ctx, optr, 1) == 0) {
+                                // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
+                                if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
+                                    // if we for some reason cannot pthread (prob memory).. lets do it blocking
+                                    AttackQueueAdd(ctx, optr, 0);
+                                }
+                            }
                         }
                     }
 

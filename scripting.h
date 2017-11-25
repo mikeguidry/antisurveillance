@@ -13,13 +13,11 @@ typedef struct _as_scripts {
     // type of script? python, etc...
     int type;
  
-    AS_context *ctx;
-
-    
+    AS_context *ctx;    
     PyThreadState *python_thread;
     PyObject *pModule;
 
+    // did this script have a script_perform() function whenever it was loaded into memory?
     int perform;
-
 } AS_scripts;
 
