@@ -259,6 +259,7 @@ void *thread_network_flush(void *arg) {
             i = (1000000 / 4) - (i * 25000);
             
             //printf("usleep %d\n", i);
+            i /= 2;
             if (i > 0 && (i <= 1000000))
                 usleep(i);
         }
@@ -403,21 +404,23 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     FILE *fd;
     char fname[1024];
 
+    if (size == 0) goto end;
+
     // if we dont have any subsystems waiting for packets.. no point
     if (nptr == NULL) {
-        printf("NULL pointer\n");
+        //printf("NULL pointer\n");
         goto end;
     }
 
-    sprintf(fname, "packets/pkt_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
+    //sprintf(fname, "packets/pkt_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
 
     packet += sizeof(struct ether_header);
     size -= sizeof(struct ether_header);
-
+/*
     if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
         fclose(fd);
-    }
+    } */
 
     /*if (size < 40) {
         printf("small pkt?\n");
@@ -427,23 +430,22 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     
     // packet needs to be in this structure to get analyzed.. reusing pcap loading routines
     if ((pptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) {
-        printf("couldnt alloc memory for processinng packet\n");
+        //printf("couldnt alloc memory for processinng packet\n");
         return -1;
     }
 
     // duplicate the packet data.. putting it into this packet structure
     if (PtrDuplicate(packet, size, &pptr->buf, &pptr->size) == 0) {
-        printf("couldnt duplicate data required for processing\n");
+        //printf("couldnt duplicate data required for processing\n");
         goto end;
     }
 
     // analyze that packet, and turn it into a instructions structure
     if ((iptr = PacketsToInstructions(pptr)) == NULL) {
-        printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
+        /*printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
             if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
-        fclose(fd);
-    }
+        fclose(fd); } */
 
         goto end;
     }
@@ -670,6 +672,7 @@ void *thread_read_network(void *arg) {
         } else {
             
             sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
+            sleep_interval /= 2;
             if (sleep_interval > 0)
                 // timing change w aggressive-ness
                 usleep(sleep_interval);

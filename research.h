@@ -1,5 +1,5 @@
 
-#define MAX_ACTIVE_TRACEROUTES 30
+#define MAX_ACTIVE_TRACEROUTES 50
 
 // one single dns record (response about a hostname, prepared to stay on record)
 // it can be reused for preparing further attacks against the same sites, etc
@@ -89,13 +89,22 @@ typedef struct _traceroute_queue {
 } TracerouteQueue;
 
 
-
+// this linked list is for the final data w traceroute responses
+// it has to link next as a regular way to contain the data
+// branches is the same routers/hops together...
+// and identifier is to link all of a targets traceroute nodes together
+// all 3 are required to perform the correct analysis, and attack building 
 typedef struct _traceroute_spider {
     //routine linked list management..
     struct _traceroute_spider *next;
 
     // branches is like next but for all branches (this hop matches anothers)
     struct _traceroute_spider *branches;
+
+    // identifier wil link the entire traceroute for a particular target together
+    // regardless of branch, or hops.. purely by the value we used to identify the packet
+    // and TTL
+    struct _traceroute_spider *identifier;
 
     // the queue which linked into this tree
     // it wiill get removed fromm the active list to speed up the process
@@ -170,5 +179,5 @@ void get_local_ipv6(struct in6_addr *dst);
 uint32_t get_local_ipv4();
 int Traceroute_Init(AS_context *ctx);
 int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6);
-int Traceroute_Count(AS_context *ctx);
+int Traceroute_Count(AS_context *ctx, int);
 int Spider_Print(AS_context *ctx);

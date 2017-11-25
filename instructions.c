@@ -560,7 +560,8 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
 }
 
 
-// Process an IPv4 ICMP packet from the wire, or a PCAP
+// Process an IPv4 ICMP packet from the wire, or a 
+// Sanity checks added since itll parse live packets
 PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
     struct packeticmp4 *p = (struct packeticmp4 *)pptr->buf;
@@ -571,6 +572,9 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     char fname[32];
 
     //printf("Process ICMP4\n");
+
+    // data coming from network.. so sanity checks required
+    if (pptr->size < sizeof(struct packeticmp4)) goto end;
 
     // allocate space for an instruction structure which analysis of this packet will create
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
@@ -585,6 +589,9 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     // how much data is present in this packet?
     data_size = ntohs(p->ip.tot_len) - sizeof(struct packeticmp4);
 
+    // since we are ready from the network.. we need some sanity checks
+    if ((data_size < 0) && (data_size != (pptr->size - sizeof(struct packeticmp4)))) goto end;
+
     // set packet as OK (can disqualify from checksum)
     iptr->ok = 1;
 
@@ -592,7 +599,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     pkt_chk = p->icmp.checksum;
 
     // copy data from the original packet
-    if (data_size) {
+    if (data_size > 0) {
 
         if ((data = (char *)malloc(data_size)) == NULL) goto end;
         memcpy(data, (void *)(pptr->buf + sizeof(struct packeticmp4)), data_size);
@@ -600,11 +607,11 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
         iptr->data = data;
         iptr->data_size = data_size;
 
-        sprintf(fname, "packets/icmp_data_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
+        /*sprintf(fname, "packets/icmp_data_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
         if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
             fwrite(data, 1, data_size, fd);
             fclose(fd);
-        }
+        } */
     }
 
     // set to 0 in packet so we can  calculate correctly..

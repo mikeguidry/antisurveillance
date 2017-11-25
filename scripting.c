@@ -211,7 +211,7 @@ static PyObject *PyASC_AttackCount(PyAS_Config* self){
 static PyObject *PyASC_TracerouteCount(PyAS_Config* self){
     long ret = 0;
 
-    if (self->ctx) ret = Traceroute_Count(self->ctx);
+    if (self->ctx) ret = Traceroute_Count(self->ctx, 0);
 
     return PyInt_FromLong(ret);
 }

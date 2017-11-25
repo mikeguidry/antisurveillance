@@ -29,8 +29,56 @@ I'll try to require as little hard coded information as possible.  I'd like ever
 */
 
 
+// this can be handeled recursively because we have max TTL of 30.. its not so bad
+int Traceroute_Search(TracerouteSpider *start, TracerouteSpider *looking_for, int distance) {
+    TracerouteSpider *search = NULL;
+    TracerouteSpider *search_branch = NULL;
+    int cur_distance = distance;
+
+    search = start;
+    
+    while (search != NULL) {
+
+        if (search->branches) {
+            cur_distance++;
+            search_branch = search->branches;
+
+            while (search_branch != NULL) {
+
+                
+
+                search_branch = search_branch->next;
+            }
+        }
+
+        search = search->next;
+    }
+    
+
+}
+/*
+192.168.0.1
+cox_nola
+houston
+site1
 
 
+192.168.0.1
+cox_nola
+houston
+la
+site2
+
+
+
+192.168.0.1 <b> 192.168.0.1 <b> 192.168.0.1 <b> .....
+
+
+identifier  <b> identifier
+
+need to sort by identifiers as wll
+
+*/
 // traceroutes are necessary to ensure a single nonde running this code can affect all mass surveillance programs worldwide
 // it allows us to ensure we cover all places we expect them to be.. in the world today: if we expect it to be there.. then it
 // probably is (for mass surveillance programs)
@@ -39,28 +87,64 @@ I'll try to require as little hard coded information as possible.  I'd like ever
 // the other strategy will be using two nodes running this code which will be on diff parts of the world so we ca ensure eah side of the packets
 // get processed correctly.. in the begininng (before they modify) it wont matter.. later once they attempt to filter out, and procecss
 // it might matter but it'll make the entire job/technology that much more difficult
-int Traceroute_Compare(TracerouteQueue *first, TracerouteQueue *second) {
+int Traceroute_Compare(AS_context *ctx, TracerouteQueue *first, TracerouteQueue *second) {
     int ret = 0;
+    TracerouteQueue *srch_main = NULL;
+    TracerouteQueue *srch_branch = NULL;
+    int distance = 0;
+/*
+    // make sure both were passed correctly
+    if (!first || !second) return -1;
 
-    // if there arent enough responses to compare.. then we are finished..
-    // its not an error since it might just be queued with thousands of other sites/nodes
-    //if (!first->traceroute_responses_count_v4 || !second->traceroute_responses_count_v4)
-        //return ret;
+    // if they are the same..
+    //if (first->hop == second->hop) return 0;
+
+    // doesnt matter which node we start from since they are looking for each other..
+    // enumerating through the branch list itself wont add any values.. so it will be the same on either side
+    //srch = first;
+
+    while (srch != NULL) {
+
+        // go into a branch...
+        if (srch->branches) {
+            distance++;
+            srch_branch = srch->branches;
+            while (!srch_branch) {
+
+            }
+
+        }
 
 
-    // we need to verify how close two nodes are in the world..
-    // and if they go through the same fiber routers..
-    // this will ensure that the taps get both sides of the connection
-    // so we can be sure the attack is successful
-
-    // need to know how many match, annd how close they are to the nodes themselves
-    // if they are both within 1-2 of the nondes then we can assume same area, or DC
-
-    // if they go through the same fiber taps in the middle its fine as well
+        srch = srch->next;
+    }
 
 
-    // we have other information such as leaks which will help us propagate the initial strategy
 
+    // so we need to determine the distance between two nodes using our research information
+    // its possible these nodes are in branches so we must check both.. 
+    // the further from US the two nodes are means they will go through  several routers, and
+    // if they are near each other (same country) then it means that if we send packets from
+    // where we are, then both sides of the connection will go through many routers.. thus
+    // injecting  information into these platforms
+
+    // 1) sort by hops descending...
+    // 2) find things with high amounts of hops from us
+    // but in the spider web we see they both go through some router and are a low amount of hops between each other
+    // if that hop/router is used for a lot of sites then we can assume its a backbone, and probably tapped
+    // remember: the packets wont really harm much except some bandwidth (which isnt a huge deal these days)
+    // but these platforms will log the information, and process it.. therefore a small price to pay for
+    // the resource wastes of these platforms
+
+    // 3) if we cannot find matches for things we are sure are behind backbones, then we can generate Ips
+    // for a country which is on the other side (by taking all things on the other side (high hops)) and geoip it
+    // then finding ones with none, or small amount.. then we generate geo IP fromm that region, and append them
+    // into the traceroute queue
+
+    // this means in the future the analysis system will have information for continuinng the process
+    // with those nodes
+
+    
     // first we verify if any routes are the same
     // then we count the distance between them (first from the highest TTL)
     // we need to know if they are more than likely in the same region
@@ -69,7 +153,7 @@ int Traceroute_Compare(TracerouteQueue *first, TracerouteQueue *second) {
     // for generatinng IPs it will be  important to attack particular countries, etc
     // especially when identities get involded (which would be better to keep particular to the region)..
     // especially chinese characters etc
-
+*/
     end:;
 
     return ret;
@@ -166,7 +250,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     int i = 0;
     int left = 0;
 
-    printf("Traceroute Analyze Single responsse %p\n", rptr);
+    //printf("Traceroute Analyze Single responsse %p\n", rptr);
 
     // if the pointer was NULL.. lets just return with 0 (no error...)
     if (rptr == NULL) return ret;
@@ -175,7 +259,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
         //printf("qptr ident: %X  rptr ident %X\n", qptr->identifier, rptr->identifier);
         // found a match since we are more than likely doing mass amounts of traceroutes...
         if (qptr->identifier == rptr->identifier) {
-            printf("FOUND queue for this response! qptr  %p\n", qptr);
+            //printf("FOUND queue for this response! qptr  %p\n", qptr);
             //exit(0);
             break;
         }
@@ -184,7 +268,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     }
 
     src.s_addr = rptr->hop;
-    printf("Response IP: %s\n", inet_ntoa(src));
+    //printf("Response IP: %s\n", inet_ntoa(src));
     
     // we had a match.. lets link it in the spider web
     if (qptr != NULL) {
@@ -213,8 +297,6 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
 
         // allocate space for us to append this response to our interal spider web for analysis
         if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) != NULL) {
-
-            printf("~~~~~~~~~~~~~~~~~~~~~~~~\nallocagted structure for it!\n");
             // we need to know which TTL later (for spider web analysis)
             snew->ttl = rptr->ttl;
 
@@ -231,7 +313,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
 
             // determine if we have already started a structure for this hop in the spider web
             if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
-                printf("--------------\nFound Spider %p [%u] branches %d\n", sptr, rptr->hop, branch_count(sptr->branches));
+                //printf("--------------\nFound Spider %p [%u] branches %d\n", sptr, rptr->hop, branch_count(sptr->branches));
                 // we found it as a spider.. so we can add it to a branch
 
                 snew->branches = sptr->branches;
@@ -239,7 +321,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
                 sptr->branches = snew;
 
             } else {
-                printf("---------------\nCouldnt find spider... added new %u\n", rptr->hop);
+                //printf("---------------\nCouldnt find spider... added new %u\n", rptr->hop);
                 // lets link directly to main list .. first time seeing this hop
                 snew->next = ctx->traceroute_spider;
                 ctx->traceroute_spider = snew;
@@ -459,7 +541,7 @@ int Traceroute_Perform(AS_context *ctx) {
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
 
-    printf("Traceroute_Perform: Queue %d [completed %d]\n", L_count((LINK *)tptr), tptr->completed);
+    printf("Traceroute_Perform: Queue %d [completed %d]\n", L_count((LINK *)tptr), Traceroute_Count(ctx, 1));
     // loop until we run out of elements
     while (tptr != NULL) {
 
@@ -605,7 +687,7 @@ int Traceroute_Perform(AS_context *ctx) {
 
     Spider_Print(ctx);
 
-    tcount = Traceroute_Count(ctx);
+    tcount = Traceroute_Count(ctx, 0);
 
     // if we are below our max active.. lets try to activate some more
     if (tcount < MAX_ACTIVE_TRACEROUTES) {
@@ -666,7 +748,7 @@ int Spider_Print(AS_context *ctx) {
         }
 
         count = branch_count(sptr->branches);
-        if (count > 1) {
+        if (count > 10) {
             printf("spider hop %u branches %p [count %d] next %p\n", sptr->hop, sptr->branches, count, sptr->next);
         }
 
@@ -713,7 +795,7 @@ uint32_t get_local_ipv4() {
      
     int sock = 0;
     
-    return inet_addr("192.168.0.100");
+    //return inet_addr("192.168.0.100");
     
     if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) return 0;
      
@@ -806,16 +888,19 @@ int Traceroute_Init(AS_context *ctx) {
 }
 
 // count the amount of non completed (active) traceroutes in queue
-int Traceroute_Count(AS_context *ctx) {
+int Traceroute_Count(AS_context *ctx, int return_completed) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
     int ret = 0;
 
     // loop until we enuerate the entire list of queued traceroute activities
     while (qptr != NULL) {
         // check if they are completed.. if not we increase the counter
-        if (!qptr->completed && qptr->enabled) {
+        if (!return_completed && !qptr->completed && qptr->enabled) {
             ret++;
         } 
+
+        if (return_completed && qptr->completed)
+            ret++;
 
         qptr = qptr->next;
     }
