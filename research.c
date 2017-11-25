@@ -147,6 +147,14 @@ TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *ho
     return sptr;
 }
 
+int branch_count(TracerouteSpider *sptr) {
+    int ret = 0;
+    while (sptr != NULL) {
+        ret++;
+        sptr = sptr->branches;
+    }
+    return ret;
+}
 
 // Analyze a traceroute response against the current queue and build the spider web of traceroutes
 // for further strategies
@@ -155,6 +163,8 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
     TracerouteSpider *sptr = NULL, *snew = NULL;
     struct in_addr src;
+    int i = 0;
+    int left = 0;
 
     printf("Traceroute Analyze Single responsse %p\n", rptr);
 
@@ -183,8 +193,21 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
         
         if ((rptr->hop && rptr->hop == qptr->target) ||
             (!rptr->hop && !qptr->target && CompareIPv6Addresses(&rptr->hopv6, &qptr->targetv6))) {
-                printf("------------------\nTraceroute completed %p [%u %u]\n-------------------\n", qptr, rptr->hop, qptr->target);
+
+                // this used to mean its completed when TTL was done in order... now that we are randomizing.. it just means
+                // anything ABOVE the ttl that responded is useless... and we only complete when all are done...
+                //printf("------------------\nTraceroute completed %p [%u %u]\n-------------------\n", qptr, rptr->hop, qptr->target);
                 qptr->completed = 1;
+/*
+//for when randomization of ttl is done
+            for (i = 0; i < MAX_TTL; i++) {
+                if (qptr->ttl_list[i] >= rptr->ttl) qptr->ttl_list[i] = 0;
+                if (qptr->ttl_list[i] != 0) left++;
+            }
+
+            if (!left) qptr->completed = 1;
+*/
+
         }
 
 
@@ -202,22 +225,28 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             // take noote of the target ip address
             snew->target_ip = qptr->target;
             CopyIPv6Address(&qptr->targetv6, &rptr->targetv6);
-        }
 
-        // determine if we have already started a structure for this hop in the spider web
-        if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
-            printf("--------------\nFound Spider %p [%u]\n", sptr, rptr->hop);
-            // we found it as a spider.. so we can add it to a branch
-            snew->branches = sptr->branches;
-            sptr->branches = snew;
-        } else {
-            printf("---------------\nCouldnt find spider... added new %u\n", rptr->hop);
-            // lets link directly to main list .. first time seeing this hop
-            snew->next = ctx->traceroute_spider;
-            ctx->traceroute_spider = snew;
-        }
+            // in case later we wanna access the original queue which created the entry
+            snew->queue = qptr;
 
-        ret = 1;
+            // determine if we have already started a structure for this hop in the spider web
+            if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
+                printf("--------------\nFound Spider %p [%u] branches %d\n", sptr, rptr->hop, branch_count(sptr->branches));
+                // we found it as a spider.. so we can add it to a branch
+
+                snew->branches = sptr->branches;
+                
+                sptr->branches = snew;
+
+            } else {
+                printf("---------------\nCouldnt find spider... added new %u\n", rptr->hop);
+                // lets link directly to main list .. first time seeing this hop
+                snew->next = ctx->traceroute_spider;
+                ctx->traceroute_spider = snew;
+            }
+
+            ret = 1;
+        }
     }
 
     end:;
@@ -236,6 +265,9 @@ typedef union {
 int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6) {
     TracerouteQueue *tptr = NULL;
     int ret = -1;
+    int i = 0;
+    int n = 0;
+    int ttl = 0;
 
     printf("\nTraceroute Queue %u\n", target);
 
@@ -267,6 +299,30 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     // add to traceroute queue...
     tptr->next = ctx->traceroute_queue;
     ctx->traceroute_queue = tptr;
+
+    i = 0;
+    // lets randomize TTLs to bypass some filters..
+    while (i < MAX_TTL) {
+        // first set each to the proper ttl..
+        tptr->ttl_list[i] = i;
+
+        i++;
+    }
+
+    // this randomizes ttls so routes that get a lot of packets wont get them all at once
+    /*
+    i = 0;
+    // now we must randomize the TTLs
+    while (i < MAX_TTL) {
+        n = rand()%MAX_TTL;
+        ttl = tptr->ttl_list[n];
+
+        tptr->ttl_list[n] = tptr->ttl_list[i];
+
+        tptr->ttl_list[i] = ttl;
+
+        i++;
+    }*/
 
     end:;
     return ret;
@@ -304,7 +360,7 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
         return 0;
     }
     sprintf(fname, "packets/incoming_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
-    if ((fd = fopen(fname, "wb")) != NULL) {
+    if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(iptr->data, 1, iptr->data_size, fd);
         fclose(fd);
     }
@@ -321,7 +377,7 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     } else {
         pdata = (TraceroutePacketData *)iptr->data;
-    }
+    }/*
 
     //printf("Got packet from network! data size %d\n", iptr->data_size);
     printf("\n\n---------------------------\nTraceroute Incoming\n");
@@ -331,7 +387,7 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     cnv.s_addr = iptr->destination_ip;
     printf("DST: %s\n", inet_ntoa(cnv));
-    
+    */
 
 
     
@@ -345,9 +401,9 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     //identifier = (identifier & 0xFFFF0000) >> 16;
     ttl = pdata->ttl;
     identifier = pdata->identifier;
-    printf("pdata msg: %s\n", pdata->msg);
+    //printf("pdata msg: %s\n", pdata->msg);
 
-    printf("incoming icmp ttl %d identifier %X\n", ttl, identifier);
+    //printf("incoming icmp ttl %d identifier %X\n", ttl, identifier);
 
     // allocate a new structure for traceroute analysis functions to deal with it later
     if ((rptr = (TracerouteResponse *)calloc(1, sizeof(TracerouteResponse))) == NULL) goto end;
@@ -362,7 +418,7 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     rptr->next = ctx->traceroute_responses;
     ctx->traceroute_responses = rptr;
 
-    printf("Created a TRACEROUTE response structure for this one\n");
+    //printf("Created a TRACEROUTE response structure for this one\n");
 
     // thats about it for the other function to determine the original target, and throw it into the spider web
     ret = 1;
@@ -421,96 +477,102 @@ int Traceroute_Perform(AS_context *ctx) {
                 //printf("traceroute activity timer.. increasing ttl %d\n", tptr->current_ttl);
                 tptr->current_ttl++;
 
-                // lets merge these two variables nicely into a 32bit variable for the ICMP packet  (to know which request when it comes back)
-                // using it like this allows us to perform mass scans using a small amount of space
-                // it ensures we can keep a consistent queue of active traceroutes
-                packet_data = (((tptr->identifier << 16) & 0xFFFF0000) | (tptr->current_ttl & 0x0000FFFF));
+                if (tptr->ttl_list[tptr->current_ttl] != 0) {
 
-                icmp.type = ICMP_ECHO;
-                icmp.code = 0;
-                // i forgot about these.. might be able to use them as identifer/ttl
-                icmp.un.echo.sequence = tptr->identifier;
-                icmp.un.echo.id = tptr->current_ttl;
+                    // lets merge these two variables nicely into a 32bit variable for the ICMP packet  (to know which request when it comes back)
+                    // using it like this allows us to perform mass scans using a small amount of space
+                    // it ensures we can keep a consistent queue of active traceroutes
+                    packet_data = (((tptr->identifier << 16) & 0xFFFF0000) | (tptr->current_ttl & 0x0000FFFF));
 
-                // make packet, or call funnction to handle that..
-                // mark some identifier in tptr for Traceroute_Incoming()
+                    icmp.type = ICMP_ECHO;
+                    icmp.code = 0;
+                    // i forgot about these.. might be able to use them as identifer/ttl
+                    icmp.un.echo.sequence = tptr->identifier;
 
-                if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+                    // lets use the TTL list entry.. its randomized..
+                    icmp.un.echo.id = tptr->ttl_list[tptr->current_ttl];
 
-                    iptr->ttl = tptr->current_ttl;
-                    
-                    if (tptr->target != 0) {
-                        iptr->type = PACKET_TYPE_ICMP_4;
-                        iptr->destination_ip = tptr->target;
-                        iptr->source_ip = ctx->my_addr_ipv4;
-                    } else {
-                        iptr->type = PACKET_TYPE_ICMP_6;
-                        // destination is the target
-                        CopyIPv6Address(&iptr->destination_ipv6, &tptr->targetv6);
-                        // source is our ip address
-                        CopyIPv6Address(&iptr->source_ipv6, &ctx->my_addr_ipv6);
-                    }
+                    // make packet, or call funnction to handle that..
+                    // mark some identifier in tptr for Traceroute_Incoming()
 
-                    // copy ICMP parameters into this instruction packet
-                    memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
+                    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
 
-                    
-
-                    iptr->data_size = sizeof(TraceroutePacketData);
-                    iptr->data = (char *)calloc(1, iptr->data_size);
-                    if (iptr->data != NULL) {
+                        iptr->ttl = tptr->ttl_list[tptr->current_ttl];
                         
-                        pdata = (TraceroutePacketData *)iptr->data;
-                        memcpy(&pdata->msg, "hello", 5);
-                        pdata->identifier = tptr->identifier;
-                        pdata->ttl = tptr->current_ttl;
-                    }
+                        if (tptr->target != 0) {
+                            iptr->type = PACKET_TYPE_ICMP_4;
+                            iptr->destination_ip = tptr->target;
+                            iptr->source_ip = ctx->my_addr_ipv4;
+                        } else {
+                            iptr->type = PACKET_TYPE_ICMP_6;
+                            // destination is the target
+                            CopyIPv6Address(&iptr->destination_ipv6, &tptr->targetv6);
+                            // source is our ip address
+                            CopyIPv6Address(&iptr->source_ipv6, &ctx->my_addr_ipv6);
+                        }
 
-                    
+                        // copy ICMP parameters into this instruction packet
+                        memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
 
-                    // ok so we need a way to queue an outgoing instruction without an attack structure....
-                    // lets build a packet from the instructions we just designed
-                    // lets build whichever type this is by calling the function directly from packetbuilding.c
-                    // for either ipv4, or ipv6
-                    if (iptr->type & PACKET_TYPE_ICMP_6) {
-                        //printf("building icmp6\n");
-                        i = BuildSingleICMP6Packet(iptr);
-                    } else if (iptr->type & PACKET_TYPE_ICMP_4) {
-                        i = BuildSingleICMP4Packet(iptr);
-                    }
+                        
 
-                    if (i == 1) {
-                        if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
-                            optr->buf = iptr->packet;
-                            optr->type = iptr->type;
-                            optr->size = iptr->packet_size;
+                        iptr->data_size = sizeof(TraceroutePacketData);
+                        iptr->data = (char *)calloc(1, iptr->data_size);
+                        if (iptr->data != NULL) {
+                            
+                            pdata = (TraceroutePacketData *)iptr->data;
+                            strcpy(&pdata->msg, "performing traceroute research");
+                            //memcpy(&pdata->msg, "hello", 5);
+                            pdata->identifier = tptr->identifier;
+                            pdata->ttl = iptr->ttl;
+                        }
 
-                            iptr->packet = NULL;
-                            iptr->packet_size = 0;
+                        
 
-                            optr->dest_ip = iptr->destination_ip;
-                            optr->ctx = ctx;
+                        // ok so we need a way to queue an outgoing instruction without an attack structure....
+                        // lets build a packet from the instructions we just designed
+                        // lets build whichever type this is by calling the function directly from packetbuilding.c
+                        // for either ipv4, or ipv6
+                        if (iptr->type & PACKET_TYPE_ICMP_6) {
+                            //printf("building icmp6\n");
+                            i = BuildSingleICMP6Packet(iptr);
+                        } else if (iptr->type & PACKET_TYPE_ICMP_4) {
+                            i = BuildSingleICMP4Packet(iptr);
+                        }
 
-                            // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-                            if (AttackQueueAdd(ctx, optr, 1) == 0) {
-                                // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
-                                if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
-                                    // if we for some reason cannot pthread (prob memory).. lets do it blocking
-                                    AttackQueueAdd(ctx, optr, 0);
+                        if (i == 1) {
+                            if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
+                                optr->buf = iptr->packet;
+                                optr->type = iptr->type;
+                                optr->size = iptr->packet_size;
+
+                                iptr->packet = NULL;
+                                iptr->packet_size = 0;
+
+                                optr->dest_ip = iptr->destination_ip;
+                                optr->ctx = ctx;
+
+                                // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
+                                if (AttackQueueAdd(ctx, optr, 1) == 0) {
+                                    // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
+                                    if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
+                                        // if we for some reason cannot pthread (prob memory).. lets do it blocking
+                                        AttackQueueAdd(ctx, optr, 0);
+                                    }
                                 }
                             }
                         }
+
+                        // dont need this anymore..
+                        PacketBuildInstructionsFree(&iptr);
                     }
 
-                    // dont need this anymore..
-                    PacketBuildInstructionsFree(&iptr);
 
-
-                } else {
-                    // maybe issue w memory? lets roll back and let the next round try
-                    tptr->current_ttl--;
-                    break;
-                }
+                    } else {
+                        // maybe issue w memory? lets roll back and let the next round try
+                        tptr->current_ttl--;
+                        break;
+                    }
             }
         }
 
@@ -547,14 +609,16 @@ int Traceroute_Perform(AS_context *ctx) {
 int Spider_Print(AS_context *ctx) {
     TracerouteSpider *sptr = NULL;
 
-    printf("Traceroute Spider count: %d\n", L_count((LINK *)ctx->traceroute_spider));
+    
 
     // enumerate spider and list information
     sptr = ctx->traceroute_spider;
     while (sptr != NULL) {
-        printf("spider hop %u branches %p next %p\n", sptr->hop, sptr->branches, sptr->next);
+        printf("spider hop %u branches %p [count %d] next %p\n", sptr->hop, sptr->branches, branch_count(sptr->branches), sptr->next);
         sptr = sptr->next;
     }
+
+    printf("Traceroute Spider count: %d\n", L_count((LINK *)ctx->traceroute_spider));
 }
 
 //http://www.binarytides.com/get-local-ip-c-linux/

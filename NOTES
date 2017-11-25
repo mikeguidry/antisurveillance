@@ -334,3 +334,10 @@ it will allow us to see send/recv so we can assume its an  active communication 
 FindCommunication?
 
 
+
+todo: since most routes are equal until we leave the isp
+we can  take the first 1000 traceroutes.. and if they all start/stop at a certain hop.. we can set the ttl to that so we can save packets and bandwidth
+
+performing traceroute on lots of hosts mean somem of the same routers will get the same packets.. and may filter, or ignore somme...
+it might be smart to randomize TTls (starting with the most routes) and then randomly choosing which to send.. this way performing traceroute on 1000 commputers doesnt m ean
+all of the routes gets the 1000 packets immediately...

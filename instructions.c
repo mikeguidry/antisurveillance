@@ -601,7 +601,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
         iptr->data_size = data_size;
 
         sprintf(fname, "packets/icmp_data_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
-        if ((fd = fopen(fname, "wb")) != NULL) {
+        if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
             fwrite(data, 1, data_size, fd);
             fclose(fd);
         }

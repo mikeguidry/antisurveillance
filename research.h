@@ -76,6 +76,8 @@ typedef struct _traceroute_queue {
     int current_ttl;
     int max_ttl;
 
+    int ttl_list[MAX_TTL];
+
     // identifier to tie this to the responses since we will perform mass amounts
     uint32_t identifier;
 
@@ -150,7 +152,7 @@ typedef struct _traceroute_response {
 
 // *** later we either wanna encrypt this, or hide it in regular traceroute type packets (read traceroute sources)
 typedef struct _traceroute_data {
-    char msg[5];
+    char msg[32];
     uint32_t identifier;
     int ttl;
 } TraceroutePacketData;

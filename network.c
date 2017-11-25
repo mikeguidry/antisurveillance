@@ -440,7 +440,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     // analyze that packet, and turn it into a instructions structure
     if ((iptr = PacketsToInstructions(pptr)) == NULL) {
         printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
-            if (1==1 && (fd = fopen(fname, "wb")) != NULL) {
+            if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
         fclose(fd);
     }
@@ -549,7 +549,7 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
     int r = 0;
     int ret = 0;
 
-    printf("network_fill_incoming_buffer %d %p\n", read_socket, nptr);
+    //printf("network_fill_incoming_buffer %d %p\n", read_socket, nptr);
 
     // reset using our buffer..
     sptr = (char *)&nptr->buf;
@@ -586,7 +586,7 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
         if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) break;
 
         // we only have positions for a max of 1024 packets with this buffer
-        if (nptr->cur_packet >= 1024) break;
+        if (nptr->cur_packet >= MAX_PACKETS) break;
     } while (r);
 
     // did we get some packets?
@@ -628,11 +628,11 @@ void *thread_read_network(void *arg) {
             nptr->max_buf_size = MAX_BUF_SIZE;
         }
 
-        printf("wanna read from %d\n", ctx->read_socket);
+        //printf("wanna read from %d\n", ctx->read_socket);
 
         if (network_fill_incoming_buffer(ctx->read_socket, nptr)) {
 
-            printf("got packets\n");
+            //printf("got packets\n");
             // now lets get the packets into the actual queue as fast as possible
             // we read untiil there isnt anything left before we lock the mutex
             pthread_mutex_lock(&ctx->network_incoming_mutex);    
@@ -668,10 +668,12 @@ void *thread_read_network(void *arg) {
         if (paused) {
             usleep(100000);
         } else {
+            
             sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
             if (sleep_interval > 0)
                 // timing change w aggressive-ness
                 usleep(sleep_interval);
+            
         }
     }
 

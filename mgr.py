@@ -24,7 +24,7 @@ signal.signal(signal.SIGINT, signal_handler)
 
 def traceroute_random_ip(a):
 	cnt = a.traceroutecount()
-	while (cnt < 1000):
+	while (cnt < 30):
     		ip = socket.inet_ntoa(struct.pack('>I', random.randint(1, 0xffffffff)))
 		a.traceroutequeue(target=ip)
 		cnt = cnt + 1
