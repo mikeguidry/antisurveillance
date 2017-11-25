@@ -187,6 +187,7 @@ typedef struct _antisurveillance_context {
     TracerouteQueue *traceroute_queue;
     // internal database built from the traceroutes, and analysis
     TracerouteSpider *traceroute_spider;
+    TracerouteSpider *traceroute_spider_hops;
     // responses coming from the network to get analyzed & put into the spiderweb
     TracerouteResponse *traceroute_responses;
 

@@ -145,6 +145,16 @@ int Traceroute_Compare(AS_context *ctx, TracerouteQueue *first, TracerouteQueue 
     // with those nodes
 
     
+
+    // find similar hops (if exist) .. if so
+    //    find all similars identifiers.. and count distance..
+    //    keep track of similar/close distances so we can check if there are alternatives
+
+
+
+
+
+
     // first we verify if any routes are the same
     // then we count the distance between them (first from the highest TTL)
     // we need to know if they are more than likely in the same region
@@ -210,7 +220,7 @@ strategy: first go by how many hops are equal...
 
 // lets see if we have a hop already in the spider.. then we just add this as a branch of it
 TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *hopv6) {
-    TracerouteSpider *sptr = ctx->traceroute_spider;
+    TracerouteSpider *sptr = ctx->traceroute_spider_hops;
 
     // enumerate through spider list tryinig to find a hop match...
     // next we may want to add looking for targets.. but in general
@@ -225,7 +235,7 @@ TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *ho
                 break;
         }
 
-        sptr = sptr->next;
+        sptr = sptr->hops_list;
     }
 
     return sptr;
@@ -237,6 +247,26 @@ int branch_count(TracerouteSpider *sptr) {
         ret++;
         sptr = sptr->branches;
     }
+    return ret;
+}
+
+int Spider_IdentifyTogether(AS_context *ctx, TracerouteSpider *sptr) {
+    TracerouteSpider *srch = ctx->traceroute_spider;
+    int ret = 0;
+
+    while (srch != NULL) {
+
+        if (srch->identifier_id == sptr->identifier_id) {
+            // link it to the identifiers list..
+            sptr->identifiers = srch;
+            srch->identifiers = sptr;
+            ret = 1;
+            break;
+        }
+
+        srch = srch->next;
+    }
+
     return ret;
 }
 
@@ -282,15 +312,15 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
                 // anything ABOVE the ttl that responded is useless... and we only complete when all are done...
                 //printf("------------------\nTraceroute completed %p [%u %u]\n-------------------\n", qptr, rptr->hop, qptr->target);
                 qptr->completed = 1;
-/*
-//for when randomization of ttl is done
-            for (i = 0; i < MAX_TTL; i++) {
-                if (qptr->ttl_list[i] >= rptr->ttl) qptr->ttl_list[i] = 0;
-                if (qptr->ttl_list[i] != 0) left++;
-            }
+                /*
+                //for when randomization of ttl is done
+                            for (i = 0; i < MAX_TTL; i++) {
+                                if (qptr->ttl_list[i] >= rptr->ttl) qptr->ttl_list[i] = 0;
+                                if (qptr->ttl_list[i] != 0) left++;
+                            }
 
-            if (!left) qptr->completed = 1;
-*/
+                            if (!left) qptr->completed = 1;
+                */
 
         }
 
@@ -300,6 +330,8 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             // we need to know which TTL later (for spider web analysis)
             snew->ttl = rptr->ttl;
 
+            // ensure we log identifier so we can connect all for target easily
+            snew->identifier_id = qptr->identifier;
             // take note of the hops address (whether its ipv4, or 6)
             snew->hop = rptr->hop;
             CopyIPv6Address(&snew->hopv6, &rptr->hopv6);
@@ -311,7 +343,12 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             // in case later we wanna access the original queue which created the entry
             snew->queue = qptr;
 
-            // determine if we have already started a structure for this hop in the spider web
+            // link into list containing all..
+            snew->next = ctx->traceroute_spider;
+            ctx->traceroute_spider = snew;
+
+
+            // now lets link into 'hops' list.. all these variations are required for final strategy
             if ((sptr = Spider_Find(ctx, rptr->hop, &rptr->hopv6)) != NULL) {
                 //printf("--------------\nFound Spider %p [%u] branches %d\n", sptr, rptr->hop, branch_count(sptr->branches));
                 // we found it as a spider.. so we can add it to a branch
@@ -319,13 +356,27 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
                 snew->branches = sptr->branches;
                 
                 sptr->branches = snew;
-
             } else {
+
+                snew->hops_list = ctx->traceroute_spider_hops;
+                ctx->traceroute_spider_hops = snew;
+
+            }
+            //else {
                 //printf("---------------\nCouldnt find spider... added new %u\n", rptr->hop);
                 // lets link directly to main list .. first time seeing this hop
-                snew->next = ctx->traceroute_spider;
-                ctx->traceroute_spider = snew;
-            }
+
+            // lets link them all directly into the regular list
+            // this is so the spider_find will always find the first one....
+            // i'll have to either separate the full linked list fromm spider_find() or do somemthing else... in progress
+            //L_link_ordered((LINK **)&ctx->traceroute_spider, (LINK *)snew);
+
+              
+            //}
+
+            // link with other from same identifier...
+            // this is another dimension of the strategy.. required .. branches of a single hop wasnt enough
+            Spider_IdentifyTogether(ctx, snew);
 
             ret = 1;
         }
@@ -351,14 +402,14 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     int n = 0;
     int ttl = 0;
 
-    printf("\nTraceroute Queue %u\n", target);
+    //printf("\nTraceroute Queue %u\n", target);
 
     // allocate memory for this new traceroute target we wish to add into the system
     if ((tptr = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) goto end;
 
     // which IP are we performing traceroutes on
     tptr->target = target;
-    printf("Queuing target: %u\n", target);
+    //printf("Queuing target: %u\n", target);
     // if its an ipv6 addres pasased.. lets copy it (this function will verify its not NULL)
     CopyIPv6Address(&tptr->targetv6, targetv6);
 
@@ -368,7 +419,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     // create a random identifier to find this packet when it comes from many hops
     tptr->identifier = rand()%0xFFFFFFFF;
 
-    printf("queued: %X\n", tptr->identifier);
+    //printf("queued: %X\n", tptr->identifier);
 
     // later we wish to allow this to be set by scripting, or this function
     // for example: if we wish to find close routes later to share... we can set to max = 5-6
@@ -441,6 +492,7 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
         //printf("ipv6 Getting our own packets.. probably loopback\n");
         return 0;
     }
+
     sprintf(fname, "packets/incoming_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
     if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(iptr->data, 1, iptr->data_size, fd);
@@ -731,7 +783,7 @@ int Spider_Print(AS_context *ctx) {
 
 
     // enumerate spider and list information
-    sptr = ctx->traceroute_spider;
+    sptr = ctx->traceroute_spider_hops;
     while (sptr != NULL) {
         if (fd) {
             
@@ -744,12 +796,12 @@ int Spider_Print(AS_context *ctx) {
             strcpy((char *)&Ahop, inet_ntoa(conv));
             conv.s_addr = sptr->target_ip;
             strcpy((char *)&Atarget, inet_ntoa(conv));
-            fprintf(fd2, "HOP,%s,%s,%d\n", Ahop, Atarget, sptr->ttl);
+            fprintf(fd2, "HOP,%s,%s,%u,%d\n", Ahop, Atarget, sptr->identifier_id, sptr->ttl);
         }
 
         count = branch_count(sptr->branches);
         if (count > 10) {
-            printf("spider hop %u branches %p [count %d] next %p\n", sptr->hop, sptr->branches, count, sptr->next);
+            printf("spider hop %u branches %p [count %d] next %p\n", sptr->hop, sptr->branches, count, sptr->hops_list);
         }
 
         bptr = sptr->branches;
@@ -760,6 +812,7 @@ int Spider_Print(AS_context *ctx) {
             if (fd) {
                 fwrite(&sptr->hop, sizeof(uint32_t), 1, fd);
                 fwrite(&sptr->target_ip, sizeof(uint32_t), 1, fd);
+                fwrite(&sptr->identifier_id, sizeof(uint32_t), 1, fd);
                 fwrite(&sptr->ttl, sizeof(int), 1, fd);
             }
             if (fd2) {
@@ -767,16 +820,16 @@ int Spider_Print(AS_context *ctx) {
                 strcpy((char *)&Ahop, inet_ntoa(conv));
                 conv.s_addr = bptr->target_ip;
                 strcpy((char *)&Atarget, inet_ntoa(conv));
-                fprintf(fd2, "BRANCH,%s,%s,%d\n", Ahop, Atarget, sptr->ttl);
+                fprintf(fd2, "BRANCH,%s,%s,%u,%d\n", Ahop, Atarget, sptr->identifier_id, sptr->ttl);
             }
 
             bptr = bptr->branches;
         }
 
-        sptr = sptr->next;
+        sptr = sptr->hops_list;
     }
 
-    printf("Traceroute Spider count: %d\n", L_count((LINK *)ctx->traceroute_spider));
+    printf("Traceroute Spider count: %d\n", L_count((LINK *)ctx->traceroute_spider_hops));
 
     if (fd) fclose(fd);
     if (fd2) fclose(fd2);
@@ -887,6 +940,8 @@ int Traceroute_Init(AS_context *ctx) {
     return ret;
 }
 
+
+
 // count the amount of non completed (active) traceroutes in queue
 int Traceroute_Count(AS_context *ctx, int return_completed) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
@@ -903,8 +958,7 @@ int Traceroute_Count(AS_context *ctx, int return_completed) {
             ret++;
 
         qptr = qptr->next;
-    }
-    
+    }    
     // return count
     return ret;
 }

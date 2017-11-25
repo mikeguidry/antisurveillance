@@ -813,8 +813,8 @@ static PyObject *PyASC_TracerouteQueue(PyAS_Config* self, PyObject *args, PyObje
     IP_prepare(target, &targetv4, &targetv6, &is_ipv6);
     
     if (self->ctx) {
-        printf("S Q %s\n", target);
-        printf("is ipv6? %d target: %u\n", is_ipv6, targetv4);
+        //printf("S Q %s\n", target);
+        //printf("is ipv6? %d target: %u\n", is_ipv6, targetv4);
 
         Traceroute_Queue(self->ctx, targetv4, &targetv6);
     }

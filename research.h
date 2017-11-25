@@ -104,7 +104,9 @@ typedef struct _traceroute_spider {
     // identifier wil link the entire traceroute for a particular target together
     // regardless of branch, or hops.. purely by the value we used to identify the packet
     // and TTL
-    struct _traceroute_spider *identifier;
+    struct _traceroute_spider *identifiers;
+
+    struct _traceroute_spider *hops_list;
 
     // the queue which linked into this tree
     // it wiill get removed fromm the active list to speed up the process
@@ -135,6 +137,8 @@ typedef struct _traceroute_spider {
     // so we will do ASN -> companies (as an identifer)
     // future: all of these strategies can get incorporated into future automated, and mass hacking campaigns
     int asn;
+
+    uint32_t identifier_id;
 } TracerouteSpider;
 
 
