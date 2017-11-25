@@ -995,6 +995,8 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
     int i = 0;
     PyObject *pCtx = NULL;
     PyObject *pPerform = NULL;
+
+    if (eptr == NULL) return -1;
     
     // The script has not been loaded before (the pointer isnt in the structure)
     if (!eptr->pModule) {
