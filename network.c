@@ -87,36 +87,51 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
             // write the packet to the raw network socket.. keeping track of how many bytes
             int bytes_sent = sendto(ctx->raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
 
-            printf("sendto bytes sent %d errno %d socket %d\n", bytes_sent, errno, ctx->raw_socket);
+            //printf("sendto bytes sent %d errno %d socket %d\n", bytes_sent, errno, ctx->raw_socket);
             // I need to perform some better error checking than just the size..
-            if (bytes_sent != optr->size) break;
+            if (bytes_sent != optr->size) {
+                // if this packet fails 3 times.. lets ignore it (unroutable??)
+                //if (optr->failed++ > 2) optr->ignore = 1;
+                //break;
+            } else {
+                //optr->failed = 0;
+                count++;
+            }
 
             // keep track of how many packets.. the calling function will want to keep track
-            count++;
+            
 #ifdef TESTING_DONT_FREE_OUTGOING
             optr->submitted = 1; optr = optr->next; continue;
 #endif
         }
-        // what comes after? we are about to free the pointer so..
-        onext = optr->next;
 
-        // clear buffer
-        PtrFree(&optr->buf);
+        // if it was successful... free it
+        //if (!optr->failed) {
 
-        // free structure..
-        free(optr);
+            // what comes after? we are about to free the pointer so..
+            onext = optr->next;
 
-        // fix up the linked lists
-        if (ctx->network_queue == optr)
-            ctx->network_queue = onext;
+            // clear buffer
+            PtrFree(&optr->buf);
 
-        if (ctx->network_queue_last == optr)
-            ctx->network_queue_last = NULL;
+            // free structure..
+            free(optr);
 
-        //printf("pushed packet\n");
+            // fix up the linked lists
+            if (ctx->network_queue == optr)
+                ctx->network_queue = onext;
 
-        // move to the next link
-        optr = onext;
+            if (ctx->network_queue_last == optr)
+                ctx->network_queue_last = NULL;
+
+            //printf("pushed packet\n");
+
+            // move to the next link
+            optr = onext;
+        /*} else {
+            // else move to the n ext
+            optr = optr->next;
+        }*/
     }
 
     // return how many successful packets were transmitted

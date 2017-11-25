@@ -7,6 +7,9 @@ from pprint import pprint
 from time import sleep, time
 import signal
 import sys
+import socket
+import random
+import struct
 
 #support ctrl-c to stop infinite loop in perform()
 def signal_handler(signal, frame):
@@ -18,6 +21,13 @@ def signal_handler(signal, frame):
 		
 #install signal handler for SIGINT (ctrl-c)		
 signal.signal(signal.SIGINT, signal_handler)
+
+def traceroute_random_ip(a):
+	cnt = a.traceroutecount()
+	while (cnt < 1000):
+    		ip = socket.inet_ntoa(struct.pack('>I', random.randint(1, 0xffffffff)))
+		a.traceroutequeue(target=ip)
+		cnt = cnt + 1
 
 # iterates all attack structures X times, or 0 forever.. but ensure you have other ways to kill it.. just allowing it
 def perform(a,b):
@@ -100,16 +110,18 @@ def script_perform():
 	# how many packets did that generate?
 	print("network %05d attack %05d ") % (a.networkcount(), a.attackcount())
 
-	cnt = a.traceroutecount()
-	#if (cnt == 0):
-	#	print("traceroute count 0 .. adding");
-	#	a.traceroutequeue(target="8.8.8.8")
-	#	a.traceroutequeue(target="9.9.9.9")
-	#	a.traceroutequeue(target="4.2.2.1")
-	#	a.traceroutequeue(target="1.2.3.4")
-	#	a.traceroutequeue(target="172.217.9.14")
-
+	traceroute_random_ip(a)
 	#cnt = a.traceroutecount()
+	#if (cnt == 0):
+		#print("traceroute count 0 .. adding");
+		#a.traceroutequeue(target="8.8.8.8")
+		#a.traceroutequeue(target="9.9.9.9")
+		#a.traceroutequeue(target="4.2.2.1")
+		#a.traceroutequeue(target="1.2.3.4")
+		#a.traceroutequeue(target="172.217.9.14")
+		#traceroute_random_ip(a)
+
+	cnt = a.traceroutecount()
 	print("cnt is %d") % cnt
 	sleep(1)
 

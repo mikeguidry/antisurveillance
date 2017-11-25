@@ -165,3 +165,4 @@ uint32_t get_local_ipv4();
 int Traceroute_Init(AS_context *ctx);
 int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6);
 int Traceroute_Count(AS_context *ctx);
+int Spider_Print(AS_context *ctx);

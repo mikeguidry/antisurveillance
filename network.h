@@ -38,6 +38,8 @@ typedef struct _attack_outgoing_queue {
 
     int ignore;
 
+    int failed;
+
     int type;
 } AttackOutgoingQueue;
 

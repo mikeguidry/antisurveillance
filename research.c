@@ -162,7 +162,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     if (rptr == NULL) return ret;
 
     while (qptr != NULL) {
-        printf("qptr ident: %X  rptr ident %X\n", qptr->identifier, rptr->identifier);
+        //printf("qptr ident: %X  rptr ident %X\n", qptr->identifier, rptr->identifier);
         // found a match since we are more than likely doing mass amounts of traceroutes...
         if (qptr->identifier == rptr->identifier) {
             printf("FOUND queue for this response! qptr  %p\n", qptr);
@@ -407,7 +407,7 @@ int Traceroute_Perform(AS_context *ctx) {
     while (tptr != NULL) {
         // if we have reached max ttl then mark this as completed.. otherwise it could be marked completed if we saw a hop which equals the target
         if (tptr->current_ttl >= MAX_TTL) {
-            printf("traceroute completed\n");
+            //printf("traceroute completed\n");
             tptr->completed = 1;
         }
 
@@ -418,7 +418,7 @@ int Traceroute_Perform(AS_context *ctx) {
 
                 //tptr->ts_activity = time(0);
 
-                printf("traceroute activity timer.. increasing ttl %d\n", tptr->current_ttl);
+                //printf("traceroute activity timer.. increasing ttl %d\n", tptr->current_ttl);
                 tptr->current_ttl++;
 
                 // lets merge these two variables nicely into a 32bit variable for the ICMP packet  (to know which request when it comes back)
@@ -473,7 +473,7 @@ int Traceroute_Perform(AS_context *ctx) {
                     // lets build whichever type this is by calling the function directly from packetbuilding.c
                     // for either ipv4, or ipv6
                     if (iptr->type & PACKET_TYPE_ICMP_6) {
-                        printf("building icmp6\n");
+                        //printf("building icmp6\n");
                         i = BuildSingleICMP6Packet(iptr);
                     } else if (iptr->type & PACKET_TYPE_ICMP_4) {
                         i = BuildSingleICMP4Packet(iptr);
@@ -538,6 +538,14 @@ int Traceroute_Perform(AS_context *ctx) {
 
     ctx->traceroute_responses = NULL;
 
+    Spider_Print(ctx);
+
+    end:;
+    return ret;
+}
+
+int Spider_Print(AS_context *ctx) {
+    TracerouteSpider *sptr = NULL;
 
     printf("Traceroute Spider count: %d\n", L_count((LINK *)ctx->traceroute_spider));
 
@@ -547,14 +555,6 @@ int Traceroute_Perform(AS_context *ctx) {
         printf("spider hop %u branches %p next %p\n", sptr->hop, sptr->branches, sptr->next);
         sptr = sptr->next;
     }
-
-    end:;
-    return ret;
-}
-
-int Spider_Print(AS_context *ctx) {
-    TracerouteSpider *sptr = NULL;
-
 }
 
 //http://www.binarytides.com/get-local-ip-c-linux/
