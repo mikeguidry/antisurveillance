@@ -1,8 +1,11 @@
 CC=gcc
-CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7 -I/usr/include/x86_64-linux-gnu/python2.7 
+CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7_d -I/usr/include/x86_64-linux-gnu/python2.7_d  -fno-strict-aliasing -Wdate-time -g -O0 -fstack-protector-strong -Wformat -Werror=format-security -g -O0 -Wall -Wstrict-prototypes
+
 DEPS = antisurveillance.h
 ODIR=obj
-LIBS=-lz -lpthread -ggdb -lpython2.7 -ldl -lm -lutil
+LIBS=-lz -lpthread -ggdb -lpython2.7_d -lpthread -ldl  -lutil -lm   -L/usr/lib -lpython2.7_d -lpthread -ldl  -lutil -lm  -Xlinker -export-dynamic -Wl,-O1 -Wl,-Bsymbolic-functions
+
+
 
 _OBJ = os_emulation.o packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o 
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))

@@ -47,7 +47,7 @@ int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, 
 
     if (ascii_ip == NULL) return 0;
 
-    is_ipv6 = strchr(ascii_ip,':') ? 1 : 0;
+    is_ipv6 = strchr(ascii_ip, ':') ? 1 : 0;
 
     if (!is_ipv6) {
         *ipv4_dest = inet_addr(ascii_ip);
@@ -717,17 +717,16 @@ static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *k
     AS_attacks *aptr = NULL;
     int i = 0;
     PyObject *Plist_element = NULL;
-    
 
-
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|sssiiii", kwd_list, &source_ip, &destination_ip,
-    &any_ip, &source_port, &destination_port, &any_port, &age)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|sssiiii", kwd_list, &source_ip, &destination_ip, &any_ip, &source_port, &destination_port, &any_port, &age)) {
         PyErr_Print();
         return NULL;
     }
 
+    if (self->ctx == NULL) return NULL;
+
     attack_count = (int)L_count((LINK *)self->ctx->attack_list);
+
     PAttackList = PyList_New(attack_count);
     if (PAttackList == NULL) {
         PyErr_Print();
@@ -735,25 +734,21 @@ static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *k
     }
 
     aptr = self->ctx->attack_list;
+
     while (aptr != NULL) {
-
-        Plist_element = PyString_FromFormat("%d", aptr->id);
-
-        PyList_SetItem(PAttackList, i, Plist_element);
+        PyList_SET_ITEM(PAttackList, i++, PyLong_FromLong(aptr->id));
 
         aptr = aptr->next;
     }
 
-
-    Py_INCREF(PAttackList);
-    return PAttackList;
-    
+    //Py_INCREF(PAttackList);
+    return PAttackList; 
 }
 
 
 
 static PyObject *PyASC_TracerouteDistance(PyAS_Config* self, PyObject *args, PyObject *kwds) {
-    static char *kwd_list[] = {"first_address","second_address","check_targets", 0};
+    static char *kwd_list[] = {"first_address", "second_address", "check_targets", 0};
     int ret = 0;
     char *first_address = NULL;
     struct in6_addr first_ipv6;
@@ -783,13 +778,12 @@ static PyObject *PyASC_TracerouteDistance(PyAS_Config* self, PyObject *args, PyO
     if (first_is_ipv6 != second_is_ipv6) return NULL;
 
     if (self->ctx) {
-
         Sfirst = Traceroute_Find(self->ctx, first_ipv4, &first_ipv6, check_targets);
         Ssecond = Traceroute_Find(self->ctx, second_ipv4, &second_ipv6, check_targets);
 
         if (Sfirst && Ssecond) {
             ret = Traceroute_Compare(self->ctx, Sfirst, Ssecond);
-            printf("traceroute compmare returned %d for %p : %p\n", ret, Sfirst, Ssecond);
+            printf("Distance between %s -> %s: %d\n", first_address, second_address, ret);
         }
 
         
@@ -848,6 +842,21 @@ static PyObject *PyASC_ScriptDisable(PyAS_Config* self){
 }
 
 
+static int _skip = 5;
+
+// enable flushing the network queue to the live wire
+static PyObject *PyASC_Skip(PyAS_Config* self){
+    int ret = 0;
+    if (_skip-- == 0) {
+        ret = 1;
+        _skip = 5;
+    }
+
+    return PyInt_FromLong(ret);
+}
+
+
+
 
 static PyObject *PyASC_TracerouteQueue(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"target",0};
@@ -867,9 +876,6 @@ static PyObject *PyASC_TracerouteQueue(PyAS_Config* self, PyObject *args, PyObje
     IP_prepare(target, &targetv4, &targetv6, &is_ipv6);
     
     if (self->ctx) {
-        //printf("S Q %s\n", target);
-        //printf("is ipv6? %d target: %u\n", is_ipv6, targetv4);
-
         Traceroute_Queue(self->ctx, targetv4, &targetv6);
     }
 
@@ -972,7 +978,7 @@ static PyMethodDef PyASC_methods[] = {
     {"attackenable", (PyCFunction)PyASC_AttackEnable,    METH_NOARGS,    "" },
 
     // obtain a list of all attacks (figure out whether to return it as an array, dict, or whatever)
-    {"attacklist", (PyCFunction)PyASC_AttackList,    METH_NOARGS,    "" },
+    {"attacklist", (PyCFunction)PyASC_AttackList,    METH_VARARGS|METH_KEYWORDS,    "" },
 
     // enable antiscript to continue executing in C, calling script_perform() inn the python script
     {"scriptenable", (PyCFunction)PyASC_ScriptEnable,    METH_NOARGS,    "enable continous execution, and script_perform()" },
@@ -992,6 +998,8 @@ static PyMethodDef PyASC_methods[] = {
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
     {"attackcount", (PyCFunction)PyASC_AttackCount,    METH_NOARGS,    "count attacks" },
     {"traceroutecount", (PyCFunction)PyASC_TracerouteCount,    METH_NOARGS,    "count active traceroutes" },
+
+    {"skip", (PyCFunction)PyASC_Skip,    METH_NOARGS,    "hack hackish hack" },
 
     {NULL}  /* Sentinel */
 };
@@ -1126,7 +1134,7 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
         PyObject_SetAttrString(pModule, "ctx", pCtx);
 
         // lets check if it has a script_perform() function.. if so we will use it later
-        pPerform = PyObject_GetAttrString(pModule,"script_perform");
+        pPerform = PyObject_GetAttrString(pModule, "script_perform");
         if (pPerform && PyCallable_Check(pPerform)) {
             eptr->perform = 1;
         }
@@ -1135,7 +1143,12 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
     
     // If the module didn't load properly.. then theres no reason to attempt to execute anything
     if ((pModule = eptr->pModule) == NULL) goto end;
-    
+
+    eptr->myThreadState = PyThreadState_New(eptr->mainInterpreterState);
+    PyEval_ReleaseLock();
+    PyEval_AcquireLock();
+    eptr->tempState = PyThreadState_Swap(eptr->myThreadState);
+
     //PyEval_AcquireThread(evars->python_thread);
 
     // we want to execute a particular function under this module we imported
@@ -1145,7 +1158,7 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
     if (!(pFunc && PyCallable_Check(pFunc))) {
         goto end;
     }
-    
+
     pValue = PyObject_CallObject(pFunc, pArgs);
     if (pValue != NULL && !PyErr_Occurred()) {
         // we must extract the integer and return it.. 
@@ -1155,6 +1168,15 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
         // usually you have to use Py_DECREF() here.. 
         // so if the application requires a more intersting object type from python, then adjust that here   
     }
+
+    PyThreadState_Swap(eptr->tempState);
+    	PyEval_ReleaseLock();
+
+    // Clean up thread state
+    PyThreadState_Clear(eptr->myThreadState);
+    PyThreadState_Delete(eptr->myThreadState);
+    eptr->myThreadState = NULL;
+
     
     //PyEval_ReleaseThread(evars->python_thread);
 end:;
@@ -1236,6 +1258,17 @@ int Scripting_Init(AS_context *ctx) {
     // initialize python required function
     Py_Initialize();
 
+// ----
+// https://www.codeproject.com/Articles/11805/Embedding-Python-in-C-C-Part-I
+
+
+    // pretty sure this is why interactive console was failing..
+    // I was missing it..
+    PyEval_InitThreads();
+
+
+// ----
+
     ret = 1;
 
     end:;
@@ -1272,5 +1305,174 @@ AS_scripts *Scripting_New(AS_context *ctx) {
     sctx->next = ctx->scripts;
     ctx->scripts = sctx;
 
+    sctx->mainThreadState = PyThreadState_Get();
+    sctx->mainInterpreterState = sctx->mainThreadState->interp;
+
+
     return sctx;
 }
+
+
+
+/*
+
+https://www.codeproject.com/Articles/11805/Embedding-Python-in-C-C-Part-I
+
+I will check out some of the thread state stuff here soon.  I was having some crashing while doing Interactive
+python during execution.. and it'd be nice to be able to interact in real time... especially performing
+mass traceroutees, etc...
+
+
+// A sample of python embedding (calling python functions from within C code)
+// 
+#include <Python.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+
+#ifdef WIN32	// Windows includes
+#include <Windows.h>
+#include <process.h>
+#define sleep(x) Sleep(1000*x)
+HANDLE handle;
+#else	// POSIX includes
+#include <pthread.h>
+pthread_t mythread;
+#endif
+
+void ThreadProc(void*);
+
+#define NUM_ARGUMENTS 5
+typedef struct 
+{
+   int argc;
+   char *argv[NUM_ARGUMENTS]; 
+} CMD_LINE_STRUCT;
+
+int main(int argc, char *argv[])
+{
+    int i;
+    CMD_LINE_STRUCT cmd;
+
+    cmd.argc = argc;
+    for( i = 0; i < NUM_ARGUMENTS; i++ )
+    {
+    	cmd.argv[i] = argv[i];
+    }
+
+    if (argc < 3) 
+    {
+        fprintf(stderr,"Usage: call python_filename function_name [args]\n");
+        return 1;
+    }
+
+    // Create a thread
+#ifdef WIN32
+    // Windows code
+    handle = (HANDLE) _beginthread( ThreadProc,0,&cmd);
+#else
+    // POSIX code
+    pthread_create( &mythread, NULL, ThreadProc, (void*)&cmd );
+#endif
+
+    // Random testing code
+    for(i = 0; i < 10; i++)
+    {
+    	printf("Printed from the main thread.\n");
+		sleep(1);
+    }
+
+    printf("Main Thread waiting for My Thread to complete...\n");
+
+    // Join and wait for the created thread to complete...
+#ifdef WIN32
+    // Windows code
+    WaitForSingleObject(handle,INFINITE);
+#else
+    // POSIX code
+    pthread_join(mythread, NULL);
+#endif
+
+    printf("Main thread finished gracefully.\n");
+
+    return 0;
+}
+
+void ThreadProc( void *data )
+{
+    PyObject *pName, *pModule, *pDict, *pFunc;
+    PyThreadState *mainThreadState, *myThreadState, *tempState;
+    PyInterpreterState *mainInterpreterState;
+    
+    CMD_LINE_STRUCT* arg = (CMD_LINE_STRUCT*)data;
+
+    // Initialize python inerpreter
+    Py_Initialize();
+        
+    // Initialize thread support
+    PyEval_InitThreads();
+
+    // Save a pointer to the main PyThreadState object
+    mainThreadState = PyThreadState_Get();
+
+    // Get a reference to the PyInterpreterState
+    mainInterpreterState = mainThreadState->interp;
+
+    // Create a thread state object for this thread
+    myThreadState = PyThreadState_New(mainInterpreterState);
+
+	// Release global lock
+	PyEval_ReleaseLock();
+    
+	// Acquire global lock
+	PyEval_AcquireLock();
+
+    // Swap in my thread state
+    tempState = PyThreadState_Swap(myThreadState);
+
+    // Now execute some python code (call python functions)
+    pName = PyString_FromString(arg->argv[1]);
+    pModule = PyImport_Import(pName);
+
+    // pDict and pFunc are borrowed references 
+    pDict = PyModule_GetDict(pModule);
+    pFunc = PyDict_GetItemString(pDict, arg->argv[2]);
+
+    if (PyCallable_Check(pFunc)) 
+    {
+        PyObject_CallObject(pFunc, NULL);
+    }
+    else {
+        PyErr_Print();
+    }
+
+    // Clean up
+    Py_DECREF(pModule);
+    Py_DECREF(pName);
+
+    // Swap out the current thread
+    PyThreadState_Swap(tempState);
+
+	// Release global lock
+	PyEval_ReleaseLock();
+
+    // Clean up thread state
+    PyThreadState_Clear(myThreadState);
+    PyThreadState_Delete(myThreadState);
+
+    Py_Finalize();
+    printf("My thread is finishing...\n");
+
+    // Exiting the thread
+#ifdef WIN32
+    // Windows code
+    _endthread();
+#else
+    // POSIX code
+    pthread_exit(NULL);
+#endif
+}
+
+
+*/

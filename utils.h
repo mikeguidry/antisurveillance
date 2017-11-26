@@ -19,3 +19,5 @@ int L_count(LINK *ele);
 void md5hash(char *data, int size);
 void CopyIPv6Address(void *dst, void *src);
 int CompareIPv6Addresses(struct in6_addr *first, struct in6_addr *second);
+void L_link_ordered_offset(LINK **list, LINK *ele, int offset);
+int L_count_offset(LINK *lptr, int offset);

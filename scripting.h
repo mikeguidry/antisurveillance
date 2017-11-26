@@ -17,6 +17,12 @@ typedef struct _as_scripts {
     PyThreadState *python_thread;
     PyObject *pModule;
 
+    PyThreadState *mainThreadState;
+    PyThreadState *myThreadState;
+    PyThreadState *tempState;
+
+    PyInterpreterState *mainInterpreterState;
+
     // did this script have a script_perform() function whenever it was loaded into memory?
     int perform;
 } AS_scripts;

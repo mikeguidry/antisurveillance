@@ -159,3 +159,79 @@ int CompareIPv6Addresses(struct in6_addr *first, struct in6_addr *second) {
     if (!first && !second) return 0;
     return (memcmp(first,second,sizeof(struct in6_addr)) == 0);
 }
+
+
+
+// Orderd linking (first in first out) which is required for packets
+void L_link_ordered_offset(LINK **list, LINK *ele, int offset) {
+    LINK *_last = NULL;
+    void **ptr = NULL;
+    void **ptr2 = NULL;
+
+    // if the original pointer is empty... lets set it
+    // we have to be careful and set here because the offset is for the 'next' only..
+    //  the initial pointer is at 0.. not +offset
+    if (*list == NULL) {
+        *list = ele;
+        return;
+    }
+
+    // use the offset that was passsed.. so we add it to THAT linked list.
+    // its the 'next'
+    ptr = (void *)((unsigned char *)*list + offset);
+    
+    // if 'next' is empty.. set and return
+    if (*ptr == NULL) {
+        *ptr = ele;
+
+        return;
+    }
+    
+    // if not NULL... then..
+    while (*ptr != NULL) {
+
+        // go into that next.. and look at ITS 'next'
+        ptr2 = (void **)((unsigned char *)(*ptr) + offset);
+
+        // if that 'next' is NULL.. we wanna use it
+        if (*ptr2 == NULL) break;
+
+        // ptr = ptr->'next'
+        ptr = (void **)((unsigned char *)(*ptr2) + offset);
+
+        // if its free...
+        if (*ptr == NULL) {
+            *ptr = (void *)ele;
+            return;
+        }
+    }
+
+    // set the last one's 'next' (using the offset of it) to this new element
+    *ptr2 = (void *)ele;    
+}
+
+
+// L_count() which takes offset (instead of the LINK structure ->next)
+// means itll work for multidimensional lists we use in research.c
+int L_count_offset(LINK *lptr, int offset) {
+    int count = 0;
+    void **ptr = NULL, **ptr2 = NULL;
+
+    // if we dont have any at all...
+    if (lptr == NULL) return 0;
+
+    do {
+        count++;
+
+        ptr = (void **)((unsigned char *)lptr + offset);
+
+        // if the next element (using the offset instead of ->next, which is the real 'next') is NULL, then we're done
+        // *** this is redundant.. the do {} while will get the same information
+        if (*ptr == NULL) break;
+
+        // otherwise lets move forward with  it
+        lptr = *ptr;
+    } while (lptr != NULL);
+
+    return count;
+}

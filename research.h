@@ -64,8 +64,9 @@ typedef struct _traceroute_queue {
     struct _traceroute_queue *next;
 
     // IPv4 or 6 address
-    uint32_t target;
-    struct in6_addr targetv6;
+    uint32_t target_ip;
+    struct in6_addr target_ipv6;
+    int target_is_ipv6;
 
     //timestamp added
     int ts;
@@ -91,6 +92,15 @@ typedef struct _traceroute_queue {
     int enabled;
 } TracerouteQueue;
 
+struct _traceroute_spider;
+typedef struct _traceroute_spider TracerouteSpider;
+
+// a way to stop recursion/inf loops while searching
+typedef struct _search_context {
+    TracerouteSpider *first;
+    TracerouteSpider *second;
+    int seen;
+} SearchContext;
 
 // this linked list is for the final data w traceroute responses
 // it has to link next as a regular way to contain the data
@@ -109,6 +119,7 @@ typedef struct _traceroute_spider {
     // and TTL
     struct _traceroute_spider *identifiers;
 
+    // all same hops end up linked to the first one in the list
     struct _traceroute_spider *hops_list;
 
     // the queue which linked into this tree
@@ -121,12 +132,14 @@ typedef struct _traceroute_spider {
     int ts;
 
     // quick reference of IP (of the router.. / hop / gateway)
-    uint32_t hop;
-    struct in6_addr hopv6;
+    uint32_t hop_ip;
+    struct in6_addr hop_ipv6;
+    int hop_is_ipv6;
 
     // what was being tracerouted to conclude this entry
     uint32_t target_ip;
     struct in6_addr target_ipv6;
+    int target_is_ipv6;
 
     // TTL (hops) in which it was found
     int ttl;
@@ -143,6 +156,8 @@ typedef struct _traceroute_spider {
     int asn;
 
     uint32_t identifier_id;
+
+    SearchContext search_context;
 } TracerouteSpider;
 
 
@@ -157,16 +172,18 @@ typedef struct _traceroute_response {
     // to know where the packet relates to
     uint32_t identifier;
 
+    // what ttl was this hop?
     int ttl;
 
     // the hop which responded
-    uint32_t hop;
-    // or its ipv6
-    struct in6_addr hopv6;
+    uint32_t hop_ip;
+    struct in6_addr hop_ipv6;
+    int hop_is_ipv6;
 
-    // if we correlated the identifier with the target
-    uint32_t target;
-    struct in6_addr targetv6;
+    // what was the target fromm the original queue
+    uint32_t target_ip;
+    struct in6_addr target_ipv6;
+    int target_is_ipv6;
 } TracerouteResponse;
 
 

@@ -654,13 +654,7 @@ int BH_Perform(AS_context *ctx) {
             sprintf(Aip, "%d.%d.%d.%d", qptr->a, qptr->b, qptr->c, qptr->d);
             ip = inet_addr(Aip);
         }
-
-
-
-        //
-
-
-
+        
         qptr = qptr->next;
     }
     
@@ -762,22 +756,58 @@ void attacks_init(AS_context *ctx) {
 AS_attacks *AttackFind(AS_context *ctx, int id, char *source_ip, char *destination_ip, char *any_ip, int source_port, int destination_port, int any_port, int age) {
     AS_attacks *aptr = ctx->attack_list;
     uint32_t src = 0, dst = 0, any = 0;
-    int ts= 0;
+    int ts = 0;
     struct timeval tv;
     struct timeval time_diff;
+    int src_is_ipv6 = 0, dst_is_ipv6 = 0;
+    int any_is_ipv6 = 0;
+    uint32_t destination_ipv4 = 0;
+    struct in6_addr destination_ipv6;
+    struct in6_addr source_ipv6;
+    uint32_t source_ipv4 = 0;
+    uint32_t any_ipv4 = 0;
+    struct in6_addr any_ipv6;
 
-
-    if (source_ip) src = inet_addr(source_ip);
-    if (destination_ip) dst = inet_addr(destination_ip);
-    if (any_ip) any = inet_addr(any_ip);
+    // setup for ipv4, and ipv6
+    if (source_ip)
+        IP_prepare(source_ip, &source_ipv4, &source_ipv6, &src_is_ipv6);
+    if (destination_ip)
+        IP_prepare(destination_ip, &destination_ipv4, &destination_ipv6, &dst_is_ipv6);
+    if (any_ip)
+        IP_prepare(any_ip, &any_ipv4, &any_ipv6, &any_is_ipv6);
 
     while (aptr != NULL) {
-
         // does this attack match?
         if (id && aptr->id == id) break;
-        if (src && aptr->src == src) break;
-        if (dst && aptr->dst == dst) break;
-        if (any && ((aptr->dst == any) || (aptr->dst == any))) break;
+        if (any) {
+            if (!any_is_ipv6) {
+                if (CompareIPv6Addresses(&aptr->src6, &any_ipv6) || CompareIPv6Addresses(&aptr->dst6, &destination_ipv6))
+                    break;
+            } else {
+                if ((aptr->dst == any_ipv4) || (aptr->src == any_ipv4)) break;
+            }
+        }
+
+        if (source_ip) {
+            if (!src_is_ipv6) {
+                if (CompareIPv6Addresses(&aptr->src6, &source_ipv6))
+                    break;
+            } else {
+                if ((aptr->src == source_ipv4))
+                    break;
+            }
+        }
+
+        if (destination_ip) {
+            if (!dst_is_ipv6) {
+                if (CompareIPv6Addresses(&aptr->dst6, &destination_ipv6))
+                    break;
+            } else {
+                if (aptr->dst == destination_ipv4)
+                    break;
+            }
+        }
+
         if (destination_port && aptr->destination_port == destination_port) break;
         if (source_port && aptr->source_port == source_port) break;
 
@@ -808,6 +838,8 @@ AS_attacks *AttackFind(AS_context *ctx, int id, char *source_ip, char *destinati
 // another option is to allow moving one attack into another but keeping the other ordered..
 // I just realized if you move DNS into WWW itll be BEHIND www... and if you move WWW into DNS then it wont rewrite ACK/SEQ, and other values
 // properly in all cases.. so ill have to revisit this ***
+
+// *** instead of merge im considering a 'prerequisite' variable to show that DNS should be handled before WWW on next interval
 int MergeAttacks(AS_attacks *dst, AS_attacks *src) {
     if (!dst || !src || !src->packet_build_instructions) return 0;
     // link the source instructions into the destination

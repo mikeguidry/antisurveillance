@@ -713,6 +713,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     tcp_header_size = (p->tcp.doff << 2);
 
     // sanity checks since we are reading fromm the network
+    // *** finish sanity checks
     //if ((data_size < 0) || (data_size != (pptr->size - sizeof(struct icmphdr) - sizeof(struct tcphdr) - sizeof)) goto end;
 
 
@@ -834,6 +835,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 
 
 // Process an IPv4 TCP/IP packet from wire or PCAP
+// *** finish  sanity checks
 PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
     struct packettcp6 *p = NULL;
@@ -943,6 +945,7 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
 
 
 // Process an IPv4 TCP/IP packet from wire or PCAP
+// *** finish sanity checks
 PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
     struct packetudp6 *p = NULL;
@@ -1042,6 +1045,7 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
 
 
 // Process an IPv4 ICMP packet from the wire, or a PCAP
+// *** finish sanity checks
 PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     PacketBuildInstructions *iptr = NULL;
     struct packeticmp6 *p = (struct packeticmp6 *)pptr->buf;
@@ -1125,7 +1129,7 @@ ProcessFunc Processor_Find(int ip_version, int protocol) {
         { 4, IPPROTO_ICMP,  &ProcessICMP4Packet },
         { 6, IPPROTO_TCP,   &ProcessTCP6Packet },
         { 6, IPPROTO_UDP,   &ProcessUDP6Packet },
-        { 6, IPPROTO_ICMP,   &ProcessICMP6Packet },
+        { 6, IPPROTO_ICMP,  &ProcessICMP6Packet },
         { 0, 0, NULL}
     };
 
