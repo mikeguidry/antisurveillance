@@ -25,6 +25,8 @@ http.c because it will likely rely on other functions.
 // which are intended to show other differences..) It could even load other messages in some cases.
 // it depends on how your attacks are targeted.
 // Adjustments needs to be modular in a way to easily support IPv4/6 and ICMP/UDP/TCP on both stacks.
+
+// *** add ipv6 support after IPv6 generator is done (waiting for traceroute research)
 void PacketAdjustments(AS_attacks *aptr) {
     // our new source port must be above 1024 and below 65536 (generally acceptable on all OS) <1024 is privileged
     int client_port = (1024 + rand()%(65535 - 1024));

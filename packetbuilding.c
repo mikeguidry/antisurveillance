@@ -1,3 +1,10 @@
+/*
+
+This file contains all functionality for turning this frameworks 'Instruction' structures into final packets which are
+wire ready.
+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -915,7 +922,7 @@ int PacketTCP4BuildOptions(PacketBuildInstructions *iptr) {
 }
 
 
-
+/*
 int test_icmp4(AS_context *ctx) {
     AS_attacks *aptr = NULL;
     PacketBuildInstructions *iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions));
@@ -1004,4 +1011,4 @@ int test_icmp4(AS_context *ctx) {
 
     return ret;
 }
-
+*/
