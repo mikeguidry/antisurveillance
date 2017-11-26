@@ -88,9 +88,49 @@ int Traceroute_Search(TracerouteSpider *start, TracerouteSpider *looking_for, in
         
             // we will loop until its NULL
             while (search_branch != NULL) {
+/*
 
-                // if the IPv4 address matches.. we found it.. return  the current distance
-                if (search_branch->hop_ip == looking_for->hop_ip) return cur_distance;
+we should start looking for TARGETs .. not necessarily hops..
+hops are just used to connect the various nodes... although if a target is not found we must traceroute it, and hope it matches
+and if it doesnt match we need enough IPs in various locations to attempt to fill in the blank
+(there should be a way to queue for IP investigations, or modify the IP to adjust as close as possible)
+just to ensure we go through the fiber taps which we were targeting
+also we need to modify for other reasons thatll be clear soon to pull all 3 types of attacks together :)
+
+
+192.168.0.1         192.168.0.1         
+cox nola            cox nola            
+cox houston                         cox houston                 cox houston
+                                                                                        cox L
+
+Traceroute_FindByHop
+Traceroute_FindByTarget
+Traceroute_FindByIdentifier
+
+when target -> identifier -> hop 
+
+hop -> branch (doesnt count as increment in distance.. its the same.. but once it leaves that structure
+to spider another identifier (diff ttl hop in same identifier/query) then it increments
+
+branch -> branch doesnt increment
+
+target -> hop increments
+hop -> target increments
+
+
+
+
+*/
+                // if the IPv4 address matches.. we found it.. now we have to walk all paths until we literally reach it
+                // not just a pointer in the linked list... we have to see how many steps to arrive
+                if (search_branch->hop_ip == looking_for->hop_ip) {
+
+
+
+
+
+                    
+                }
 
                 // if not.. then we wanna recursively search this branch.. so increase distance, and  hit this function with this pointer
                 //ret = Traceroute_Search(search_branch, looking_for, cur_distance + 1);
@@ -110,6 +150,9 @@ int Traceroute_Search(TracerouteSpider *start, TracerouteSpider *looking_for, in
         search = search->next;
     }
 
+    return ret;
+    // disabling anything under here .. dev'ing maybe rewrite
+    /*
     // next we wanna search fromm the  identifiers list (it could be 2 routers away) so distance of 2..
     search = start->identifiers;
 
@@ -160,7 +203,7 @@ int Traceroute_Search(TracerouteSpider *start, TracerouteSpider *looking_for, in
     // decrement the distance (just to keep things clean)
     cur_distance--;
 
-    return ret;
+    return ret;*/
 }
 
 // traceroutes are necessary to ensure a single nonde running this code can affect all mass surveillance programs worldwide
