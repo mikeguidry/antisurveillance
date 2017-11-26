@@ -787,14 +787,12 @@ static PyObject *PyASC_TracerouteDistance(PyAS_Config* self, PyObject *args, PyO
         Sfirst = Traceroute_Find(self->ctx, first_ipv4, &first_ipv6, check_targets);
         Ssecond = Traceroute_Find(self->ctx, second_ipv4, &second_ipv6, check_targets);
 
-        if (!Sfirst || !Ssecond) {
-            printf("couldn't find both traeroutes to start distance check\n");
-            return NULL;
+        if (Sfirst && Ssecond) {
+            ret = Traceroute_Compare(self->ctx, Sfirst, Ssecond);
+            printf("traceroute compmare returned %d for %p : %p\n", ret, Sfirst, Ssecond);
         }
-        
-        ret = Traceroute_Compare(self->ctx, Sfirst, Ssecond);
 
-        printf("traceroute compmare returned %d for %p : %p\n", ret, Sfirst, Ssecond);
+        
     }
 
 

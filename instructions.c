@@ -478,6 +478,9 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
 
     //printf("Process UDP4\n");
 
+    // sanity checks since we are reading directly from the network (as opposed to pcap when i developed this)
+    if (pptr->size < sizeof(struct packetudp4)) goto end;
+
     p = (struct packetudp4 *)pptr->buf;
 
     // Lets do this here.. so we can append it to the list using a jump pointer so its faster
@@ -501,6 +504,10 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     // how much data is present in this packet?
     // The UDP header portion has the length of everything except IP header or less (ether header), or WIFI...
     data_size = ntohs(p->udp.len) - sizeof(struct udphdr);
+
+    // sanity checks since we are reading fromm the network
+    if ((data_size < 0) || (data_size != (pptr->size - sizeof(struct packetudp4)))) goto end;
+
 
     if (data_size > 0) {
         if ((data = (char *)malloc(data_size)) == NULL) goto end;
@@ -584,6 +591,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
 
     // get IP addreses out of the packet
     iptr->source_ip = p->ip.saddr;
+    //printf("SRC: %u DST: %u\n", p->ip.saddr, p->ip.daddr);
     iptr->destination_ip = p->ip.daddr;
 
     // how much data is present in this packet?
@@ -653,6 +661,9 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     char *checkbuf = NULL;
     int tcp_header_size = 0;
 
+    // sanity since this is coming off of the wire
+    if (pptr->size < sizeof(struct packet)) goto end;
+
     p = (struct packet *)pptr->buf;
 
     // Determine which TCP flags are set in this packet
@@ -696,10 +707,15 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     // subtract header size from total packet size to get data size..
     data_size -= (p->ip.ihl << 2) + (p->tcp.doff << 2);
 
+
     // start checksum...
     // get tcp header size (so we know if it has options, or not)
     tcp_header_size = (p->tcp.doff << 2);
-    
+
+    // sanity checks since we are reading fromm the network
+    //if ((data_size < 0) || (data_size != (pptr->size - sizeof(struct icmphdr) - sizeof(struct tcphdr) - sizeof)) goto end;
+
+
     if (data_size > 0) {
         // allocate memory for the data
         if ((data = (char *)malloc(data_size )) == NULL) goto end;

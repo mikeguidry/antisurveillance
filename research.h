@@ -76,8 +76,11 @@ typedef struct _traceroute_queue {
     // ttl (starts at 1 and goes up)
     int current_ttl;
     int max_ttl;
+    int sent_ttl;
 
-    int ttl_list[MAX_TTL];
+    int current_retry;
+
+    int ttl_list[MAX_TTL+1];
 
     // identifier to tie this to the responses since we will perform mass amounts
     uint32_t identifier;
@@ -189,3 +192,4 @@ int Spider_Print(AS_context *ctx);
 
 int Traceroute_Search(TracerouteSpider *start, TracerouteSpider *looking_for, int distance);
 int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second);
+int Spider_Load(AS_context *ctx, char *filename);
