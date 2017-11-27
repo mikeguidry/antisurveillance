@@ -216,3 +216,7 @@ TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int 
 TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struct in6_addr *hop_ipv6);
 TracerouteSpider *Traceroute_FindByTarget(AS_context *ctx, uint32_t target_ipv4, struct in6_addr *target_ipv6);
 int Traceroute_RetryAll(AS_context *ctx);
+void Traceroute_Watchdog_Add(AS_context *ctx);
+int Traceroute_Watchdog(AS_context *ctx);
+
+int Traceroute_AdjustActive(AS_context *ctx);

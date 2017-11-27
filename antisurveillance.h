@@ -142,8 +142,8 @@ typedef struct _count_element {
 } CountElement;
 // for dynamically modifying our speed to help progress for diff times of day (local, or world traffic)
 typedef struct _perform_history {
-    HistoricDataRaw[1024];
-    HistoricDataCalculated[1024];
+    CountElement HistoricDataRaw[1024];
+    CountElement HistoricDataCalculated[1024];
     int HistoricRawCurrent;
     int HistoricCurrent;
 } TraceroutePerformaceHistory;

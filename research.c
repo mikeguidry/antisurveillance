@@ -767,7 +767,7 @@ void ConsolidateTTL(TracerouteQueue *qptr) {
 
 // lets randomly disable all queues, and enable thousands of others...
 // this is so we dont perform lookups immediately for every traceroute target..
-int RandomlyDisableEnableQueues(AS_context *ctx) {
+int Traceroute_AdjustActive(AS_context *ctx) {
     int ret = 0;
     int disabled = 0;
     int count = 0;
@@ -905,6 +905,9 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             // link with other from same traceroute queue (by its identifier ID)...
             // this is another dimension of the strategy.. required .. branches of a single hop wasnt enough
             Spider_IdentifyTogether(ctx, snew);
+
+            // log for watchdog to adjust traffic speed
+            Traceroute_Watchdog_Add(ctx);
 
             ret = 1;
         }
@@ -1216,7 +1219,7 @@ int Traceroute_Perform(AS_context *ctx) {
 
         // lets randomly enable or disable queues.... 20% of the time we reach this..
         if ((rand()%100) < 20)
-            RandomlyDisableEnableQueues(ctx);
+            Traceroute_AdjustActive(ctx);
     }
 
     // count how many traceroutes are in queue and active
@@ -1682,6 +1685,21 @@ TracerouteSpider *Traceroute_Find(AS_context *ctx, uint32_t address, struct  in6
 
 }
 
+// we call this to let the watchdog know that some incoming traceroute was successful
+void Traceroute_Watchdog_Add(AS_context *ctx) {
+    int i = 0;
+    int ts = time(0);
+
+    // which part of array to use? we loop back around if over max with %1024
+    i = ctx->Traceroute_Traffic_Watchdog.HistoricRawCurrent % 1024;
+
+    // parameters
+    ctx->Traceroute_Traffic_Watchdog.HistoricDataRaw[i].ts = ts;
+    ctx->Traceroute_Traffic_Watchdog.HistoricDataRaw[i].count=1;
+    ctx->Traceroute_Traffic_Watchdog.HistoricDataRaw[i].max_setting = ctx->traceroute_max_active;
+
+    // thats all.. simple
+}
 
 // monitors historic amount of queries that we get so we can adjust
 // the active amount of traceroutes we are performing automatically for
@@ -1691,20 +1709,21 @@ int Traceroute_Watchdog(AS_context *ctx) {
     int i = 0;
     TraceroutePerformaceHistory *hptr = &ctx->Traceroute_Traffic_Watchdog;
     int total = 0;
-    int interval_seconds = 60*60*3; // we use 3 min intervals to calclulate
+    int interval_seconds = 30;
     int ts = time(0); // current time for calculations
 
     int historic_count = 0;
     int interval_sum = 0;
     int interval_max = 0;
     int prior_ts = 0;
+
     // if there arent any entries then there is nothing to do
     if (hptr->HistoricRawCurrent == 0) return 0;
 
     for (i = 0; i < 1024; i++) {
         if ((ts - hptr->HistoricDataRaw[i].ts) > interval_seconds) {
-            interval_sum += HistoricDataRaw[i].count;
-            interval_max = HistoricDataRaw[i].max_setting;
+            interval_sum += hptr->HistoricDataRaw[i].count;
+            interval_max = hptr->HistoricDataRaw[i].max_setting;
         }
     }
 
@@ -1716,7 +1735,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
     // counts using that as a reference... but how to set the first?
 
     if (hptr->HistoricCurrent) {
-        prior_ts = hptr->HistoricCalculatedRaw[0].ts;
+        prior_ts = hptr->HistoricDataCalculated[0].ts;
     }
 
     if ((ts - prior_ts) > interval_seconds) {
@@ -1727,6 +1746,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
         // increase historic counter.. so we can keep track of more
         hptr->HistoricCurrent++;
+        if (hptr->HistoricCurrent == 1024) hptr->HistoricCurrent = 0;
     }
 
     // now we need to use the data we have to determine we wish to dynamically modify the max traceroute queue
@@ -1736,7 +1756,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
         // so we know we modified it..
         ret = 1;
         // adjust active queue using the new setting
-        RandomlyDisableEnableQueues();
+        Traceroute_AdjustActive(ctx);
     }
 
 
