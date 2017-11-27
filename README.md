@@ -39,3 +39,8 @@ IDFWU - https://www.youtube.com/watch?v=L-bvse-sM7Q
 FYI: this not the last step in ruining mass surveillance.  but you guys do need a break after this.. so you'll ahve a little time while
 i move on to other things.
 
+
+funny enough.. US intelligencce agencies forfeiting damages of mass surveillance to allow a few morons to decide to keep drugging me
+is beyond me... and that alone will force me to lobby, and destroy everyone involved until they are all out of government anyways.
+
+it doesn't matter what happens... everyone involved is done.  trust me.

@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
     // find another way to get this later...
     sctx = ctx->scripts;
 
-    Spider_Load(ctx, "traceroute.txt");
+    //Spider_Load(ctx, "traceroute.txt");
 
     //exit(0);
 

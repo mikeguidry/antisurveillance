@@ -207,6 +207,9 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 int Traceroute_Count(AS_context *ctx, int);
 int Spider_Print(AS_context *ctx);
 
-int Traceroute_Search(TracerouteSpider *start, TracerouteSpider *looking_for, int distance);
+int Traceroute_Search(AS_context *, TracerouteSpider *start, TracerouteSpider *looking_for, int distance);
 int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second);
 int Spider_Load(AS_context *ctx, char *filename);
+TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int ttl);
+TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struct in6_addr *hop_ipv6);
+TracerouteSpider *Traceroute_FindByTarget(AS_context *ctx, uint32_t target_ipv4, struct in6_addr *target_ipv6);

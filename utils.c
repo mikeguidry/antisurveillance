@@ -178,7 +178,7 @@ void L_link_ordered_offset(LINK **list, LINK *ele, int offset) {
 
     // use the offset that was passsed.. so we add it to THAT linked list.
     // its the 'next'
-    ptr = (void *)((unsigned char *)*list + offset);
+    ptr = (void *)((unsigned char *)(*list) + offset);
     
     // if 'next' is empty.. set and return
     if (*ptr == NULL) {

@@ -841,6 +841,17 @@ static PyObject *PyASC_ScriptDisable(PyAS_Config* self){
     return Py_None; 
 }
 
+// enable flushing the network queue to the live wire
+static PyObject *PyASC_SpiderLoad(PyAS_Config* self){
+    //if (self->ctx) self->ctx->script_enable = 0;
+
+    if (self->ctx)
+        Spider_Load(self->ctx, "traceroute.txt");
+
+    Py_INCREF(Py_None);
+    return Py_None; 
+}
+
 
 static int _skip = 5;
 
@@ -994,6 +1005,7 @@ static PyMethodDef PyASC_methods[] = {
 
     {"traceroutedistance", (PyCFunction)PyASC_TracerouteDistance, METH_VARARGS|METH_KEYWORDS, "find distance between two traceroute analysis structures" },
 
+    {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_NOARGS,    "" },
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
     {"attackcount", (PyCFunction)PyASC_AttackCount,    METH_NOARGS,    "count attacks" },

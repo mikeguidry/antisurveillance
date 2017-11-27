@@ -623,7 +623,7 @@ void *thread_read_network(void *arg) {
         if (nptr == NULL) {
             // if we cannot allocate a buffer for some reason...
             if ((nptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue))) == NULL) {
-                printf("cannot allocate buffer space for reading incoming packets!\n");
+                //printf("cannot allocate buffer space for reading incoming packets!\n");
                 goto end;
             }
 
@@ -695,7 +695,7 @@ void *thread_read_network(void *arg) {
     // free nptr if it wasnt passed along before getting here
     PtrFree(&nptr);
 
-    printf("network reading thread ending\n");
+    //printf("network reading thread ending\n");
 
     // exit thread
     pthread_exit(NULL);
