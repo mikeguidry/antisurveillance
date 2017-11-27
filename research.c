@@ -11,6 +11,50 @@ the platform to either hide in other packets, or attempt to force other issues s
 are taking place elsewhere.. etc
 
 I'll try to require as little hard coded information as possible.  I'd like everything to work without requiring any updates -- ever.
+
+
+
+It took 15 hours at 50 active traceroute queue to complete 53,000 traceroutes (DNS results from top 1mil sites using massdns)
+Obviously 53,000 isnt all of them.. ill have to add more timeout interval later...
+
+The data seemed incomplete so I think I finalized the save, and load mechanism.  It can also attempt to retry any missing TTL
+entries for targets whenever the queue reaches zero.  It will also randomly disable/enable different queues.  I need to perfect
+the system.  I figured sending out more than 50 (maybe 1000) packets a second should mean 1000 responses..
+
+Fact is.. the hops/routers seem to rate limit ICMP, and supposed to block something like 66% in general.  I know
+sending more packets per second to close routes (0-3 hops) means they get every single traceroute lookup.
+
+I'll finish and make the RandomizeTTLs first try 8-15 on large amounts of active queue.  I'm pretty sure the targets, and distant
+routers/hops will respond therefore if you are sending to a high amount of these then the amount of active traceroutes SHOULD
+in fact be increased....
+
+I might just revamp the entire 'queue' system and move it from an active count based to attempting high ttl amounts more, and
+going for the LOW ttl amounts later.  It could allow normal until it finds all hosts which are probably the local ISP..
+for instance.. trace routing 3000 hosts, and 1000-1500 hit this particular hop then its more than likely going to be uused for most..
+the 1500 (near 50%) was what i was seeing for hops 0-3.. so obviously there was some that were ignored by the routes and should be retried
+therefore this 1500(or 50%) should be dynamically calculated between the first 3 hops and the initial few thousand lookups
+then it can reuse that number to determine which hops are probably the closest to prioritize as last..
+
+so it should get handled after the higher TTL.. so it can set a 'minimum' TTL until the majority of the queue is completed..
+
+it also means that we can auto 'invisibly' add these hops until we get the actual data.. which means we can do more with less...
+
+I hoped to finish today but I should by tommorrow...
+
+btw 15 hours at 3-4kb/sec isnt that serious.. LOL its not as bad as it sounds.. packets are small
+
+for strategies using research:
+we wanna construct a context of the strategy we are trying to build
+if we cannot find all traceroute, or other information we can then retry, or queue and allow a callback to continue
+the strategies whenever the information is complete...
+
+this is also necessary for one of the upcomming attacks
+
+if a single hop is missing, or two.. we can use other results and just fill in the gaps if they share simmilar/near nodes/hops/routers
+
+traceroute_max_active shouild count incoming packets/successful lookups and autoatically adjust itself to get the most packets
+
+
 */
 
 
@@ -121,13 +165,13 @@ int Traceroute_Retry(AS_context *ctx, uint32_t identifier) {
     // if we didnt find it.. its a problem..  ret = -1
     if (qptr == NULL) goto end;
 
-    if (ctx->max_traceroute_retry && (qptr->retry_count > ctx->max_traceroute_retry)) {
+    if (ctx->traceroute_max_retry && (qptr->retry_count > ctx->traceroute_max_retry)) {
         ret = 0;
         goto end;
     }
 
     // loop for all TTLs and check if we have a packet from it
-    for (i = 0; i < MAX_TTL; i++) {
+    for (i = ctx->traceroute_min_ttl; i < MAX_TTL; i++) {
         sptr = Traceroute_FindByIdentifier(ctx, identifier, i);
 
         // if we reached the target... its completed
@@ -745,7 +789,9 @@ int RandomlyDisableEnableQueues(AS_context *ctx) {
     }
 
     // now enable the same amount of random queues
-    while (disabled) {
+    // ret is used here so we dont go over max amt of queue allowed..
+    // this allowedw this function to get reused during modifying traffic parameters
+    while (disabled && (ret < ctx->traceroute_max_active)) {
 
         // pick a random queue
         r = rand()%count;
@@ -911,7 +957,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     ctx->traceroute_queue = tptr;
 
     // enable default TTL list
-    for (i = 0; i < MAX_TTL; i++) tptr->ttl_list[i] = i;
+    for (i = ctx->traceroute_min_ttl; i < MAX_TTL; i++) tptr->ttl_list[i] = (i - ctx->traceroute_min_ttl);
 
     // randomize those TTLs
     RandomizeTTLs(tptr);
@@ -1002,7 +1048,6 @@ static int ccount = 0;
 // iterate through all current queued traceroutes handling whatever circumstances have surfaced for them individually
 // todo: allow doing random TTLS (starting at 5+) for 10x... most of the end hosts or hops will respond like this
 // we can prob accomplish much more
-
 int Traceroute_Perform(AS_context *ctx) {
     TracerouteQueue *tptr = ctx->traceroute_queue;
     TracerouteResponse *rptr = ctx->traceroute_responses, *rnext = NULL;
@@ -1178,10 +1223,10 @@ int Traceroute_Perform(AS_context *ctx) {
     tcount = Traceroute_Count(ctx, 0, 0);
 
     // if the amount of active is lower than our max, then we will activate some other ones
-    if (tcount < MAX_ACTIVE_TRACEROUTES) {
+    if (tcount < ctx->traceroute_max_active) {
         
         // how many to ativate?
-        tcount = MAX_ACTIVE_TRACEROUTES - tcount;
+        tcount = ctx->traceroute_max_active - tcount;
     
         // start on the  linked list...enumerating each
         tptr = ctx->traceroute_queue;
@@ -1386,6 +1431,8 @@ int Spider_Load(AS_context *ctx, char *filename) {
             L_link_ordered_offset((LINK **)&Sptr->branches, (LINK *)snew, offsetof(TracerouteSpider, branches));
         } else {
             // add to waiting hops
+            //snew->hops_list = ctx->traceroute_spider_hops;
+            //ctx->traceroute_spider_hops = sptr;
             L_link_ordered_offset((LINK **)&ctx->traceroute_spider_hops, (LINK *)snew, offsetof(TracerouteSpider, hops_list));
         }
 
@@ -1544,7 +1591,9 @@ int Traceroute_Init(AS_context *ctx) {
     // the data is extremely important to ensure attacks are successful
     // especially if we wanna do the most damage from a single node
     // distributed? good luck.
-    ctx->max_traceroute_retry = 20;
+    ctx->traceroute_max_retry = 20;
+    ctx->traceroute_min_ttl = 8;
+    ctx->traceroute_max_active = 150;
 
     ret = 1;
 
@@ -1631,4 +1680,66 @@ TracerouteSpider *Traceroute_Find(AS_context *ctx, uint32_t address, struct  in6
 
     return sptr;
 
+}
+
+
+// monitors historic amount of queries that we get so we can adjust
+// the active amount of traceroutes we are performing automatically for
+// highest speed possible
+int Traceroute_Watchdog(AS_context *ctx) {
+    int ret = 0;
+    int i = 0;
+    TraceroutePerformaceHistory *hptr = &ctx->Traceroute_Traffic_Watchdog;
+    int total = 0;
+    int interval_seconds = 60*60*3; // we use 3 min intervals to calclulate
+    int ts = time(0); // current time for calculations
+
+    int historic_count = 0;
+    int interval_sum = 0;
+    int interval_max = 0;
+    int prior_ts = 0;
+    // if there arent any entries then there is nothing to do
+    if (hptr->HistoricRawCurrent == 0) return 0;
+
+    for (i = 0; i < 1024; i++) {
+        if ((ts - hptr->HistoricDataRaw[i].ts) > interval_seconds) {
+            interval_sum += HistoricDataRaw[i].count;
+            interval_max = HistoricDataRaw[i].max_setting;
+        }
+    }
+
+    // interval sum contains the amount within the last X seconds at any given moment
+    // now we would like to know between a specific time period
+
+    // on the second entry we know when the first waas calculated
+    // so we can automatically choose that minute:second and start all of our interval
+    // counts using that as a reference... but how to set the first?
+
+    if (hptr->HistoricCurrent) {
+        prior_ts = hptr->HistoricCalculatedRaw[0].ts;
+    }
+
+    if ((ts - prior_ts) > interval_seconds) {
+        // lets log...
+        hptr->HistoricDataCalculated[hptr->HistoricCurrent].count = interval_sum;
+        hptr->HistoricDataCalculated[hptr->HistoricCurrent].ts = ts;
+        hptr->HistoricDataCalculated[hptr->HistoricCurrent].max_setting = ctx->traceroute_max_active;
+
+        // increase historic counter.. so we can keep track of more
+        hptr->HistoricCurrent++;
+    }
+
+    // now we need to use the data we have to determine we wish to dynamically modify the max traceroute queue
+    // we want at least 3 to attempt to modify...
+    if (hptr->HistoricCurrent > 3) {
+
+        // so we know we modified it..
+        ret = 1;
+        // adjust active queue using the new setting
+        RandomlyDisableEnableQueues();
+    }
+
+
+    end:;
+    return ret;
 }

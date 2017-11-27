@@ -58,9 +58,9 @@ int main(int argc, char *argv[]) {
 
     // set retry max to 0 since we are loading from file...
     // *** change
-    ctx->max_traceroute_retry = 0;
+    ctx->traceroute_max_retry = 0;
     Spider_Load(ctx, "traceroute");
-    ctx->max_traceroute_retry = 5;
+    ctx->traceroute_max_retry = 5;
 
 
     //exit(0);

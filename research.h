@@ -1,5 +1,5 @@
 
-#define MAX_ACTIVE_TRACEROUTES 50
+
 
 // one single dns record (response about a hostname, prepared to stay on record)
 // it can be reused for preparing further attacks against the same sites, etc
@@ -215,3 +215,4 @@ int Spider_Load(AS_context *ctx, char *filename);
 TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int ttl);
 TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struct in6_addr *hop_ipv6);
 TracerouteSpider *Traceroute_FindByTarget(AS_context *ctx, uint32_t target_ipv4, struct in6_addr *target_ipv6);
+int Traceroute_RetryAll(AS_context *ctx);

@@ -875,6 +875,17 @@ static PyObject *PyASC_Skip(PyAS_Config* self){
     return PyInt_FromLong(ret);
 }
 
+// retry all missing traceroutes
+static PyObject *PyASC_TracerouteRetry(PyAS_Config* self){
+
+    if (self->ctx) Traceroute_RetryAll(self->ctx);
+
+    Py_INCREF(Py_None);
+    return Py_None; 
+}
+
+
+
 
 
 
@@ -926,6 +937,9 @@ static PyMethodDef PyASC_methods[] = {
 
     // save all outgoing packets as a packet capture (for later), debugging, or repllaying on machines without hte software
     {"pcapsave", (PyCFunction)PyASC_PCAPsave,    METH_O,    "" },
+
+    // retry all tracerouttes
+    {"tracerouteretry", (PyCFunction)PyASC_NetworkClear,    METH_NOARGS,    "retry missing TTL traceroute responses" },
 
     // clear all outgoing queue
     {"networkclear", (PyCFunction)PyASC_NetworkClear,    METH_NOARGS,    "clear outgoing network packets" },

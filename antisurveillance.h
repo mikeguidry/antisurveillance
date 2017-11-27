@@ -135,6 +135,19 @@ typedef struct _connection_properties {
     int server_emulated_operating_system;
 } ConnectionProperties;
 
+typedef struct _count_element {
+    int count;
+    int ts;
+    int max_setting;
+} CountElement;
+// for dynamically modifying our speed to help progress for diff times of day (local, or world traffic)
+typedef struct _perform_history {
+    HistoricDataRaw[1024];
+    HistoricDataCalculated[1024];
+    int HistoricRawCurrent;
+    int HistoricCurrent;
+} TraceroutePerformaceHistory;
+
 // lets contain all 'global' variables inside of a context structure
 // this will allow compiling as a library and including in other applications
 typedef struct _antisurveillance_context {
@@ -209,7 +222,14 @@ typedef struct _antisurveillance_context {
 
     struct ifreq if_mac;
 
-    int max_traceroute_retry;
+    int traceroute_max_retry;
+
+    // if we are doing a lot of lookups.. we can start at higher TTL
+    int traceroute_min_ttl;
+
+    int traceroute_max_active;
+
+    TraceroutePerformaceHistory Traceroute_Traffic_Watchdog;
 
 } AS_context;
 
