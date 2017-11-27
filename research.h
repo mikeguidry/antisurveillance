@@ -90,6 +90,8 @@ typedef struct _traceroute_queue {
 
     // so we dont do too many at once.. so we can insert a huge list and let it analyze
     int enabled;
+
+    int retry_count;
 } TracerouteQueue;
 
 struct _traceroute_spider;
@@ -204,7 +206,7 @@ void get_local_ipv6(struct in6_addr *dst);
 uint32_t get_local_ipv4();
 int Traceroute_Init(AS_context *ctx);
 int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6);
-int Traceroute_Count(AS_context *ctx, int);
+int Traceroute_Count(AS_context *ctx, int, int);
 int Spider_Print(AS_context *ctx);
 
 int Traceroute_Search(AS_context *, TracerouteSpider *start, TracerouteSpider *looking_for, int distance);

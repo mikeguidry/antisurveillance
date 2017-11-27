@@ -194,7 +194,12 @@ def init():
     script_enable(a)
 
     #a.traceroutequeue(target="8.8.8.8")
-    top_sites_research(a)
+    cnt = a.traceroutecount(disabled=0)
+    print("count %d") % cnt
+    if (cnt == 0):
+        print("loading\n")
+        top_sites_research(a)
+        print("loading\n")
 
     return 1
     

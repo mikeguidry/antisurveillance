@@ -85,16 +85,10 @@ TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int 
         //printf("checking %u against %u\n", sptr->identifier_id, id);
         
         if ((sptr->identifier_id == id)) {
-            printf("Found ID %X [%d %d?]\n", sptr->identifier_id, sptr->ttl, ttl);
+            //printf("Found ID %X [%d %d?]\n", sptr->identifier_id, sptr->ttl, ttl);
 
             if (sptr->ttl == ttl)
                 break;
-
-            if (sptr->search_context.second != id) {
-                break;
-            } else {
-                //printf("already set to %x\n", sptr->search_context.second);
-            }
 
         }
 
@@ -107,6 +101,92 @@ TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int 
     return sptr;
 }
 
+
+// retry for all missing TTL for a particular traceroute queue..
+int Traceroute_Retry(AS_context *ctx, uint32_t identifier) {
+    int i = 0;
+    int ret = -1;
+    int cur_ttl = 0;
+    TracerouteSpider *sptr = NULL;
+    TracerouteQueue *qptr = NULL;
+    int missing = 0;
+
+    // find the initial queue structure
+    qptr = ctx->traceroute_queue;
+    while (qptr != NULL) {
+        if (qptr->identifier == identifier) break;
+        qptr = qptr->next;
+    }
+
+    // if we didnt find it.. its a problem..  ret = -1
+    if (qptr == NULL) goto end;
+
+    if (ctx->max_traceroute_retry && (qptr->retry_count > ctx->max_traceroute_retry)) {
+        ret = 0;
+        goto end;
+    }
+
+    // loop for all TTLs and check if we have a packet from it
+    for (i = 0; i < MAX_TTL; i++) {
+        sptr = Traceroute_FindByIdentifier(ctx, identifier, i);
+
+        // if we reached the target... its completed
+        // *** add ipv6
+        if (sptr && sptr->target_ip == qptr->target_ip) {
+            break;
+        }
+
+        // if we cannot find traceroute responses this query, and this TTL
+        if (sptr == NULL) {
+            // we put it back into the list..
+            qptr->ttl_list[cur_ttl++] = i;
+            missing++;
+        }
+        
+        // if the source IP matches the target.. then it is completed
+
+    }
+    if (missing) {
+        // set queue structure to start over, and have a max ttl of how many we have left
+        qptr->current_ttl = 0;
+        qptr->max_ttl = cur_ttl;
+        qptr->retry_count++;
+
+        RandomizeTTLs(qptr);
+
+        // its not completed yet..
+        qptr->completed = 0;
+    }
+
+
+    ret = 1;
+
+    end:;
+    return ret;
+}
+
+
+// loop and try to find all missing traceroute packets
+// we wanna do this when our queue reaches 0
+int Traceroute_RetryAll(AS_context *ctx) {
+    int i = 0;
+    int ret = -1;
+    TracerouteQueue *qptr = NULL;
+
+    // loop for all in queue
+    qptr = ctx->traceroute_queue;
+    while (qptr != NULL) {
+
+        // retry command for this queue.. itll mark to retransmit all missing
+        i = Traceroute_Retry(ctx, qptr->identifier);
+
+        if (i) ret++;
+
+        qptr = qptr->next;
+    }
+
+    return ret;
+}
 
 // walk all traceroutes with the same 'identifier' in order
 int walk_traceroute_hops(AS_context *ctx, TracerouteSpider *sptr, TracerouteSpider *needle, int cur_distance) {
@@ -589,6 +669,107 @@ int Spider_IdentifyTogether(AS_context *ctx, TracerouteSpider *sptr) {
 }
 
 
+// randomize TTLs.. for adding a new traceroutee queue, and loading data files with missing TTLs we wish to retry
+void RandomizeTTLs(TracerouteQueue *tptr) {
+    int i = 0, n = 0, ttl = 0;
+
+    // only randomize if more than 5
+    if (tptr->max_ttl <= 5) return;
+
+    // randomize TTLs between 0 and 15 (so each hop doesnt get all 50 at once.. higher chance of scanning  probability of success)    
+    for (i = 0; i < (tptr->max_ttl / 2); i++) {
+        // array randomization
+        // pick which 0-15 we will exchange the current one with
+        n = rand()%tptr->max_ttl;
+        // use 'ttl' as temp variable to hold that TTL we want to swap
+        ttl = tptr->ttl_list[n];
+
+        // swap it with this current enumeration by the i for loop
+        tptr->ttl_list[n] = tptr->ttl_list[i];
+
+        // move from swapped variable to complete the exchange
+        tptr->ttl_list[i] = ttl;
+    }
+}
+
+// take the TTL list, and remove completed, or found to decrease the 'max_ttl' variable so later we can randomly
+// enable/disable queues so we can scan a lot more (randomly as well)
+void ConsolidateTTL(TracerouteQueue *qptr) {
+    int ttl_list[MAX_TTL+1];
+    int i = 0;
+    int cur = 0;
+
+    // loop and remove all completed ttls...
+    while (i < qptr->max_ttl) {
+        if (qptr->ttl_list[i] != 0)
+            ttl_list[cur++] = qptr->ttl_list[i];
+        i++;
+    }
+
+    // copy the ones we found back into the queue structure
+    i = 0;
+    while (i < cur) {
+        qptr->ttl_list[i] = ttl_list[i];
+        i++;
+    }
+
+    // set current to now so it can start
+    qptr->max_ttl = cur;
+    qptr->current_ttl = 0;
+    qptr->ts_activity = 0;
+
+    // done..
+}
+
+// lets randomly disable all queues, and enable thousands of others...
+// this is so we dont perform lookups immediately for every traceroute target..
+int RandomlyDisableEnableQueues(AS_context *ctx) {
+    int ret = 0;
+    int disabled = 0;
+    int count = 0;
+    int r = 0;
+    TracerouteQueue *qptr = ctx->traceroute_queue;
+
+    if (!qptr) return -1;
+
+    count = L_count((LINK *)qptr);
+
+    // disable ALL currently enabled queues.. counting the amount
+    while (qptr != NULL) {
+        // if its enabled, and not completed.. lets disable
+        if (qptr->enabled && !qptr->completed) {
+            qptr->enabled = 0;
+            disabled++;
+        }
+        qptr = qptr->next;
+    }
+
+    // now enable the same amount of random queues
+    while (disabled) {
+
+        // pick a random queue
+        r = rand()%count;
+
+        // find it..
+        qptr = ctx->traceroute_queue;
+        while (r-- && qptr) { qptr = qptr->next; }
+
+        // some issues that shouldnt even take place..
+        if (!qptr) continue;
+
+        if (!qptr->completed) {
+            qptr->enabled = 1;
+            disabled--;
+            ret++;
+        }
+
+        // we will do that same loop until we have enough enabled..
+    }
+    
+    return ret;
+}
+
+
 // Analyze a traceroute response again  st the current queue and build the spider web of traceroutes
 // for further strategies
 int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
@@ -631,7 +812,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
                 //qptr->completed = 1;
 
                 //  If we are doing TTLs in random order rather than incremental.. then lets enumerate over all of the ttls for this queue
-                for (i = 0; i < MAX_TTL; i++) {
+                for (i = 0; i < qptr->max_ttl; i++) {
                     // if a TTL is higher than the current then it should be disqualified..
                     if (qptr->ttl_list[i] >= rptr->ttl) qptr->ttl_list[i] = 0;
                     // and while we are at it.. lets count how  many is left.. (TTLs to send packets for)
@@ -729,54 +910,11 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     tptr->next = ctx->traceroute_queue;
     ctx->traceroute_queue = tptr;
 
-    i = 0;
-    // lets randomize TTLs to bypass some filters..
-    while (i < MAX_TTL) {
-        // first set each to the proper ttl..
-        tptr->ttl_list[i] = i;
+    // enable default TTL list
+    for (i = 0; i < MAX_TTL; i++) tptr->ttl_list[i] = i;
 
-        i++;
-    }
-
-    // this randomizes ttls so routes that get a lot of packets wont get them all at once
-    
-    i = 0;
-    // now we must randomize the TTLs.. lets do the first 15 hops.. since thats where the MAJORITY will be
-    // this means we wont send too many hosts several ICMP packets
-    // example: if it respoonds at 26.. we disqualify 27-30
-    //          but we may send it 25,24,23 like this... but if randomize 0-15.. 
-    //          we will probably get the majority low.. and we can go fromm 0-30 at 15+
-    //          i was mainly worried about too many packets going to the 0-3 (internal near the commputer sending)
-    // I believe this will allow us to perform more traceroutes overall.. since we are not going in a consistent pack
-    //   of 50 to each route everytime
-
-    // its even quite possible this could decrease the amount of packets required.. by disqualifying higher ttls
-    // earlier... ill try to incorporate further strategies later...
-
-
-    // randomize TTLs between 0 and 15 (so each hop doesnt get all 50 at once.. higher chance of scanning  probability of success)    
-    for (i = 0; i < 15; i++) {
-        // array randomization
-        // pick which 0-15 we will exchange the current one with
-        n = rand()%15;
-        // use 'ttl' as temp variable to hold that TTL we want to swap
-        ttl = tptr->ttl_list[n];
-
-        // swap it with this current enumeration by the i for loop
-        tptr->ttl_list[n] = tptr->ttl_list[i];
-
-        // move from swapped variable to complete the exchange
-        tptr->ttl_list[i] = ttl;
-    }
-
-    // same as above just for 20-30..
-    for (i = 20; i <MAX_TTL; i++) {
-        n = i + (rand()%(MAX_TTL - i));
-        ttl = tptr->ttl_list[n];
-        tptr->ttl_list[n] = tptr->ttl_list[i];
-        tptr->ttl_list[i] = ttl;
-    }
-
+    // randomize those TTLs
+    RandomizeTTLs(tptr);
 
     end:;
     return ret;
@@ -862,6 +1000,9 @@ static int ccount = 0;
 
 
 // iterate through all current queued traceroutes handling whatever circumstances have surfaced for them individually
+// todo: allow doing random TTLS (starting at 5+) for 10x... most of the end hosts or hops will respond like this
+// we can prob accomplish much more
+
 int Traceroute_Perform(AS_context *ctx) {
     TracerouteQueue *tptr = ctx->traceroute_queue;
     TracerouteResponse *rptr = ctx->traceroute_responses, *rnext = NULL;
@@ -884,12 +1025,12 @@ int Traceroute_Perform(AS_context *ctx) {
     memset(&icmp, 0, sizeof(struct icmphdr));
 
 
-    printf("Traceroute_Perform: Queue %d [completed %d]\n", L_count((LINK *)tptr), Traceroute_Count(ctx, 1));
+    printf("Traceroute_Perform: Queue %d [completed %d]\n", L_count((LINK *)tptr), Traceroute_Count(ctx, 1, 1));
 
     // loop until we run out of elements
     while (tptr != NULL) {        
         // if we have reached max ttl then mark this as completed.. otherwise it could be marked completed if we saw a hop which equals the target
-        if (tptr->current_ttl >= MAX_TTL) {
+        if (tptr->current_ttl >= tptr->max_ttl) {
             tptr->completed = 1;
         }
 
@@ -904,8 +1045,14 @@ int Traceroute_Perform(AS_context *ctx) {
                 // in case we have more in a row for this queue that are 0 (because it responded fromm a higher ttl already)
                 // and we just need its lower hops...
                 // this is mainly when we are randomizing the TTL so our closer routes arent getting all 50 at once..                
-                while ((tptr->current_ttl < MAX_TTL) && tptr->ttl_list[tptr->current_ttl] == 0)
+                while ((tptr->current_ttl < tptr->max_ttl) && tptr->ttl_list[tptr->current_ttl] == 0) {
+                    // disqualify this ttl before we move to the next..
+                    // this is for easily enabling/disabling large amounts of queues so we can
+                    // attempt to scan more simultaneously (and retry easily for largee amounts)
+                    tptr->ttl_list[tptr->current_ttl] = 0;
+
                     tptr->current_ttl++;
+                }
 
                 // if the current TTL isnt disqualified already
                 if (tptr->ttl_list[tptr->current_ttl] != 0) {
@@ -1018,11 +1165,17 @@ int Traceroute_Perform(AS_context *ctx) {
     ctx->traceroute_responses = NULL;
 
     // *** we will log to the disk every 20 calls (for dev/debugging)
-    if ((ccount % 20)==0)
+    // moved to every 40 because the randomly disabling and enabling should be more than MAX_TTL at least
+    if ((ccount++ % 40)==0) {
         Spider_Print(ctx);
 
+        // lets randomly enable or disable queues.... 20% of the time we reach this..
+        if ((rand()%100) < 20)
+            RandomlyDisableEnableQueues(ctx);
+    }
+
     // count how many traceroutes are in queue and active
-    tcount = Traceroute_Count(ctx, 0);
+    tcount = Traceroute_Count(ctx, 0, 0);
 
     // if the amount of active is lower than our max, then we will activate some other ones
     if (tcount < MAX_ACTIVE_TRACEROUTES) {
@@ -1072,7 +1225,7 @@ int Spider_Print(AS_context *ctx) {
 
     // open file for writing traceroute queues...
     sprintf(fname, "traceroute_queue.txt", "w");
-    fd2 = fopen(fname, "w");
+    fd = fopen(fname, "w");
 
     // filename for debug data
     sprintf(fname, "traceroute.txt", "w");
@@ -1084,11 +1237,12 @@ int Spider_Print(AS_context *ctx) {
     while (qptr != NULL) {
 
         if (fd) {
-            conv.s_addr = sptr->target_ip;            
+            conv.s_addr = qptr->target_ip;            
             strcpy((char *)&Atarget, inet_ntoa(conv));
-            fprintf(fd2, "QUEUE,%s,%u,%d,%d,%d,%d\n", Atarget,
-                qptr->identifier, qptr->ts, qptr->completed,
-                qptr->enabled, qptr->ts_activity);
+
+            fprintf(fd, "QUEUE,%s,%u,%d,%d,%d,%d,%d\n", Atarget,
+                qptr->identifier, qptr->retry_count, qptr->completed,
+                qptr->enabled, qptr->ts_activity, qptr->ts);
 
         }
 
@@ -1144,7 +1298,8 @@ int Spider_Print(AS_context *ctx) {
 
     // how many traceroute hops do we have? (unique.. dont count branches)
     // *** fix this.. we neeed an L_count() for _offset() because this will count the total fromm the first element
-    printf("Traceroute Spider count: %d\n", L_count((LINK *)ctx->traceroute_spider_hops));
+    printf("Traceroute Spider count: %d\n", L_count_offset((LINK *)ctx->traceroute_spider_hops, offsetof(TracerouteSpider, hops_list)));
+    printf("Traceroute total count: %d\n", L_count((LINK *)ctx->traceroute_spider));
 
     // close file if it was open
     if (fd) fclose(fd);
@@ -1158,22 +1313,37 @@ int Spider_Print(AS_context *ctx) {
 // load data from a file.. this is for development.. so I can use the python interactive debugger, and write various C code
 // for the algorithms required to determine the best IP addresses for manipulation of the mass surveillance networks
 int Spider_Load(AS_context *ctx, char *filename) {
-    FILE *fd = NULL;
+    FILE *fd = NULL, *fd2 = NULL;
     char buf[1024];
     char *sptr = NULL;
     char type[16], hop[16],target[16];
     int ttl = 0;
     uint32_t identifier = 0;
+    int ts =0, enabled = 0, activity = 0, completed = 0, retry = 0;
     int i = 0;
     int n = 0;
     TracerouteSpider *Sptr = NULL;
     TracerouteSpider *snew = NULL;
     TracerouteSpider *slast = NULL, *Blast = NULL;
+    TracerouteQueue *qnew = NULL;
+    char fname[32];
 
+    // traceroute responses (spider)
+    sprintf(fname, "%s.txt", filename);
     // open ascii format file
-    if ((fd = fopen(filename, "r")) == NULL) return -1;
-        
-    // read all lines
+    if ((fd = fopen(fname, "r")) == NULL) goto end;
+
+    // traceroute queue
+    sprintf(fname, "%s_queue.txt", filename);
+    // open ascii format file
+    if ((fd2 = fopen(fname, "r")) == NULL) goto end;
+
+
+    
+            
+
+
+    // first we load the traceroute responses.. so we can use the list for re-enabling ones which were  in progress
     while (fgets(buf,1024,fd)) {
         i = 0;
         // if we have \r or \n in the buffer (line) we just read then lets set it to NULL
@@ -1223,7 +1393,60 @@ int Spider_Load(AS_context *ctx, char *filename) {
         memset(buf,0,1024);
     }
 
-    fclose(fd);
+
+
+    // read all lines
+    while (fgets(buf,1024,fd2)) {
+        i = 0;
+        // if we have \r or \n in the buffer (line) we just read then lets set it to NULL
+        if ((sptr = strchr(buf, '\r')) != NULL) *sptr = 0;
+        if ((sptr = strchr(buf, '\n')) != NULL) *sptr = 0;
+
+        // change all , (like csv) to " " spaces for sscanf()
+        n = strlen(buf);
+        while (i < n) {
+            if (buf[i] == ',') buf[i] = ' ';
+            i++;
+        }
+
+        // grab entries
+                 //QUEUE,212.12.28.68,0,0,1,0,0,1511751671
+
+        sscanf(buf, "%s %s %"SCNu32" %d %d %d %d %d", &type, &target, &identifier,
+         &retry, &completed, &enabled, &activity, &ts);
+
+        if ((qnew = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) break;
+
+        // set parameters from data file
+        qnew->completed = completed;
+        qnew->retry_count = retry;
+        qnew->ts = ts;
+        qnew->ts_activity = activity;
+
+        // we wanna control enabled here when we look for all TTL hops
+        qnew->enabled = 0;//enabled;
+
+        qnew->target_ip = inet_addr(target);
+        qnew->identifier = identifier;
+
+// set all TTLs in the list to their values
+// ***
+// turn randomizing into its own function later and set here..
+//for (n = 0; n < MAX_TTL; n++) qnew->ttl_list[n] = n;
+//qnew->max_ttl = MAX_TTL;
+
+
+        qnew->next = ctx->traceroute_queue;
+        ctx->traceroute_queue = qnew;
+
+        Traceroute_Retry(ctx, qnew->identifier);
+    }
+
+
+    end:;
+
+    if (fd) fclose(fd);
+    if (fd2) fclose(fd2);
 
     return 1;
 }
@@ -1316,6 +1539,13 @@ int Traceroute_Init(AS_context *ctx) {
     ctx->my_addr_ipv4 = get_local_ipv4();
     get_local_ipv6(&ctx->my_addr_ipv6);
 
+    // max of 20 retries for traceroute
+    // it retries when all queues are completed..
+    // the data is extremely important to ensure attacks are successful
+    // especially if we wanna do the most damage from a single node
+    // distributed? good luck.
+    ctx->max_traceroute_retry = 20;
+
     ret = 1;
 
     end:;
@@ -1332,18 +1562,31 @@ int Traceroute_Init(AS_context *ctx) {
 
 
 // count the amount of non completed (active) traceroutes in queue
-int Traceroute_Count(AS_context *ctx, int return_completed) {
+int Traceroute_Count(AS_context *ctx, int return_completed, int count_disabled) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
     int ret = 0;
+    //int pass = 0;
 
     // loop until we enuerate the entire list of queued traceroute activities
     while (qptr != NULL) {
-        // check if they are completed.. if not we increase the counter
-        if (!return_completed && !qptr->completed && qptr->enabled)
-            ret++;
 
-        if (return_completed && qptr->completed)
+        // auto passs
+        //pass = 1;
+
+        // disqualify..
+        //if ((!count_disabled && !qptr->enabled) || (count_disabled && )
+        
+
+        // check if they are completed.. if not we increase the counter
+        if (!return_completed && !qptr->completed) {
+            if (count_disabled && !qptr->enabled) ret++;
+
+            if (!count_disabled && qptr->enabled) ret++;
+        }
+
+        if (return_completed && qptr->completed) {
             ret++;
+        }
 
         qptr = qptr->next;
     }

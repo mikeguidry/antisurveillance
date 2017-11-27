@@ -208,10 +208,19 @@ static PyObject *PyASC_AttackCount(PyAS_Config* self){
 }
 
 // count outgoing network queue
-static PyObject *PyASC_TracerouteCount(PyAS_Config* self){
+static PyObject *PyASC_TracerouteCount(PyAS_Config* self,  PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = { "completed", "disabled", 0 };
     long ret = 0;
+    int completed = 0;
+    int disabled = 0;
 
-    if (self->ctx) ret = Traceroute_Count(self->ctx, 0);
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ii", kwd_list, &completed, &disabled)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (self->ctx) ret = Traceroute_Count(self->ctx, completed, disabled)   ;
 
     return PyInt_FromLong(ret);
 }
@@ -1009,7 +1018,7 @@ static PyMethodDef PyASC_methods[] = {
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
     {"attackcount", (PyCFunction)PyASC_AttackCount,    METH_NOARGS,    "count attacks" },
-    {"traceroutecount", (PyCFunction)PyASC_TracerouteCount,    METH_NOARGS,    "count active traceroutes" },
+    {"traceroutecount", (PyCFunction)PyASC_TracerouteCount,    METH_VARARGS|METH_KEYWORDS,    "count active traceroutes" },
 
     {"skip", (PyCFunction)PyASC_Skip,    METH_NOARGS,    "hack hackish hack" },
 

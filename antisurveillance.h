@@ -209,6 +209,8 @@ typedef struct _antisurveillance_context {
 
     struct ifreq if_mac;
 
+    int max_traceroute_retry;
+
 } AS_context;
 
 
