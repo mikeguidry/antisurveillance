@@ -240,6 +240,12 @@ void *thread_network_flush(void *arg) {
     AS_context *ctx = (AS_context *)arg;
     int count = 0;
     int i = 0;
+    struct sched_param params;
+    pthread_t this_thread = pthread_self();
+
+    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_setschedparam(this_thread, SCHED_FIFO, &params);
+
 
     while (1) {
         pthread_mutex_lock(&ctx->network_queue_mutex);
@@ -270,7 +276,7 @@ void *thread_network_flush(void *arg) {
 int prepare_socket(AS_context *ctx) {
     int rawsocket = 0;
     int one = 1;
-    int bufsize = 1024*1024*10;
+    int bufsize = 1024*1024*1;
 
     
 
@@ -314,7 +320,7 @@ int prepare_read_socket(AS_context *ctx) {
     struct ifreq if_mac;
     struct ifreq if_ip;
     int one = 1;
-    int bufsize = 1024*1024*10;
+    int bufsize = 1024*1024*1   ;
 
     // set ifr structure to 0
     memset (&ifr, 0, sizeof (struct ifreq));
@@ -616,6 +622,8 @@ void *thread_read_network(void *arg) {
     IncomingPacketQueue *nptr = NULL;
     int paused = 0;
     int sleep_interval = 0;
+    struct sched_param params;
+    pthread_t this_thread = pthread_self();
 
     //printf("network reading thread\n");
     // open raw reading socket
@@ -623,6 +631,10 @@ void *thread_read_network(void *arg) {
 
     // if sock didnt open, or we cant allocae space for reading packets
     if (!i) goto end;
+ 
+     // We'll set the priority to the maximum.
+    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_setschedparam(this_thread, SCHED_FIFO, &params);
 
     // lets read forever.. until we stop it for some reason
     while (1) {

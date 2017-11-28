@@ -582,6 +582,10 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
 
     end:;
 
+    if (ret != 1) {
+        printf("Error! PKT build icmp\n");
+    }
+
     PtrFree(&final_packet);
     
     return ret;

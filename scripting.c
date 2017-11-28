@@ -31,8 +31,8 @@ if pythoon didnt require indentions i'd prob try it more often
 #include "pcap.h"
 #include "packetbuilding.h"
 #include "instructions.h"
-
 #include "utils.h"
+#include "research.h"
 #include <Python.h>
 
 #ifndef offsetof
@@ -873,8 +873,10 @@ static int _skip = 20;
 // hack for temporary interactive console to debug
 static PyObject *PyASC_Skip(PyAS_Config* self){
     int ret = 0;
+
     if (_skip-- == 0) {
         ret = 1;
+
         _skip = 20;
     }
 
@@ -890,8 +892,132 @@ static PyObject *PyASC_TracerouteRetry(PyAS_Config* self){
     return Py_None; 
 }
 
+// show status of current traceroute queue
+static PyObject *PyASC_TracerouteStatus(PyAS_Config* self) {
+    int i = 0;
+    PyObject *PAttackList = NULL;
+    long ttl_count[MAX_TTL];
+    TracerouteQueue *qptr = NULL;
+    int count  = 0;
+    int n = 0;
+
+    memset(ttl_count, 0, sizeof(long)*MAX_TTL);
+
+    if (self->ctx) {
+        qptr = self->ctx->traceroute_queue;
+
+        if (qptr != NULL) {
+            // remove unused TTL fromm evveryone
+            ConsolidateTTL(qptr);
+
+            while (qptr != NULL) {
+                for (i = 0; i < qptr->max_ttl; i++) {
+                    n = qptr->ttl_list[i];
+
+                    ttl_count[n]++;
+                }
+                
+                qptr = qptr->next;
+            }
+                
+            PAttackList = PyList_New(MAX_TTL);
+            if (PAttackList == NULL) {
+                PyErr_Print();
+                return NULL;
+            }
+            for (i = 0; i < MAX_TTL; i++) {
+                printf("ttl_count[%d] = %d\n",
+                i, ttl_count[i]);
+                
+                PyList_SET_ITEM(PAttackList, i, PyLong_FromLong(ttl_count[i]));
+            }
+
+            return PAttackList; 
+        }
+    }
+
+    Py_INCREF(Py_None);
+    return Py_None; 
+}
 
 
+// show status of current traceroute queue
+static PyObject *PyASC_TracerouteStatus2(PyAS_Config* self) {
+    int i = 0;
+    PyObject *PStatusList = NULL;
+    long ttl_count[MAX_TTL];
+    TracerouteSpider *sptr = NULL;
+    int count  = 0;
+    int n = 0;
+
+    memset(ttl_count, 0, sizeof(long)*MAX_TTL);
+
+    if (self->ctx) {
+        sptr = self->ctx->traceroute_spider;
+
+        if (sptr != NULL) {
+            while (sptr != NULL) {
+                for (i = 0; i < MAX_TTL; i++) {
+
+                    ttl_count[sptr->ttl]++;
+                }
+                
+                sptr = sptr->next;
+            }
+                
+            PStatusList = PyList_New(MAX_TTL);
+            if (PStatusList == NULL) {
+                PyErr_Print();
+                return NULL;
+            }
+            for (i = 0; i < MAX_TTL; i++) {
+                printf("2. ttl_count[%d] = %d\n", i, ttl_count[i]);
+                
+                PyList_SET_ITEM(PStatusList, i, PyLong_FromLong(ttl_count[i]));
+            }
+
+            return PStatusList; 
+        }
+    }
+
+    Py_INCREF(Py_None);
+    return Py_None; 
+}
+
+
+
+static PyObject *PyASC_TracerouteResetRetryCount(PyAS_Config* self){
+    int ret = 0;
+    if (self->ctx) {
+        ret = TracerouteResetRetryCount(self->ctx);
+
+    }
+
+    return PyInt_FromLong(ret);
+}
+
+
+
+
+static PyObject *PyASC_TracerouteSetMax(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"max",0};
+    int ret = 0;
+    char *target = NULL;
+    int set_max = 0;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwd_list, &set_max)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (self->ctx) {
+        self->ctx->traceroute_max_active = set_max;
+        Traceroute_AdjustActiveCount(self->ctx);
+        ret = set_max;
+    }
+
+    return PyInt_FromLong(ret);
+}
 
 
 
@@ -1034,7 +1160,16 @@ static PyMethodDef PyASC_methods[] = {
 
     {"traceroutedistance", (PyCFunction)PyASC_TracerouteDistance, METH_VARARGS|METH_KEYWORDS, "find distance between two traceroute analysis structures" },
 
+    {"traceroutesetmax", (PyCFunction)PyASC_TracerouteSetMax, METH_VARARGS|METH_KEYWORDS, "set max active traceroute queue" },
+
+    {"tracerouteresetretrycount", (PyCFunction)PyASC_TracerouteResetRetryCount, METH_NOARGS, "reset all retry counts" },
+
+    {"traceroutestatus", (PyCFunction)PyASC_TracerouteStatus,    METH_NOARGS,    "" },
+
+    {"traceroutestatus2", (PyCFunction)PyASC_TracerouteStatus2,    METH_NOARGS,    "" },
+
     {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_NOARGS,    "" },
+
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
     {"attackcount", (PyCFunction)PyASC_AttackCount,    METH_NOARGS,    "count attacks" },

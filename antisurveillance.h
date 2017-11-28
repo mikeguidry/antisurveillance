@@ -247,3 +247,4 @@ int Subsystems_Perform(AS_context *);
 AS_context *Antisurveillance_Init();
 int Test_Generate(AS_context *ctx, int argc, char *argv[]);
 int Test_PCAP(AS_context *ctx, char *filename);
+int Threads_Start(AS_context *);

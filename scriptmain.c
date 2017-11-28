@@ -57,10 +57,15 @@ int main(int argc, char *argv[]) {
     sctx = ctx->scripts;
 
     // set retry max to 0 since we are loading from file...
-    // *** change
-    ctx->traceroute_max_retry = 0;
-    Spider_Load(ctx, "traceroute");
-    ctx->traceroute_max_retry = 5;
+    // *** change 
+    if (argc > 2) {
+        ctx->traceroute_max_retry = 0;
+        Spider_Load(ctx, "traceroute");
+        ctx->traceroute_max_retry = 20;
+    }
+
+    // start threads after loading.. so we dont have useless packets to process
+    Threads_Start(ctx);
 
 
     //exit(0);

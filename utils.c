@@ -82,12 +82,12 @@ int PtrDuplicate(char *ptr, int size, char **dest, int *dest_size) {
     char *buf = NULL;
     
     if ((ptr == NULL) || (size <= 0)) {
-        //printf("ERR pptr %p size %d\n", ptr, size);
+        printf("ERR pptr %p size %d\n", ptr, size);
         return 0;
     }
 
     if ((buf = (char *)malloc(size )) == NULL) {
-        //printf("ERR couldnt allocate!\n");
+        printf("ERR couldnt allocate!\n");
         return -1;
     }
 

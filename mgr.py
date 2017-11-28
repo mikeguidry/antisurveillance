@@ -11,6 +11,15 @@ import socket
 import random
 import struct
 import os.path
+import readline # optional, will allow Up/Down/History in the console
+import code
+import encodings
+import gc
+
+#temporary fix for crash.. have to ensure all of my code is using correct references (inc/decrease)
+# i needed to disable so interactive console works :)
+gc.disable()
+
 
 #support ctrl-c to stop infinite loop in perform()
 def signal_handler(signal, frame):
@@ -115,7 +124,8 @@ def script_enable(a):
 
 # i wanted to way to enable/disable the debug console mid execution..
 def debug_console(a):
-    if (os.path.exists("debug_console")):            
+    e = os.path.exists("debug_console")
+    if e is True:
         skip = a.skip()
         if (skip == 1):
             variables = globals().copy()
@@ -133,7 +143,7 @@ def script_perform():
     a.setctx(ctx)
 
     debug_console(a)
-    
+
     # how many packets did that generate?
     print("network %05d attack %05d traceroute queue %05d\n") % (a.networkcount(), a.attackcount(), a.traceroutecount())
     
@@ -214,12 +224,10 @@ def init():
     script_enable(a)
 
     #a.traceroutequeue(target="8.8.8.8")
-    cnt = a.traceroutecount(disabled=0)
-    print("count %d") % cnt
-    if (cnt == 0):
-        print("loading\n")
-        top_sites_research(a)
-        print("loading\n")
+    #cnt = a.traceroutecount(disabled=0)
+    #print("count %d") % cnt
+    #if (cnt == 0):
+    #    top_sites_research(a)
 
     return 1
     

@@ -1,4 +1,7 @@
 
+struct _traceroute_spider;
+typedef struct _traceroute_spider TracerouteSpider;
+
 
 
 // one single dns record (response about a hostname, prepared to stay on record)
@@ -92,10 +95,10 @@ typedef struct _traceroute_queue {
     int enabled;
 
     int retry_count;
+
+    TracerouteSpider *responses[MAX_TTL+1];
 } TracerouteQueue;
 
-struct _traceroute_spider;
-typedef struct _traceroute_spider TracerouteSpider;
 
 // a way to stop recursion/inf loops while searching
 typedef struct _search_context {
@@ -119,7 +122,7 @@ typedef struct _traceroute_spider {
     // identifier wil link the entire traceroute for a particular target together
     // regardless of branch, or hops.. purely by the value we used to identify the packet
     // and TTL
-    struct _traceroute_spider *identifiers;
+    //struct _traceroute_spider *identifiers;
 
     // all same hops end up linked to the first one in the list
     struct _traceroute_spider *hops_list;
@@ -221,3 +224,6 @@ int Traceroute_Watchdog(AS_context *ctx);
 int Traceroute_AdjustActiveCount(AS_context *ctx);
 TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *hopv6);
 int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew);
+
+int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier);
+int TracerouteResetRetryCount(AS_context *ctx);

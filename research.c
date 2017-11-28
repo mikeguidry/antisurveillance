@@ -60,6 +60,12 @@ The data and information from the automated traceroute can get reused in several
 even through tor, etc) can use information/routes from this to pick, and calculate the attacks to perform to automate
 finding the target
 
+
+we shouild dns lookup traceroutees to get more IPs (Reverse, and regular..) we can also look for dns responses with multiple ips
+need to scan for open dns servers (to get geoip dns automatically)
+
+
+
 */
 
 
@@ -126,27 +132,11 @@ TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struc
 
 // find a spider structure by its identifier (query identification ID fromm traceroute packets)
 TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int ttl) {
-    TracerouteSpider *sptr = ctx->traceroute_spider;
+    TracerouteQueue *qptr = TracerouteQueueFindByIdentifier(ctx, id);
 
-    while (sptr != NULL) {
+    if (qptr == NULL) return NULL;
 
-
-        //printf("checking %u against %u\n", sptr->identifier_id, id);
-        
-        if ((sptr->identifier_id == id)) {
-            //printf("Found ID %X [%d %d?]\n", sptr->identifier_id, sptr->ttl, ttl);
-
-            if (sptr->ttl == ttl)
-                break;
-
-        }
-
-        sptr = sptr->next;
-    }
-
-    if (sptr != NULL) sptr->search_context.second = id;
-
-    return sptr;
+    return qptr->responses[ttl];
 }
 
 
@@ -159,24 +149,12 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
     //TracerouteQueue *qptr = NULL;
     int missing = 0;
 
+    //printf("traceroute_retry\n");
     if (qptr == NULL) {
         //printf("qptr is null? \n");
         return -1;
     }
     
-/*
-    // find the initial queue structure
-    qptr = ctx->traceroute_queue;
-    while (qptr != NULL) {
-        if (qptr->identifier == identifier) break;
-        qptr = qptr->next;
-    }
-
-    // if we didnt find it.. its a problem..  ret = -1
-    if (qptr == NULL) {
-        goto end;
-    }
-*/
     if (ctx->traceroute_max_retry && (qptr->retry_count > ctx->traceroute_max_retry)) {
         //printf("reached max retry.. max: %d qptr: %d\n", ctx->traceroute_max_retry, qptr->retry_count);
         ret = 0;
@@ -185,7 +163,8 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
 
     // loop for all TTLs and check if we have a packet from it
     for (i = ctx->traceroute_min_ttl; i < MAX_TTL; i++) {
-        sptr = Traceroute_FindByIdentifier(ctx, qptr, i);
+        //sptr = Traceroute_FindByIdentifier(ctx, qptr->identifier, i);
+        sptr = qptr->responses[i];
 
         // if we reached the target... its completed
         // *** add ipv6
@@ -217,7 +196,7 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
         // its not completed yet..
         qptr->completed = 0;
 
-        //printf("Enabling incomplete traceroute %u\n", qptr->target_ip);
+        //printf("Enabling incomplete traceroute %u [%d total]\n", qptr->target_ip, cur_ttl);
     } else {
         //printf("no missing on %u\n", qptr->target_ip);
     }
@@ -238,11 +217,11 @@ int Traceroute_RetryAll(AS_context *ctx) {
     TracerouteQueue *qptr = NULL;
 
     //printf("retry all\n");
+
     // loop for all in queue
     qptr = ctx->traceroute_queue;
-    while (qptr != NULL) {
 
-    //printf("will retry %p\n", qptr);
+    while (qptr != NULL) {
         // retry command for this queue.. itll mark to retransmit all missing
         i = Traceroute_Retry(ctx, qptr);
 
@@ -371,9 +350,6 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
     int cur_distance = distance;
     int ret = 0;
     int ttl_diff = 0;
-
-
-    printf("search\n");
 
     // if distance is moore than max ttl.. lets return
     if (distance >= MAX_TTL) return 0;
@@ -677,32 +653,33 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
 
 
 
+int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier) {
+    TracerouteQueue *qptr = ctx->traceroute_queue;
+    while (qptr != NULL) {
 
+        if (qptr->identifier == identifier) break;
+
+        qptr = qptr->next;
+    }
+
+    return qptr;
+}
 
 
 // link with other traceroute structures of the same queue (same target/scan)
 int Spider_IdentifyTogether(AS_context *ctx, TracerouteSpider *sptr) {
     TracerouteSpider *srch = ctx->traceroute_spider;
     int ret = 0;
+    int a, b;
+    TracerouteQueue *qptr = TracerouteQueueFindByIdentifier(ctx, sptr->identifier_id);
 
-    // we wanna enumerate all and find the first
-    while (srch != NULL) {
+    if (qptr == NULL) return -1;
 
-        // if it matches the same ID
-        if (srch->identifier_id == sptr->identifier_id) {
+    // lets give the original queue a direct pointer to every TTL responses regarding its lookup
+    // its much easier than having it in a linked list.. especially for later analysis
+    qptr->responses[sptr->ttl] = sptr;
 
-            // link using the multidimensional (which requires offset of its 'next')
-            //L_link_ordered_offset((LINK **)&srch->identifiers, (LINK *)sptr, offsetof(TracerouteSpider, identifiers));
-            sptr->identifiers = srch->identifiers;
-            srch->identifiers = sptr;
-
-            ret = 1;
-            break;
-        }
-
-        // mvoe to the next one
-        srch = srch->next;
-    }
+    ret = 1;    
 
     return ret;
 }
@@ -826,21 +803,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     // if the pointer was NULL.. lets just return with 0 (no error...)
     if (rptr == NULL) return ret;
 
-    // enumerate all currently queued traceroutes looking for the identifier from the packet
-    while (qptr != NULL) {
-        //printf("qptr ident: %X  rptr ident %X\n", qptr->identifier, rptr->identifier);
-        // found a match since we are more than likely doing mass amounts of traceroutes...
-        if (qptr->identifier == rptr->identifier) {
-            //printf("FOUND queue for this response! qptr  %p\n", qptr);
-            //exit(0);
-            break;
-        }
-
-        qptr = qptr->next;
-    }
-
-    //src.s_addr = rptr->hop;
-    //printf("Response IP: %s\n", inet_ntoa(src));
+    qptr = TracerouteQueueFindByIdentifier(ctx, rptr->identifier);
     
     // we had a match.. lets link it in the spider web
     if (qptr != NULL) {
@@ -884,7 +847,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             snew->queue = qptr;
             
             // link into list containing all..
-            //L_link_ordered_offset((LINK **)&ctx->traceroute_spider, (LINK *)snew, offsetof(TracerouteSpider, next));
+            L_link_ordered_offset((LINK **)&ctx->traceroute_spider, (LINK *)snew, offsetof(TracerouteSpider, next));
 
 
             //Traceroute_Insert(ctx, snew);
@@ -907,6 +870,8 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
 
             Traceroute_Insert(ctx, snew);
 
+            Spider_IdentifyTogether(ctx, snew);
+
             // log for watchdog to adjust traffic speed
             Traceroute_Watchdog_Add(ctx);
 
@@ -925,6 +890,8 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
     int i = 0;
     TracerouteSpider *sptr = NULL, *snext = NULL, *slast = NULL;
     TracerouteSpider *search = NULL;
+
+    /*
     int a = 0;
     int b =  0;
     int jtable = 0, jtable_enum = 0;
@@ -933,7 +900,7 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
     b = (snew->hop_ip & 0x0000ff00) >> 8;
     a = (snew->hop_ip & 0x000000ff);
 
-/*
+
     jtable = (a * (256*2));
     jtable += b;
 
@@ -963,7 +930,7 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
                 //L_link_ordered_offset((LINK **)&sptr->branches, (LINK *)snew, offsetof(TracerouteSpider, branches));
                 snew->branches = sptr->branches;
                 sptr->branches = snew;
-//printf("Added branch\n");
+                //printf("Added branch\n");
                 break;
             } else if (i == 1) {
                 if (slast != NULL) {
@@ -973,11 +940,6 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
                     if (ctx->traceroute_spider_hops == sptr) {
                         snew->hops_list = ctx->traceroute_spider_hops;
                         ctx->traceroute_spider_hops = snew;
-
-                        
-                    } else {
-                        printf("??? error\n");
-                        exit(-1);
                     }
                 }
 
@@ -990,21 +952,12 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
 
                 } else {
 
-                    if (slast == NULL) {
-                        printf("last = null.. jtable dev\n");
-                        exit(-1);
-                        //snew->hops_list = slast->hops_list;
-                        //slast->hops_list = snew;
-                    } else {
-
-                    snew->hops_list = slast->hops_list;
-                    slast->hops_list = snew;
-
-
+                    if (slast != NULL) {
+                        snew->hops_list = slast->hops_list;
+                        slast->hops_list = snew;
                     }
 
                 }
-
                 break;
             }
 
@@ -1012,15 +965,7 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
             sptr = sptr->next;
         }
     }
-/*
-    jptr = (TracerouteSpider *)ctx->jump_table[jtable];
-    if (jptr != NULL) {
-        i = IPv4_compare(jptr->hop_ip, snew->hop_ip);
-        if (i == -1) ctx->jump_table[jtable] = (void *)snew;
-    } else {
-        ctx->jump_table[jtable] = (void *)snew;
-    }
-  */  
+
     ret = 1;
 
     // lets setup jump table if its less than the one for this...
@@ -1171,14 +1116,13 @@ int Traceroute_Perform(AS_context *ctx) {
     struct icmphdr icmp;
     PacketBuildInstructions *iptr = NULL;
     AttackOutgoingQueue *optr = NULL;
-    int i = 0;
+    int i = 0, n = 0;
     TraceroutePacketData *pdata = NULL;
     TracerouteSpider *sptr = NULL;
     int tcount  = 0;
     int ret = 0;
     // timestamp required for various states of traceroute functionality
     int ts = time(0);
-
 
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
@@ -1211,7 +1155,9 @@ int Traceroute_Perform(AS_context *ctx) {
                     // disqualify this ttl before we move to the next..
                     // this is for easily enabling/disabling large amounts of queues so we can
                     // attempt to scan more simultaneously (and retry easily for largee amounts)
-                    tptr->ttl_list[tptr->current_ttl] = 0;
+
+                    // its already 0 (in the while &&)
+                    //tptr->ttl_list[tptr->current_ttl] = 0;
 
                     tptr->current_ttl++;
                 }
@@ -1270,11 +1216,6 @@ int Traceroute_Perform(AS_context *ctx) {
 
                         // if the packet building was successful
                         if (i == 1) {
-
-                            // lets just instantly try to send 4 packets... *** testing
-                            //for (i = 0; i < 4; i++)
-
-
                             // allocate a structure for the outgoing packet to get wrote to the network interface
                             if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
                                 // we need to pass it the final packet which was built for the wire
@@ -1364,7 +1305,6 @@ int Traceroute_Perform(AS_context *ctx) {
                 // decrease the coutner
                 tcount--;
             }
-
             // move to the next target
             tptr = tptr->next;
         }
@@ -1422,9 +1362,6 @@ int Spider_Save(AS_context *ctx) {
     // enumerate spider and list information
     sptr = ctx->traceroute_spider_hops;
     while (sptr != NULL) {
-
-        //printf("L1 %p\n", sptr);
-
         // if the output file is open then lets write some data
         if (fd2) {
             // we wanna turn the target, and hop IP from long to ascii
@@ -1515,16 +1452,11 @@ int IPv4_compare(uint32_t comp, uint32_t ipv4) {
     if (d2 == d) return 0;
 }
 
-int Spider_AddCheck(AS_context *ctx) {
-    
-}
-
 
 // lets see if we have a hop already in the spider.. then we just add this as a branch of it
 // *** verify IPv6 (change arguments.. use IP_prepare)
 TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *hopv6) {
     TracerouteSpider *sptr = ctx->traceroute_spider_hops;
-
     // enumerate through spider list tryinig to find a hop match...
     // next we may want to add looking for targets.. but in general
     // we will wanna analyze more hop informatin about a target ip
@@ -1574,6 +1506,50 @@ int Spider_Load(AS_context *ctx, char *filename) {
     if ((fd2 = fopen(fname, "r")) == NULL) goto end;
 
 
+
+    // read all lines
+    while (fgets(buf,1024,fd2)) {
+        i = 0;
+        // if we have \r or \n in the buffer (line) we just read then lets set it to NULL
+        if ((sptr = strchr(buf, '\r')) != NULL) *sptr = 0;
+        if ((sptr = strchr(buf, '\n')) != NULL) *sptr = 0;
+
+        // change all , (like csv) to " " spaces for sscanf()
+        n = strlen(buf);
+        while (i < n) {
+            if (buf[i] == ',') buf[i] = ' ';
+            i++;
+        }
+
+        // grab entries
+        sscanf(buf, "%s %s %"SCNu32" %d %d %d %d %d", &type, &target, &identifier,
+         &retry, &completed, &enabled, &activity, &ts);
+
+        if ((qnew = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) break;
+
+        // set parameters from data file
+        qnew->completed = completed;
+        qnew->retry_count = retry;
+        qnew->ts = ts;
+        qnew->ts_activity = activity;
+
+        // we wanna control enabled here when we look for all TTL hops
+        qnew->enabled = 0;//enabled;
+
+        qnew->target_ip = inet_addr(target);
+        qnew->identifier = identifier;
+
+        // set all TTLs in the list to their values
+        // ***
+        // turn randomizing into its own function later and set here..
+        //for (n = 0; n < MAX_TTL; n++) qnew->ttl_list[n] = n;
+        //qnew->max_ttl = MAX_TTL;
+
+
+        qnew->next = ctx->traceroute_queue;
+        ctx->traceroute_queue = qnew;
+    }
+
     // first we load the traceroute responses.. so we can use the list for re-enabling ones which were  in progress
     while (fgets(buf,1024,fd)) {
         i = 0;
@@ -1613,17 +1589,8 @@ int Spider_Load(AS_context *ctx, char *filename) {
         }
 
         Traceroute_Insert(ctx, snew);
-/*
-        if ((Sptr = Spider_Find(ctx, snew->hop_ip, NULL)) != NULL) {
-            //printf("ADDED as branch! %s %u %u\n", hop, snew->hop, Sptr->hop);
-            L_link_ordered_offset((LINK **)&Sptr->branches, (LINK *)snew, offsetof(TracerouteSpider, branches));
-        } else {
-            // add to waiting hops
-            //snew->hops_list = ctx->traceroute_spider_hops;
-            //ctx->traceroute_spider_hops = sptr;
-            L_link_ordered_offset((LINK **)&ctx->traceroute_spider_hops, (LINK *)snew, offsetof(TracerouteSpider, hops_list));
-        }
-*/
+        Spider_IdentifyTogether(ctx, snew);
+
         // before we fgets() again lets clear the buffer
         // *** had a weird bug with sscanf.. im pretty sure this is useless but it began working duringn 4-5 changes..
         // ill rewrite this entire format binary soon anyways.
@@ -1632,53 +1599,8 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
 
 
-    // read all lines
-    while (fgets(buf,1024,fd2)) {
-        i = 0;
-        // if we have \r or \n in the buffer (line) we just read then lets set it to NULL
-        if ((sptr = strchr(buf, '\r')) != NULL) *sptr = 0;
-        if ((sptr = strchr(buf, '\n')) != NULL) *sptr = 0;
-
-        // change all , (like csv) to " " spaces for sscanf()
-        n = strlen(buf);
-        while (i < n) {
-            if (buf[i] == ',') buf[i] = ' ';
-            i++;
-        }
-
-        // grab entries
-                 //QUEUE,212.12.28.68,0,0,1,0,0,1511751671
-
-        sscanf(buf, "%s %s %"SCNu32" %d %d %d %d %d", &type, &target, &identifier,
-         &retry, &completed, &enabled, &activity, &ts);
-
-        if ((qnew = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) break;
-
-        // set parameters from data file
-        qnew->completed = completed;
-        qnew->retry_count = retry;
-        qnew->ts = ts;
-        qnew->ts_activity = activity;
-
-        // we wanna control enabled here when we look for all TTL hops
-        qnew->enabled = 0;//enabled;
-
-        qnew->target_ip = inet_addr(target);
-        qnew->identifier = identifier;
-
-// set all TTLs in the list to their values
-// ***
-// turn randomizing into its own function later and set here..
-//for (n = 0; n < MAX_TTL; n++) qnew->ttl_list[n] = n;
-//qnew->max_ttl = MAX_TTL;
-
-
-        qnew->next = ctx->traceroute_queue;
-        ctx->traceroute_queue = qnew;
-
-        //Traceroute_Retry(ctx, qnew);
-    }
-
+    //printf("calling Traceroute_RetryAll to deal with loaded data\n");
+    Traceroute_RetryAll(ctx);
 
     end:;
 
@@ -1786,7 +1708,7 @@ int Traceroute_Init(AS_context *ctx) {
     ctx->traceroute_min_ttl = 0;
 
     // how many active at all times? we set it here so we can addjust it in watchdog later...
-    ctx->traceroute_max_active = 4000;
+    ctx->traceroute_max_active = 50;
 
     ret = 1;
 
@@ -1906,11 +1828,11 @@ int Traceroute_Watchdog(AS_context *ctx) {
     int interval_max = 0;
     int prior_ts = 0;
     int which = 0;
-    int good = 0;
-    int total_historic_to_use = 8;
+    int up = 0, down = 0;
+    int total_historic_to_use = 4;
     CountElement *cptr[total_historic_to_use+1];
     
-    float perc_change[total_historic_to_use+1];
+    float perc_change;
     int historic_avg_increase = 0;
 
 
@@ -1920,7 +1842,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
     // if there arent any entries then there is nothing to do
     if (hptr->HistoricRawCurrent == 0) {
-        printf("no historic\n");
+        //printf("no historic\n");
         return 0;
     }
 
@@ -1944,8 +1866,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
     // prior_ts would be 0 here.. so it will trigger on the first...
     if ((ts - prior_ts) < interval_seconds) {
-        printf("not time ts %d prior %d .. interval %d [%d]\n", ts, prior_ts, interval_seconds,
-        (ts-prior_ts));
+        //printf("not time ts %d prior %d .. interval %d [%d]\n", ts, prior_ts, interval_seconds, (ts-prior_ts));
         return 0;
     }
 
@@ -1954,7 +1875,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
     hptr->HistoricDataCalculated[hptr->HistoricCurrent].ts = ts;
     hptr->HistoricDataCalculated[hptr->HistoricCurrent].max_setting = ctx->traceroute_max_active;
 
-    printf("count: %d ts: %d max %d\n", interval_sum, ts, ctx->traceroute_max_active);
+    //printf("count: %d ts: %d max %d\n", interval_sum, ts, ctx->traceroute_max_active);
 
     // increase historic counter.. so we can keep track of more
     
@@ -1976,28 +1897,40 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
             // wait until they are all on same speed... (minute and a half at current setting)
             if (cptr[i]->max_setting != hptr->HistoricDataCalculated[hptr->HistoricCurrent - 1].max_setting) {
-                printf("dont have %d of same max\n", total_historic_to_use);
+                //printf("dont have %d of same max\n", total_historic_to_use);
                 goto end;
             }
 
-            printf("cptr[i].count = [%d, %d]\n", i, cptr[i]->count);
-            printf("Against %d\n", hptr->HistoricDataCalculated[hptr->HistoricCurrent].count);
+            //printf("cptr[i].count = [%d, %d]\n", i, cptr[i]->count);
+            //printf("Against %d\n", hptr->HistoricDataCalculated[hptr->HistoricCurrent].count);
+
+            // lets get percentage change...
+            perc_change = (float)((float)hptr->HistoricDataCalculated[hptr->HistoricCurrent].count / (float)cptr[i]->count);
+            perc_change *= 100;
 
             //historic[i] /= 
             if (cptr[i]->count < hptr->HistoricDataCalculated[hptr->HistoricCurrent].count) {
-                //historic[i] = cptr[i]->count;
-                good++;
+                if (perc_change > 105) up++;
+            } else {
+                if (perc_change < 90) down++;
             }
         }
 
 
+        if (up > down) {
+            ctx->traceroute_max_active += 300;
+        } else
+        if (up < down) {
+            ctx->traceroute_max_active -= 50;
 
-        if (good >= (total_historic_to_use/2)) ctx->traceroute_max_active += 300;
+        }   
+        
+        /*     if (good >= (total_historic_to_use/2)) ctx->traceroute_max_active += 300;
         //if (good == 1) ctx->traceroute_max_active += 50;
         else if (good > (total_historic_to_use/4)) ctx->traceroute_max_active += ((5+rand()%5) - rand()%10);
         
         else if (good <= (total_historic_to_use/4)) ctx->traceroute_max_active -= 50;
-        
+        */
 
         if (ctx->traceroute_max_active < 50) ctx->traceroute_max_active = 50;
 
@@ -2006,19 +1939,33 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
         ctx->watchdog_ts = ts;
 
-        printf("good is %d and ret is %d\n", good, ret);
+        //printf("up %d down %d and ret is %d\n", up, down, ret);
 
         ret = 1;
 
         if (ret == 1)
             // adjust active queue using the new setting
             Traceroute_AdjustActiveCount(ctx);
-    } else {
-        printf("need 3 historic %d\n", hptr->HistoricCurrent);
     }
-
 
     end:;
     hptr->HistoricCurrent++;
     return ret;
 }
+
+int TracerouteResetRetryCount(AS_context *ctx) {
+    int ret = 0;
+    TracerouteQueue *qptr = ctx->traceroute_queue;
+
+    while (qptr != NULL) {
+        if (qptr->retry_count) qptr->retry_count=0;
+
+        ret++;
+
+        qptr = qptr->next;
+    }
+
+    return ret;
+}
+
+

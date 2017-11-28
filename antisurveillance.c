@@ -190,15 +190,25 @@ AS_context *AS_ctx_new() {
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
-    // start network outgoing queue thread
-    if (pthread_create(&ctx->network_write_thread, NULL, thread_network_flush, (void *)ctx) == 0)
-        ctx->network_write_threaded = 1;
-
-    // start network incoming queue thread
-    if (pthread_create(&ctx->network_read_thread, NULL, thread_read_network, (void *)ctx) == 0)
-        ctx->network_read_threaded = 1;
 
     return ctx;
+}
+
+int Threads_Start(AS_context *ctx) {
+    int ret = 0;
+    // start network outgoing queue thread
+    if (pthread_create(&ctx->network_write_thread, NULL, thread_network_flush, (void *)ctx) == 0) {
+        ctx->network_write_threaded = 1;
+        ret++;
+    }
+
+    // start network incoming queue thread
+    if (pthread_create(&ctx->network_read_thread, NULL, thread_read_network, (void *)ctx) == 0) {
+        ctx->network_read_threaded = 1;
+        ret++;
+    }
+
+    return ret;
 }
 
 // perform iterations of other subsystems...
