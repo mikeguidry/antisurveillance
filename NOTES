@@ -370,3 +370,6 @@ for china and russia.. it looks like itll require seeding of somme IPs, or sites
 africa and south america are also untouched by general generating random ips
 
 https://public-dns.info//
+
+
+I'll try to branch phantomjs, and python together to help automate scraping sites to generate fabricated sessions...

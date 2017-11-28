@@ -3,6 +3,7 @@
 #include <Python.h>
 #include <netinet/ip6.h>
 #include <net/if.h>
+#include "GeoIP.h"
 
 struct _packet_info;
 struct _packet_instructions;
@@ -233,6 +234,9 @@ typedef struct _antisurveillance_context {
 
     TraceroutePerformaceHistory Traceroute_Traffic_Watchdog;
     int watchdog_ts;
+
+    GeoIP *geoip_handle;
+    GeoIP *geoip_asn_handle;
 
 } AS_context;
 

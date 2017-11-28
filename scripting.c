@@ -811,7 +811,23 @@ static PyObject *PyASC_TracerouteDistance(PyAS_Config* self, PyObject *args, PyO
 
 
 
+static PyObject *PyASC_TracerouteGenerateRandomGEO(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"country",0};
+    int ret = 0;
+    char *country = NULL;
+    
 
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwd_list, &country)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (self->ctx) {
+        ret = TracerouteAddCountryIP(self->ctx, country);
+    }
+
+    return PyInt_FromLong(ret);
+}
 
 
 static PyObject *PyASC_MergeAttacks(PyAS_Config* self, PyObject *args, PyObject *kwds) {
@@ -1165,6 +1181,8 @@ static PyMethodDef PyASC_methods[] = {
     {"tracerouteresetretrycount", (PyCFunction)PyASC_TracerouteResetRetryCount, METH_NOARGS, "reset all retry counts" },
 
     {"traceroutestatus", (PyCFunction)PyASC_TracerouteStatus,    METH_NOARGS,    "" },
+
+    {"tracerouteaddrandomipgeo", (PyCFunction)PyASC_TracerouteGenerateRandomGEO,     METH_VARARGS|METH_KEYWORDS,    "" },
 
     {"traceroutestatus2", (PyCFunction)PyASC_TracerouteStatus2,    METH_NOARGS,    "" },
 

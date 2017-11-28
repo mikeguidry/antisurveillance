@@ -1,9 +1,10 @@
 CC=gcc
-CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7_d -I/usr/include/x86_64-linux-gnu/python2.7_d  -fno-strict-aliasing -Wdate-time -g -O0 -fstack-protector-strong -Wformat -Werror=format-security -g -O0 -Wall -Wstrict-prototypes
+CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7_d -I/usr/include/x86_64-linux-gnu/python2.7_d  -fno-strict-aliasing -Wdate-time -g -O0 -fstack-protector-strong -Wformat -Werror=format-security -g -O0 -Wall -Wstrict-prototypes -I/home/mike/antisurveillance/deps/geoip-api-c/libGeoIP
 
 DEPS = antisurveillance.h
 ODIR=obj
-LIBS=-lz -lpthread -ggdb -lpython2.7_d -lpthread -ldl  -lutil -lm   -L/usr/lib -lpython2.7_d -lpthread -ldl  -lutil -lm  -Xlinker -export-dynamic -Wl,-O1 -Wl,-Bsymbolic-functions
+LIBS=-lz -lpthread -ggdb -lpython2.7_d -lpthread -ldl  -lutil -lm   -L/usr/lib -lpython2.7_d -lpthread -ldl  -lutil -lm  -Xlinker -export-dynamic -Wl,-O1 -Wl,-Bsymbolic-functions -L/home/mike/antisurveillance/deps/geoip-api-c/libGeoIP/.libs -lGeoIP
+
 
 
 

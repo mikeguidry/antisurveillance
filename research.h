@@ -89,6 +89,8 @@ typedef struct _traceroute_queue {
     // identifier to tie this to the responses since we will perform mass amounts
     uint32_t identifier;
 
+    int country;
+
     int completed;
 
     // so we dont do too many at once.. so we can insert a huge list and let it analyze
@@ -135,6 +137,8 @@ typedef struct _traceroute_spider {
 
     // time this entry was created
     int ts;
+
+    int country;
 
     // quick reference of IP (of the router.. / hop / gateway)
     uint32_t hop_ip;
@@ -201,8 +205,6 @@ typedef struct _traceroute_data {
 } TraceroutePacketData;
 
 
-
-
 int Traceroute_Perform(AS_context *ctx);
 int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 void get_local_ipv6(struct in6_addr *dst);
@@ -227,3 +229,9 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew);
 
 int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier);
 int TracerouteResetRetryCount(AS_context *ctx);
+
+int Research_Init(AS_context *ctx);
+int GEOIP_CountryToID(char *country);
+int GEOIP_IPtoCountryID(AS_context *ctx, uint32_t addr);
+uint32_t ResearchGenerateIPCountry(AS_context *ctx, char *want_country);
+int TracerouteAddCountryIP(AS_context *ctx, char *want_country);

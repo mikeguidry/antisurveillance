@@ -152,8 +152,8 @@ void AS_remove_completed(AS_context *ctx) {
                     continue;
                 }
 
-                pthread_mutex_unlock(&aptr->pause_mutex);
-            }
+            pthread_mutex_unlock(&aptr->pause_mutex);
+        }
 
         alast = aptr;
 
@@ -184,12 +184,14 @@ AS_context *AS_ctx_new() {
     // initialize anything related to special attacks in attacks.c
     attacks_init(ctx);
 
+    // other things in research.c (geoip, etc) maybe move later or redo init/deinit
+    Research_Init(ctx);
+
     // initialize traceroute filter & packet analysis function
     Traceroute_Init(ctx);
 
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
-
 
     return ctx;
 }

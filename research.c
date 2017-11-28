@@ -87,11 +87,17 @@ need to scan for open dns servers (to get geoip dns automatically)
 #include "research.h"
 #include "utils.h"
 
+// for geoip
+#include "GeoIP.h"
+#include "GeoIPCity.h"
+
+
 
 #ifndef offsetof
 #define offsetof(type, member) ( (int) & ((type*)0) -> member )
 #endif
 
+const char *geoip_countries[] = {"00","AP","EU","AD","AE","AF","AG","AI","AL","AM","CW","AO","AQ","AR","AS","AT","AU","AW","AZ","BA","BB","BD","BE","BF","BG","BH","BI","BJ","BM","BN","BO","BR","BS","BT","BV","BW","BY","BZ","CA","CC","CD","CF","CG","CH","CI","CK","CL","CM","CN","CO","CR","CU","CV","CX","CY","CZ","DE","DJ","DK","DM","DO","DZ","EC","EE","EG","EH","ER","ES","ET","FI","FJ","FK","FM","FO","FR","SX","GA","GB","GD","GE","GF","GH","GI","GL","GM","GN","GP","GQ","GR","GS","GT","GU","GW","GY","HK","HM","HN","HR","HT","HU","ID","IE","IL","IN","IO","IQ","IR","IS","IT","JM","JO","JP","KE","KG","KH","KI","KM","KN","KP","KR","KW","KY","KZ","LA","LB","LC","LI","LK","LR","LS","LT","LU","LV","LY","MA","MC","MD","MG","MH","MK","ML","MM","MN","MO","MP","MQ","MR","MS","MT","MU","MV","MW","MX","MY","MZ","NA","NC","NE","NF","NG","NI","NL","NO","NP","NR","NU","NZ","OM","PA","PE","PF","PG","PH","PK","PL","PM","PN","PR","PS","PT","PW","PY","QA","RE","RO","RU","RW","SA","SB","SC","SD","SE","SG","SH","SI","SJ","SK","SL","SM","SN","SO","SR","ST","SV","SY","SZ","TC","TD","TF","TG","TH","TJ","TK","TM","TN","TO","TL","TR","TT","TV","TW","TZ","UA","UG","UM","US","UY","UZ","VA","VC","VE","VG","VI","VN","VU","WF","WS","YE","YT","RS","ZA","ZM","ME","ZW","A1","A2","O1","AX","GG","IM","JE","BL","MF","BQ","SS",NULL};
 
 
 // find a spider structure by target address
@@ -652,7 +658,7 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
 
 
 
-
+// find a traceroute queue structure by the identifier it used
 int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
     while (qptr != NULL) {
@@ -843,8 +849,12 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             snew->target_ip = qptr->target_ip;
             CopyIPv6Address(&qptr->target_ipv6, &rptr->target_ipv6);
 
+            snew->country = GEOIP_IPtoCountryID(ctx, snew->hop_ip);
+
             // in case later we wanna access the original queue which created the entry
             snew->queue = qptr;
+
+            snew->country = GEOIP_IPtoCountryID(ctx, snew->hop_ip);
             
             // link into list containing all..
             L_link_ordered_offset((LINK **)&ctx->traceroute_spider, (LINK *)snew, offsetof(TracerouteSpider, next));
@@ -884,33 +894,13 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
 }
 
 
-
+// inserts a traceroute structure into the linked list but does sorting on insertion
 int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
     int ret = -1;
     int i = 0;
     TracerouteSpider *sptr = NULL, *snext = NULL, *slast = NULL;
     TracerouteSpider *search = NULL;
 
-    /*
-    int a = 0;
-    int b =  0;
-    int jtable = 0, jtable_enum = 0;
-    TracerouteSpider *jptr = NULL;
-
-    b = (snew->hop_ip & 0x0000ff00) >> 8;
-    a = (snew->hop_ip & 0x000000ff);
-
-
-    jtable = (a * (256*2));
-    jtable += b;
-
-    jptr = (TracerouteSpider *)ctx->jump_table[jtable];
-
-    if (jptr != NULL) 
-        sptr = jptr;
-    else
-        sptr = ctx->traceroute_spider_hops;
-*/
     sptr = ctx->traceroute_spider_hops;
 
     // check if hop exist...
@@ -918,33 +908,34 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
         ctx->traceroute_spider_hops = snew;
     } else {
         while (sptr != NULL) {
-
             i = IPv4_compare(sptr->hop_ip, snew->hop_ip);
 
-            //printf("IPv4_compare: %u %u -> %d [%p %p]\n", sptr->hop_ip, snew->hop_ip, i, sptr, snew);
-
-            //printf("slast %p last->next %p sptr %p, sptr->next %p\n", slast, slast ? slast->next : "null", sptr, sptr ? sptr->next : "null");
-
             if (i == 0) {
-                // add as branch (already here)
-                //L_link_ordered_offset((LINK **)&sptr->branches, (LINK *)snew, offsetof(TracerouteSpider, branches));
+
                 snew->branches = sptr->branches;
                 sptr->branches = snew;
-                //printf("Added branch\n");
+
                 break;
             } else if (i == 1) {
+
                 if (slast != NULL) {
+
                     snew->hops_list = slast->hops_list;
                     slast->hops_list = snew;
+
                 } else {
+
                     if (ctx->traceroute_spider_hops == sptr) {
+
                         snew->hops_list = ctx->traceroute_spider_hops;
                         ctx->traceroute_spider_hops = snew;
                     }
+                    
                 }
 
                 break;
             } else if (i == -1) {
+
                 if (ctx->traceroute_spider_hops == sptr) {
                     snew->hops_list = ctx->traceroute_spider_hops;
 
@@ -1887,7 +1878,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
     // we want at least 3 to attempt to modifhiy...
     if (hptr->HistoricCurrent >= total_historic_to_use) {
 
-        if ((ts - ctx->watchdog_ts) < (60*2)) {
+        if ((ts - ctx->watchdog_ts) < (60*10)) {
             return 0;
         }
 
@@ -1953,6 +1944,8 @@ int Traceroute_Watchdog(AS_context *ctx) {
     return ret;
 }
 
+
+// reset all queries retry counter to 0
 int TracerouteResetRetryCount(AS_context *ctx) {
     int ret = 0;
     TracerouteQueue *qptr = ctx->traceroute_queue;
@@ -1969,3 +1962,96 @@ int TracerouteResetRetryCount(AS_context *ctx) {
 }
 
 
+
+// initialize other functionality in research besides traceroute
+int Research_Init(AS_context *ctx) {
+    GeoIP *gi = NULL;
+    int ret = 0;
+
+    if ((gi = GeoIP_open("GeoIP.dat", GEOIP_STANDARD | GEOIP_SILENCE)) == NULL) return -1;
+
+    // set context handler for geoip
+    ctx->geoip_handle = gi;
+
+    ctx->geoip_asn_handle = GeoIP_open("GeoIPASNum.dat", GEOIP_ASNUM_EDITION_V6 | GEOIP_SILENCE);
+
+    ret = 1;
+
+    return ret;
+}
+
+
+// geoip turn country into an int for easy storage
+int GEOIP_CountryToID(char *country) {
+    int i = 0;
+    int ret = 0;
+    
+    while (geoip_countries[i] != NULL) {
+        if (strcmp(geoip_countries[i], country) == 0) {
+            ret = i;
+            break;
+        }
+        i++;
+    }
+
+    return ret;
+}
+
+// turn address into a country (ascii) to country (unsigned char) value
+// list came directly from maxmind but converted from php -> C
+int GEOIP_IPtoCountryID(AS_context *ctx, uint32_t addr) {
+    GeoIP *gi = (GeoIP *)ctx->geoip_handle;
+    GeoIPRegion *region = NULL;
+    char *country = NULL;
+    int i = 0;
+    int ret = 0;
+
+    if (gi == NULL) return 0;
+
+    if ((country = (char *)GeoIP_country_code_by_ipnum(gi, addr)) == NULL) {
+        return 0;
+    }
+
+    ret = GEOIP_CountryToID(country);
+
+    return ret;
+}
+
+
+// generate an IP address within a specific country (by its 2 gTLD)
+// we wanna be able to find new routes to target
+uint32_t ResearchGenerateIPCountry(AS_context *ctx, char *want_country) {
+    uint32_t addr = 0;
+    char *country = NULL;
+    int tries = 5000;
+    uint32_t ret = 0;
+
+    while (tries--) {
+        addr = rand()%0xFFFFFFFF;
+        if ((country = (char *)GeoIP_country_code_by_ipnum(ctx->geoip_handle, addr)) != NULL) {
+            if (strcmp(country, want_country)==0) {
+                ret = addr;
+                break;
+            }
+        }
+    }
+
+    return ret;
+}
+
+
+// Adds a single IP address to the traceroute queue which is randomly generated, and falls inside of a specific country
+int TracerouteAddCountryIP(AS_context *ctx, char *want_country) {
+    int ret = 0;
+    uint32_t ip = ResearchGenerateIPCountry(ctx, want_country);
+
+    if (ip != 0) {
+        Traceroute_Queue(ctx, ip, NULL);
+        ret = 1;
+    }
+
+    return ret;
+
+}
+
+//asnum_name = GeoIP_name_by_ipnum(gi, ipnum);	

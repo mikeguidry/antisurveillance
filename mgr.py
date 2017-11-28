@@ -33,9 +33,9 @@ signal.signal(signal.SIGINT, signal_handler)
 
 #traceroute a randop IP whenever the queue is completed.. this will help us have more data
 #for IP generation strategies to ensure we affect the most surveillance platforms
-def traceroute_random_ip(a):
+def traceroute_random_ip(a,b):
     cnt = a.traceroutecount()
-    while (cnt < 300):
+    while (cnt < b):
         ip = socket.inet_ntoa(struct.pack('>I', random.randint(1, 0xffffffff)))
         a.traceroutequeue(target=ip)
         cnt = cnt + 1
@@ -151,6 +151,7 @@ def script_perform():
     #traceroute_random_ip(a)
     cnt = a.traceroutecount()
     if (cnt == 0):
+        traceroute_random_ip(a,1000)
         a.tracerouteretry()
         #print("traceroute count 0 .. adding");
         #a.traceroutequeue(target="8.8.8.8")
