@@ -142,8 +142,8 @@ typedef struct _count_element {
 } CountElement;
 // for dynamically modifying our speed to help progress for diff times of day (local, or world traffic)
 typedef struct _perform_history {
-    CountElement HistoricDataRaw[1024];
-    CountElement HistoricDataCalculated[1024];
+    CountElement HistoricDataRaw[1024*10];
+    CountElement HistoricDataCalculated[1024*10];
     int HistoricRawCurrent;
     int HistoricCurrent;
 } TraceroutePerformaceHistory;
@@ -200,6 +200,8 @@ typedef struct _antisurveillance_context {
     TracerouteQueue *traceroute_queue;
     // internal database built from the traceroutes, and analysis
     TracerouteSpider *traceroute_spider;
+    
+    //void *jump_table[256*256*256];
     TracerouteSpider *traceroute_spider_hops;
     // responses coming from the network to get analyzed & put into the spiderweb
     TracerouteResponse *traceroute_responses;
@@ -230,6 +232,7 @@ typedef struct _antisurveillance_context {
     int traceroute_max_active;
 
     TraceroutePerformaceHistory Traceroute_Traffic_Watchdog;
+    int watchdog_ts;
 
 } AS_context;
 

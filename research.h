@@ -218,5 +218,6 @@ TracerouteSpider *Traceroute_FindByTarget(AS_context *ctx, uint32_t target_ipv4,
 int Traceroute_RetryAll(AS_context *ctx);
 void Traceroute_Watchdog_Add(AS_context *ctx);
 int Traceroute_Watchdog(AS_context *ctx);
-
-int Traceroute_AdjustActive(AS_context *ctx);
+int Traceroute_AdjustActiveCount(AS_context *ctx);
+TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *hopv6);
+int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew);

@@ -270,6 +270,9 @@ void *thread_network_flush(void *arg) {
 int prepare_socket(AS_context *ctx) {
     int rawsocket = 0;
     int one = 1;
+    int bufsize = 1024*1024*10;
+
+    
 
     if (ctx->raw_socket > 0) {
         // If we cannot use setsockopt.. there must be trouble!
@@ -282,6 +285,8 @@ int prepare_socket(AS_context *ctx) {
     // open raw socket
     if ((rawsocket = socket(AF_INET, SOCK_RAW, IPPROTO_TCP)) <= 0)
         return -1;
+
+    setsockopt(rawsocket, SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
 
     // ensure the operating system knows that we will include the IP header within our data buffer
     if (setsockopt(rawsocket, IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0)
@@ -309,7 +314,7 @@ int prepare_read_socket(AS_context *ctx) {
     struct ifreq if_mac;
     struct ifreq if_ip;
     int one = 1;
-
+    int bufsize = 1024*1024*10;
 
     // set ifr structure to 0
     memset (&ifr, 0, sizeof (struct ifreq));
@@ -331,6 +336,10 @@ int prepare_read_socket(AS_context *ctx) {
 
     // initialize a new socket
     if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) goto end;
+
+    
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUFFORCE, &bufsize, sizeof(bufsize));
+    
 
     // set the socket inside of the context structure
     //ctx->read_socket = sockfd;

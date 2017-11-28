@@ -180,7 +180,9 @@ static PyObject *PyASC_PCAPsave(PyAS_Config* self, PyObject *Pfilename){
 
     if (s && self->ctx) {
         //int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, PacketInfo *ipackets, int free_when_done);
+        pthread_mutex_lock(&self->ctx->network_queue_mutex);
         ret = PcapSave(self->ctx, (char *)s, self->ctx->network_queue, NULL, 0);
+        pthread_mutex_unlock(&self->ctx->network_queue_mutex);
     }
 
     Py_INCREF(Py_None);
@@ -191,7 +193,11 @@ static PyObject *PyASC_PCAPsave(PyAS_Config* self, PyObject *Pfilename){
 static PyObject *PyASC_NetworkCount(PyAS_Config* self){
     long ret = 0;
 
-    if (self->ctx) ret = L_count((LINK *)self->ctx->network_queue);
+    if (self->ctx) {
+        pthread_mutex_lock(&self->ctx->network_queue_mutex);
+        ret = L_count((LINK *)self->ctx->network_queue);
+        pthread_mutex_unlock(&self->ctx->network_queue_mutex);
+    }
 
     return PyInt_FromLong(ret);
 }
@@ -862,14 +868,14 @@ static PyObject *PyASC_SpiderLoad(PyAS_Config* self){
 }
 
 
-static int _skip = 5;
+static int _skip = 20;
 
-// enable flushing the network queue to the live wire
+// hack for temporary interactive console to debug
 static PyObject *PyASC_Skip(PyAS_Config* self){
     int ret = 0;
     if (_skip-- == 0) {
         ret = 1;
-        _skip = 5;
+        _skip = 20;
     }
 
     return PyInt_FromLong(ret);
@@ -939,7 +945,7 @@ static PyMethodDef PyASC_methods[] = {
     {"pcapsave", (PyCFunction)PyASC_PCAPsave,    METH_O,    "" },
 
     // retry all tracerouttes
-    {"tracerouteretry", (PyCFunction)PyASC_NetworkClear,    METH_NOARGS,    "retry missing TTL traceroute responses" },
+    {"tracerouteretry", (PyCFunction)PyASC_TracerouteRetry,    METH_NOARGS,    "retry missing TTL traceroute responses" },
 
     // clear all outgoing queue
     {"networkclear", (PyCFunction)PyASC_NetworkClear,    METH_NOARGS,    "clear outgoing network packets" },

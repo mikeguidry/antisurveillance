@@ -10,6 +10,7 @@ import sys
 import socket
 import random
 import struct
+import os.path
 
 #support ctrl-c to stop infinite loop in perform()
 def signal_handler(signal, frame):
@@ -111,6 +112,18 @@ def other_build_http(a):
 def script_enable(a):
     a.scriptenable()
 
+
+# i wanted to way to enable/disable the debug console mid execution..
+def debug_console(a):
+    if (os.path.exists("debug_console")):            
+        skip = a.skip()
+        if (skip == 1):
+            variables = globals().copy()
+            variables.update(locals())
+            shell = code.InteractiveConsole(variables)
+            shell.interact()
+
+
 # this is the function that gets called every iteration if running from the C side.. (Scripting_Perform())
 # the software will call AS_perform() itself out of the this scope.. so no need to call the one above in python
 # otherwise the script has full control.. including the timing.. so use some or it might eat all CPU
@@ -119,12 +132,16 @@ def script_perform():
     a = antisurveillance.manager()
     a.setctx(ctx)
 
+    debug_console(a)
+    
     # how many packets did that generate?
     print("network %05d attack %05d traceroute queue %05d\n") % (a.networkcount(), a.attackcount(), a.traceroutecount())
+    
 
     #traceroute_random_ip(a)
-    #cnt = a.traceroutecount()
-    #if (cnt == 0):
+    cnt = a.traceroutecount()
+    if (cnt == 0):
+        a.tracerouteretry()
         #print("traceroute count 0 .. adding");
         #a.traceroutequeue(target="8.8.8.8")
         #a.traceroutequeue(target="9.9.9.9")
@@ -137,7 +154,10 @@ def script_perform():
     #print("Traceroute queue count is %d") % cnt
     sleep(1)
 
+    
+
     return 0
+
 
 
 #main function that gets called from anti
