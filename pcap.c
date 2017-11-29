@@ -303,3 +303,171 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
 
     return total;
 }
+
+// log an incoming packet to whichever file is open for writing it...
+int PCAP_LogPacket(AS_context *ctx, PCAPOperation *optr, PacketBuildInstructions *iptr) {
+    int ret = 0;
+    struct ether_header ethhdr;
+    pcaprec_hdr_t packet_hdr;
+    int ts = time(0);
+
+    // since we are just testinng how our packet looks fromm the generator.. lets just increase usec by 1
+    char dst_mac[] = {1,2,3,4,5,6};
+    char src_mac[] = {7,8,9,10,11,12};
+
+    memset((void *)&packet_hdr, 0, sizeof(pcaprec_hdr_t)); 
+
+    memset(&ethhdr, 0, sizeof(struct ether_header));
+    ethhdr.ether_type = ntohs(ETHERTYPE_IP);
+    memcpy((void *)&ethhdr.ether_dhost, dst_mac, 6);
+    memcpy((void *)&ethhdr.ether_dhost, src_mac, 6);
+
+    packet_hdr.ts_sec = ts;
+    packet_hdr.incl_len = iptr->packet_size + sizeof(struct ether_header);
+    packet_hdr.orig_len = iptr->packet_size + sizeof(struct ether_header);
+    fwrite((void *)&packet_hdr, 1, sizeof(pcaprec_hdr_t), optr->fd);
+
+    if (iptr->type & PACKET_TYPE_IPV4)
+        ethhdr.ether_type = ntohs(ETHERTYPE_IP);
+    else if (iptr->type & PACKET_TYPE_IPV6)
+        ethhdr.ether_type = ntohs(0x86DD);
+
+    fwrite((void *)&ethhdr, 1, sizeof(struct ether_header), optr->fd);
+    fwrite((void *)iptr->packet, 1, iptr->packet_size, optr->fd);
+
+    fflush(optr->fd);
+
+    return ret;
+}
+
+// add a new pcap operation (we wanna log some type of packets)
+int PCAP_OperationAdd(AS_context *ctx, char *filename, FilterInformation *flt) {
+    PCAPOperation *cptr = NULL;
+    FILE *fd = NULL;
+    int ret = 0;
+    pcap_hdr_t hdr;
+
+    if ((fd = fopen(filename, "wb")) == NULL) goto end;
+
+    if ((cptr = (PCAPOperation *)calloc(1, sizeof(PCAPOperation))) == NULL) goto end;
+
+    // write first pcap header...
+    cptr->fd = fd;
+    cptr->flt = flt;
+    cptr->filename = strdup(filename);
+
+
+    memset((void *)&hdr, 0, sizeof(pcap_hdr_t));
+    
+    // prepare global header for the pcap file format
+    hdr.magic_number = 0xa1b2c3d4;
+    hdr.version_major = 2;
+    hdr.version_minor = 4;
+    hdr.sigfigs = 0;
+    hdr.snaplen = 65535;
+    hdr.network = 1;//layer = ethernet
+
+    // write the global header...
+    fwrite((void *)&hdr, 1, sizeof(pcap_hdr_t), fd);
+
+    // add to pcap operations list.. order is irrelevant since each handler doesn't change, or free anything
+    cptr->next = ctx->pcap_operations;
+    ctx->pcap_operations = cptr;
+
+    ret = 1;
+
+    end:;
+    if (!ret && fd) fclose(fd);
+
+    return ret;
+}
+
+// If we'd like to log traffic to disk without processing... possibly for finding
+// sessions later without hindering operations much until all is done & tested..
+int PCAP_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
+    int ret = 0;
+    PCAPOperation *cptr = ctx->pcap_operations;
+    int filter_ok = 1;
+
+    if (cptr == NULL) return 0;
+
+    while (cptr != NULL) {
+
+        filter_ok = 1;
+
+        // check against filter in structure..
+        if (cptr->flt)
+            if (!FilterCheck(cptr->flt, iptr))  
+                filter_ok = 0;
+
+        if (filter_ok)
+            PCAP_LogPacket(ctx, cptr, iptr);
+    
+        cptr = cptr->next;
+    }
+
+    // done
+
+    end:;
+    return ret;
+}
+
+
+
+// initialize traceroute research subsystem
+// this has to prepare the incoming packet filter, and structure so we get iniformation from the wire
+int PCAP_Init(AS_context *ctx) {
+    NetworkAnalysisFunctions *nptr = NULL;
+    FilterInformation *flt = NULL;
+    int ret = -1;
+
+    flt = (FilterInformation *)calloc(1, sizeof(FilterInformation));
+
+    if (!flt) goto end;
+
+    // lets prepare incoming ICMP processing for our traceroutes
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
+    // wide open filter..
+    FilterPrepare(flt, 0, 0);
+
+    // add to network processing so we get a callback for all packets
+    if (Network_AddHook(ctx, flt, &PCAP_Incoming) != 1) goto end;
+
+    // lets log all packets to a file
+    //PCAP_OperationAdd(ctx, "incoming.pcap", NULL);
+
+
+    ret = 1;
+
+    end:;
+    return ret;
+}
+
+
+// stop capturing to a packet capture file
+int PCAP_OperationRemove(AS_context *ctx, char *filename) {
+    PCAPOperation *cptr = ctx->pcap_operations, *clast = NULL, *cnext = NULL;
+    int ret = 0;
+
+    while (cptr != NULL) {
+        if (cptr->filename && filename && (strcmp(filename, cptr->filename)==0)) {
+            fclose(cptr->fd);
+            cptr->fd = NULL;
+
+            if (clast == NULL)
+                ctx->pcap_operations = cptr->next;
+            else
+                clast->next = cptr->next;
+
+            free(cptr);
+            ret = 1;
+            break;
+        }
+
+        cptr = cptr->next;
+    }
+
+    return ret;
+}
+
+

@@ -110,6 +110,9 @@ typedef struct _traceroute_queue {
     int retry_count;
 
     TracerouteSpider *responses[MAX_TTL+1];
+
+    // higher priorities are checked more often, and wont have a retry max
+    int priority;
 } TracerouteQueue;
 
 
@@ -246,7 +249,7 @@ int Research_Init(AS_context *ctx);
 int GEOIP_CountryToID(char *country);
 int GEOIP_IPtoCountryID(AS_context *ctx, uint32_t addr);
 uint32_t ResearchGenerateIPCountry(AS_context *ctx, char *want_country);
-int TracerouteAddCountryIP(AS_context *ctx, char *want_country);
+int TracerouteAddRandomIP(AS_context *ctx, char *want_country);
 int GEOIP_IPtoASN(AS_context *ctx, uint32_t addr);
 void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr);
 
@@ -326,3 +329,6 @@ typedef struct _research_connection_options {
 } ResearchConnectionOptions;
 
 
+int fourteen_check_id(int country_id);
+int fourteen_check(char *country);
+int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4);

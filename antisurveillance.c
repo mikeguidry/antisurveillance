@@ -193,6 +193,13 @@ AS_context *AS_ctx_new() {
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
+    // initialize pcap network plugin for saving data from the wire
+    // now we're a full fledge sniffer.
+    PCAP_Init(ctx);
+
+    // start threads after loading.. so we dont have useless packets to process
+    Threads_Start(ctx);
+
     return ctx;
 }
 

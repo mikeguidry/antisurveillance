@@ -34,6 +34,8 @@ typedef struct _research_connection_options ResearchConnectionOptions;
 typedef struct _traceroute_analysis;
 typedef struct _traceroute_analysis TracerouteAnalysis;
 
+struct _pcap_operations;
+typedef struct _pcap_operations PCAPOperation;
 
 
 // general attack structure...
@@ -248,6 +250,8 @@ typedef struct _antisurveillance_context {
 
     GeoIP *geoip_handle;
     GeoIP *geoip_asn_handle;
+
+    PCAPOperation *pcap_operations;
 
 } AS_context;
 

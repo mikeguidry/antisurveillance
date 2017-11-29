@@ -823,7 +823,7 @@ static PyObject *PyASC_TracerouteGenerateRandomGEO(PyAS_Config* self, PyObject *
     }
 
     if (self->ctx) {
-        ret = TracerouteAddCountryIP(self->ctx, country);
+        ret = TracerouteAddRandomIP(self->ctx, country);
     }
 
     return PyInt_FromLong(ret);
@@ -1013,6 +1013,33 @@ static PyObject *PyASC_TracerouteResetRetryCount(PyAS_Config* self){
 }
 
 
+static PyObject *PyASC_TracerouteSetPriority(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"address","priority", 0};
+    TracerouteQueue *qptr = NULL;
+    int ret = 0;
+    char *target = NULL;
+    char *address = NULL;
+    int priority = 1;
+    uint32_t address_ipv4 = 0;
+    int address_is_ipv6 = 0;
+    struct in6_addr address_ipv6;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|i", kwd_list, &address, &priority)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    IP_prepare(address, &address_ipv4, &address_ipv6, &address_is_ipv6);
+
+    if (self->ctx) {
+        if ((qptr = TracerouteQueueFindByIP(self->ctx, address_ipv4)) != NULL) {
+            ret = qptr->priority = priority;
+        }
+    }
+
+    return PyInt_FromLong(ret);
+}
+
 
 
 static PyObject *PyASC_TracerouteSetMax(PyAS_Config* self, PyObject *args, PyObject *kwds) {
@@ -1034,6 +1061,54 @@ static PyObject *PyASC_TracerouteSetMax(PyAS_Config* self, PyObject *args, PyObj
 
     return PyInt_FromLong(ret);
 }
+
+static PyObject *PyASC_PCAPCapture(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"filename","skip_filter", 0};
+    int ret = 0;
+    char *filename = NULL;
+    FilterInformation *flt = NULL;
+    int skip_filter = 0;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|i", kwd_list, &filename, &skip_filter)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (filename && self->ctx) {
+        if (!skip_filter && self->flt.init == 1) {
+            flt = (FilterInformation *)calloc(1, sizeof(FilterInformation));
+            if (flt) {
+                memcpy(flt, &self->flt, sizeof(FilterInformation));
+            }
+        }
+
+        ret = PCAP_OperationAdd(self->ctx, filename, flt);
+
+    }
+
+    return PyInt_FromLong(ret);
+}
+
+
+static PyObject *PyASC_PCAPCaptureEnd(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"filename",0};
+    int ret = 0;
+    char *filename = NULL;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwd_list, &filename)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (filename && self->ctx) {
+        ret = PCAP_OperationRemove(self->ctx, filename);
+    }
+
+
+    return PyInt_FromLong(ret);
+}
+
+
 
 
 
@@ -1176,6 +1251,8 @@ static PyMethodDef PyASC_methods[] = {
 
     {"traceroutedistance", (PyCFunction)PyASC_TracerouteDistance, METH_VARARGS|METH_KEYWORDS, "find distance between two traceroute analysis structures" },
 
+    {"traceroutesetpriority", (PyCFunction)PyASC_TracerouteSetPriority, METH_VARARGS|METH_KEYWORDS, "prioritize a traceroute" },
+
     {"traceroutesetmax", (PyCFunction)PyASC_TracerouteSetMax, METH_VARARGS|METH_KEYWORDS, "set max active traceroute queue" },
 
     {"tracerouteresetretrycount", (PyCFunction)PyASC_TracerouteResetRetryCount, METH_NOARGS, "reset all retry counts" },
@@ -1187,6 +1264,9 @@ static PyMethodDef PyASC_methods[] = {
     {"traceroutestatus2", (PyCFunction)PyASC_TracerouteStatus2,    METH_NOARGS,    "" },
 
     {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_NOARGS,    "" },
+
+    {"pcapcapturestart", (PyCFunction)PyASC_PCAPCapture,    METH_VARARGS|METH_KEYWORDS,    "captures using current filter to a pcap file" },
+    {"pcapcaptureend", (PyCFunction)PyASC_PCAPCaptureEnd,    METH_VARARGS|METH_KEYWORDS,    "ends a pcap capture" },
 
     // i wanna turn these into structures (getter/setters)
     {"networkcount", (PyCFunction)PyASC_NetworkCount,    METH_NOARGS,    "count network packets" },
@@ -1667,6 +1747,17 @@ void ThreadProc( void *data )
     pthread_exit(NULL);
 #endif
 }
+
+
+*/
+
+
+/*
+
+python callbacks.....
+so C can call python to generate content bodies, etc
+or modify connections.. IPs. etc
+the main systems should have a way to enable/check with callbacks to see if anything custom was developed for them
 
 
 */

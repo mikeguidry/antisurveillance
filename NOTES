@@ -204,6 +204,7 @@ icmpp messages such as redirect and host not available, ad port not available co
 /*
 https://www.privacytools.io/
 Global Mass Surveillance - The Fourteen Eyes (https://www.privacytools.io/)
+char *fourteen_eyes[] = {"AU","CA","NZ","GB","US","DE","FR","NL","NO","BE","DE","IT","ES","SE",NULL};
 1. Australia 
 2. Canada 
 3. New Zealand 
@@ -220,7 +221,7 @@ Fourteen Eyes
 12. Italy 
 13. Spain 
 14. Sweden
-char *fourteen_eyes[] = {"AU","CA","NZ","GB","US","DE","FR","NL","NO","BE","DE","IT","ES","SE",NULL};
+
 turn into cpoints
 
 

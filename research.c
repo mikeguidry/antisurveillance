@@ -1,5 +1,3 @@
-
-
 /*
 
 Research is everything related to strategy choices.  For example, which sites do we wish to spend the majority
@@ -9,51 +7,6 @@ determine the best IP 4/6 addresses to use for attacks.
 For local attacks: NIDs, etc.. It will take the local IP addresses, and find the best ways of attacking
 the platform to either hide in other packets, or attempt to force other issues such as Admin believing hacks
 are taking place elsewhere.. etc
-
-I'll try to require as little hard coded information as possible.  I'd like everything to work without requiring any updates -- ever.
-
-
-
-It took 15 hours at 50 active traceroute queue to complete 53,000 traceroutes (DNS results from top 1mil sites using massdns)
-Obviously 53,000 isnt all of them.. ill have to add more timeout interval later...
-
-The data seemed incomplete so I think I finalized the save, and load mechanism.  It can also attempt to retry any missing TTL
-entries for targets whenever the queue reaches zero.  It will also randomly disable/enable different queues.  I need to perfect
-the system.  I figured sending out more than 50 (maybe 1000) packets a second should mean 1000 responses..
-
-Fact is.. the hops/routers seem to rate limit ICMP, and supposed to block something like 66% in general.  I know
-sending more packets per second to close routes (0-3 hops) means they get every single traceroute lookup.
-
-I'll finish and make the RandomizeTTLs first try 8-15 on large amounts of active queue.  I'm pretty sure the targets, and distant
-routers/hops will respond therefore if you are sending to a high amount of these then the amount of active traceroutes SHOULD
-in fact be increased....
-
-I might just revamp the entire 'queue' system and move it from an active count based to attempting high ttl amounts more, and
-going for the LOW ttl amounts later.  It could allow normal until it finds all hosts which are probably the local ISP..
-for instance.. trace routing 3000 hosts, and 1000-1500 hit this particular hop then its more than likely going to be uused for most..
-the 1500 (near 50%) was what i was seeing for hops 0-3.. so obviously there was some that were ignored by the routes and should be retried
-therefore this 1500(or 50%) should be dynamically calculated between the first 3 hops and the initial few thousand lookups
-then it can reuse that number to determine which hops are probably the closest to prioritize as last..
-
-so it should get handled after the higher TTL.. so it can set a 'minimum' TTL until the majority of the queue is completed..
-
-it also means that we can auto 'invisibly' add these hops until we get the actual data.. which means we can do more with less...
-
-I hoped to finish today but I should by tommorrow...
-
-btw 15 hours at 3-4kb/sec isnt that serious.. LOL its not as bad as it sounds.. packets are small
-
-for strategies using research:
-we wanna construct a context of the strategy we are trying to build
-if we cannot find all traceroute, or other information we can then retry, or queue and allow a callback to continue
-the strategies whenever the information is complete...
-
-this is also necessary for one of the upcomming attacks
-
-if a single hop is missing, or two.. we can use other results and just fill in the gaps if they share simmilar/near nodes/hops/routers
-
-traceroute_max_active shouild count incoming packets/successful lookups and autoatically adjust itself to get the most packets
-
 
 
 The data and information from the automated traceroute can get reused in several different ways.  Reverse DDoS (to detect hacking
@@ -65,8 +18,6 @@ we shouild dns lookup traceroutees to get more IPs (Reverse, and regular..) we c
 need to scan for open dns servers (to get geoip dns automatically)
 
 
-
-
 border score is used to keep track of how many borders traffic between two targets goes through.. it can help determine the best
 overall worldwide strategies for attacking the most platforms simultaneously... 
 
@@ -75,6 +26,16 @@ others may expect to be in a location.. and other information used for research 
 
 the NN is also required to verify automatically generated content words etc to ensure they are less likely to be automatically filtered
 (using modified words/phrases/replacements and then seeing if it passes)..
+
+
+--------------
+with packet capturing to disk, raw packet reading.. all packet analysis already coded
+and tcp/ip connection finding/pairing... we have enough parts to take arbitrary http connections
+and find locations to turn into macros (fist name last name, msgs, etc)
+and auto populate server/client bodies for session fabricating...
+
+in the end i want the system to be able to run on a network.. or router and update itself, and its sites to use
+for attacks dynamically fromm live traffic.. thus never having to worry about updating etc
 
 
 */
@@ -97,6 +58,7 @@ the NN is also required to verify automatically generated content words etc to e
 #include "packetbuilding.h"
 #include "research.h"
 #include "utils.h"
+#include "identities.h"
 
 // for geoip
 #include "GeoIP.h"
@@ -107,6 +69,8 @@ the NN is also required to verify automatically generated content words etc to e
 #ifndef offsetof
 #define offsetof(type, member) ( (int) & ((type*)0) -> member )
 #endif
+
+
 
 // geoip countries for turning geoip ASCII to simple identifier (1-255)
 // i found this list in the PHP version, and just reformatted it to C
@@ -132,6 +96,23 @@ const char *geoip_countries[] = {"00","AP","EU","AD","AE","AF","AG",
         "UG","UM","US","UY","UZ","VA","VC","VE","VG","VI","VN","VU",
         "WF","WS","YE","YT","RS","ZA","ZM","ME","ZW","A1","A2","O1",
         "AX","GG","IM","JE","BL","MF","BQ","SS",NULL};
+
+// Global Mass Surveillance - The Fourteen Eyes (https://www.privacytools.io/)
+// These will be priority.. especially since anything crossing these borders can more than likely assume that path
+// will have surveillance platforms crossing their borders.
+char *fourteen_eyes[] = {"AU","CA","NZ","GB","US","DE","FR","NL","NO","BE","DE","IT","ES","SE",NULL};
+
+int fourteen_check(char *country) {
+    int i = 0;
+    for (;i < 14; i++) if (strcmp(country, fourteen_eyes[i])==0) return 1;
+    return 0;
+}
+
+int fourteen_check_id(int country_id) {
+    int i = 0;
+    for (;i < 14; i++) if (strcmp(geoip_countries[country_id], fourteen_eyes[i])==0) return 1;
+    return 0;
+}
 
 
 // find a spider structure by target address
@@ -226,6 +207,7 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
         qptr->max_ttl = cur_ttl;
         qptr->retry_count++;
 
+        // randommize the TTLs which are left
         RandomizeTTLs(qptr);
 
         // its not completed yet..
@@ -268,7 +250,7 @@ int Traceroute_RetryAll(AS_context *ctx) {
 
     if (ret) {
         Traceroute_AdjustActiveCount(ctx);
-        //printf("%d traceroutes being retried\n", ret);
+        printf("%d traceroutes being retried\n", ret);
     }
 
     return ret;
@@ -365,6 +347,19 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
 
 
 
+// find queue by IP
+int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4) {
+    TracerouteQueue *qptr = ctx->traceroute_queue;
+
+    while (qptr != NULL) {
+
+        if (qptr->target_ip == ipv4) break;
+
+        qptr = qptr->next;
+    }
+
+    return qptr;
+}
 
 // find a traceroute queue structure by the identifier it used
 int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier) {
@@ -466,10 +461,12 @@ int Traceroute_AdjustActiveCount(AS_context *ctx) {
 
     // disable ALL currently enabled queues.. counting the amount
     while (qptr != NULL) {
-        // if its enabled, and not completed.. lets disable
-        if (qptr->enabled && !qptr->completed) {
-            qptr->enabled = 0;
-            disabled++;
+        if (!qptr->priority) {
+            // if its enabled, and not completed.. lets disable
+            if (qptr->enabled && !qptr->completed) {
+                qptr->enabled = 0;
+                disabled++;
+            }
         }
         qptr = qptr->next;
     }
@@ -538,7 +535,9 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
                 }
 
                 // if all TTLs were already used.. then its completed
-                if (!left) qptr->completed = 1;
+                if (!left) {
+                    qptr->completed = 1;
+                }
         }
 
         // allocate space for us to append this response to our interal spider web for analysis
@@ -795,6 +794,7 @@ static int ccount = 0;
 // iterate through all current queued traceroutes handling whatever circumstances have surfaced for them individually
 // todo: allow doing random TTLS (starting at 5+) for 10x... most of the end hosts or hops will respond like this
 // we can prob accomplish much more
+// *** need to add UDP/TCP traceroute support for retry
 int Traceroute_Perform(AS_context *ctx) {
     TracerouteQueue *tptr = ctx->traceroute_queue;
     TracerouteResponse *rptr = ctx->traceroute_responses, *rnext = NULL;
@@ -815,13 +815,25 @@ int Traceroute_Perform(AS_context *ctx) {
     // zero icmp header since its in the stack
     memset(&icmp, 0, sizeof(struct icmphdr));
 
+    // *** cpu hotspot.. traceroute_count().. maybe do real time updating of counters so theeres no reason to enumerate a huge list 
     printf("Traceroute_Perform: Queue %d [completed %d] max: %d\n", L_count((LINK *)tptr), Traceroute_Count(ctx, 1, 1), ctx->traceroute_max_active);
 
     // loop until we run out of elements
-    while (tptr != NULL) {        
+    while (tptr != NULL) {
         // if we have reached max ttl then mark this as completed.. otherwise it could be marked completed if we saw a hop which equals the target
         if (tptr->current_ttl >= tptr->max_ttl) {
             tptr->completed = 1;
+
+            // if its completed.. and its priority.. lets consolidate the missing TTL hops so itll continue
+            // this is so we can immediately find more information required for an attack
+            if (tptr->priority && tptr->priority < 100) {
+                ConsolidateTTL(tptr);
+                // if any are left.. keep it enabled.
+                if (tptr->max_ttl) {
+                    tptr->completed = 0;
+                    tptr->priority++;
+                }
+            }
         }
 
         if (!tptr->completed && tptr->enabled) {
@@ -884,7 +896,7 @@ int Traceroute_Perform(AS_context *ctx) {
 
                             // lets include a little message since we are performing a lot..
                             // if ever on a botnet, or worm.. disable this obviously
-                            strcpy(&pdata->msg, "performing traceroute research");
+                            strncpy(&pdata->msg, "performing traceroute research", sizeof(pdata->msg));
                             
                             // set the identifiers so we know which traceroute queue the responses relates to
                             pdata->identifier = tptr->identifier;
@@ -933,6 +945,7 @@ int Traceroute_Perform(AS_context *ctx) {
         }
 
         tptr = tptr->next;
+        tcount++;
     }
 
     // now process all queued responses we have from incoming network traffic.. it was captured on a thread specifically for reading packets
@@ -962,12 +975,11 @@ int Traceroute_Perform(AS_context *ctx) {
         Spider_Save(ctx);
 
         // lets randomly enable or disable queues.... 20% of the time we reach this..
-        if ((rand()%100) < 20)
-            Traceroute_AdjustActiveCount(ctx);
+        //if ((rand()%100) < 20) Traceroute_AdjustActiveCount(ctx);
     }
 
     // count how many traceroutes are in queue and active
-    tcount = Traceroute_Count(ctx, 0, 0);
+    //tcount = Traceroute_Count(ctx, 0, 0);
 
     // if the amount of active is lower than our max, then we will activate some other ones
     if (tcount < ctx->traceroute_max_active) {
@@ -1375,6 +1387,7 @@ void get_local_ipv6(struct in6_addr *dst) {
 }
 
 
+
 // initialize traceroute research subsystem
 // this has to prepare the incoming packet filter, and structure so we get iniformation from the wire
 int Traceroute_Init(AS_context *ctx) {
@@ -1383,20 +1396,26 @@ int Traceroute_Init(AS_context *ctx) {
     int ret = -1;
 
     flt = (FilterInformation *)calloc(1, sizeof(FilterInformation));
-    nptr = (NetworkAnalysisFunctions *)calloc(1, sizeof(NetworkAnalysisFunctions));
 
-    if (!flt || !nptr) goto end;
+    if (!flt) goto end;
 
-    // lets just ensure we obtain all ICMP packet information since we'll have consistent ipv4/ipv6 requests happening
+    // lets prepare incoming ICMP processing for our traceroutes
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
     FilterPrepare(flt, FILTER_PACKET_ICMP, 0);
+    if (Network_AddHook(ctx, flt, &Traceroute_IncomingICMP) != 1) goto end;
 
-    // prepare structure used by the network engine to ensure w get the packets we are looking for
-    nptr->incoming_function = &Traceroute_IncomingICMP;
-    nptr->flt = flt;
+/*
+    // lets add UDP traceroute processing
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
+    FilterPrepare(flt, FILTER_PACKET_UDP, 0);
+    if (Network_AddHook(ctx, flt, &Traceroute_IncomingUDP) != 1) goto end;
 
-    // insert so the network functionality will begin calling our function for these paackets
-    nptr->next = ctx->IncomingPacketFunctions;
-    ctx->IncomingPacketFunctions = nptr;
+    // lets add TCP traceroute processing
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
+    FilterPrepare(flt, FILTER_PACKET_TCP, 0);
+    if (Network_AddHook(ctx, flt, &Traceroute_IncomingTCP) != 1) goto end;
+*/
+
     
     // get our own ip addresses for packet building
     ctx->my_addr_ipv4 = get_local_ipv4();
@@ -1412,7 +1431,7 @@ int Traceroute_Init(AS_context *ctx) {
     ctx->traceroute_min_ttl = 0;
 
     // how many active at all times? we set it here so we can addjust it in watchdog later...
-    ctx->traceroute_max_active = 1850;
+    ctx->traceroute_max_active = 2000;
 
     ret = 1;
 
@@ -1643,7 +1662,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
         ctx->watchdog_ts = ts;
 
-        //printf("up %d down %d and ret is %d\n", up, down, ret);
+        printf("!!! up %d down %d and ret is %d\n", up, down, ret);
 
         ret = 1;
 
@@ -1760,7 +1779,7 @@ uint32_t ResearchGenerateIPCountry(AS_context *ctx, char *want_country) {
 
 
 // Adds a single IP address to the traceroute queue which is randomly generated, and falls inside of a specific country
-int TracerouteAddCountryIP(AS_context *ctx, char *want_country) {
+int TracerouteAddRandomIP(AS_context *ctx, char *want_country) {
     int ret = 0;
     uint32_t ip = 0;
 
@@ -1924,52 +1943,6 @@ TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *cli
     return tptr;
 }
 
-/*
-Analysis is distance, and geoip/etc investigation between two NODE_PROCESSING_INSTRUCTION + curiousity
-
-ResearchNodeOptions is a local structure used to represent ipv4/6, OS emulation information, and original queue for a client...
-it shouldnt need the original queue, and should contain all its own memory so it doesnt reference anything else.. essentially  work alone
-ConnectionOptions is a list of currently used, or generated + verified details which can be used for an attack, and whether it currently is
-(attack ptr)
-has border score, count, and hop_country already in memory prepared for using with other things
-    TracerouteQueue *client; TracerouteQueue *server;
-    int border_score;  int curiousity;
-    int active_ts; int ts;
-} TracerouteAnalysis;
-
-ResearchConnectionOptions has an analysis Pointer
-a client/serfver researchnodeinformation side
-border score, hop_country[MAX_TTL], ts, ,and count`
-
-researchinformationnode has 'information' ptr to gtraceroute queue
-country, asnum.. os EmulationParameters
-border score both ip types ipv4/ipv6
--
-traceroute analysis has border score, curiosuoity (scan near),
-active ts, and ts 
-
-nodoe1/2 traceroute queue 
-{
-    uint32_t ip; struct in6_addr ipv6; int is_ipv6;
-    int country; int asn_num;
-    int os_emulation_id; int border_score;
-    TracerouteQueue *information;
-} ResearchNodeInformation;
-// we list all chosen client/server here for use in attack lists
-{}
-    ResearchNodeInformation client; ResearchNodeInformation server;
-    AS_attacks *attackptr;
-    TracerouteAnalysis *analysis;
-    int hop_country[MAX_TTL];
-    int border_score;
-    int count;
-    int ts; int last_ts;
-} ResearchConnectionOptions;
-
-
-
-*/
-
 // count how many attacks/connections are being used in a country..
 // this will allow us to take a list of countries, and load balance between attacking their surveillance platforms
 // the rest  of the system should be commpletely automated... insert targets, and walaaa
@@ -1977,7 +1950,6 @@ int Research_CountCountry(AS_context *ctx, int country) {
     int c = 0;
     ResearchConnectionOptions *optr = ctx->research_connections;
     
-
     while (optr != NULL) {
         ResearchNodeInformation *nptr = &optr->server;
 
@@ -1989,6 +1961,8 @@ int Research_CountCountry(AS_context *ctx, int country) {
 
     return c;
 }
+
+
 
 TracerouteAnalysis *Research_AnalysisGet(AS_context *ctx) {
     int c = L_count((LINK *)ctx->analysis_list);
@@ -2032,7 +2006,7 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     // this is one of the most important things to take place overall.. to ensure everything is different for resource exhaustion..
     // or to link speccific macros/profiles/target sites with messaging, etc for intelligence manipulation
     // the attacks will actually be taking aim at several subsystems all at once
-    //if (ResearchContentGenerator(ctx, country, &content_server, &content_server_size, &content_client, &content_client_size) != 1) goto end;
+    //if (ResearchContentGenerator(ctx, country, country, &content_server, &content_server_size, &content_client, &content_client_size) != 1) goto end;
 
     if ((rand()%100) < tptr->curiousity) {
         // go modify tptr for curiousity.. using anoither function.. which can also initiate new resewarch etc
@@ -2108,4 +2082,103 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     end:;
     return ret;
 }
+
+
+
+enum {
+    CONTENT_TYPE_EMAIL,
+    CONTENT_TYPE_MESSAGE,
+    CONTENT_TYPE_LOGIN,
+    CONTENT_TYPE_META,
+    CONTENT_TYPE_OTHER // RTSP?? voip... SIP
+};
+
+
+// site structure should be automatically populated fromm local gtraffic.. as well as any fed in pcaps...
+// it can also gtake somem compiled in informtion regarding things like word press.. etc
+
+//} SiteStructure;
+// asn number can be used as a secondary type of country code to link entries together without all information
+// such as traceroute respopnsses
+
+// generate content for an upcoming connection
+int ResearchContentGenerator(AS_context *ctx, int src_country, int dst_country, char **content_server, int *content_server_size, char **content_client, int *content_client_size) {
+    int ret = 0;
+    char *new_content_server = NULL, *new_content_client = NULL;
+    int new_content_server_size = 0, new_content_client_size = 0;
+
+
+
+    // are we going to use pyython callback for content generation?
+    // we need to send python the IPP addresses, and their geos if we have them
+    // the AS could comme in handy if we begin returning dicts or lists of particular
+    // IP information  etc and someone wishes to use python for other logic
+
+    //python_call_function(ctx->scripts, "content_generator", 0);
+
+
+
+
+    // free incoming pointers and update with the new data
+    free(*content_server);
+    *content_server = new_content_server;
+    *content_server_size = new_content_server_size;
+
+    free(*content_client);
+    *content_client = new_content_client;
+    *content_client_size = new_content_client_size;
+
+end:;
+    return ret;
+
+}
+
+
+
+// *** move to macro.h
+// macros are needed to replace things like first names, usernames, emails, passwords, messages, etc.. in sessions
+typedef struct _macro_variable {
+    struct _macro_variable *next;
+
+    char *macro_name;
+
+    void *macro_ctx;
+    void *function;
+
+    char  **macro_data;
+    int macro_data_count;
+} MacroVariable;
+
+
+/*
+
+
+macros should be able to replace binary as well, but checksums wont be perfect.. the fact is it can find ascii (english  anywaays)
+easily and try to replace.. these surveillance platforms more than likely dont have exact perfection for binary protocols anyways
+
+so repllacing hello with another string of similar size etc shhould be fine
+
+
+HTTP_SERVER_NAME
+HTTP_VERSION
+
+USERAGENT
+
+Timezone
+
+TCP options
+
+cookies, encoding type, character set allowed
+
+gzip
+
+POST variable modification (macro)
+
+need to compress the 960 mil email addreses to get size information
+
+need to try to ccompress using topp domains, etc
+
+
+
+*/
 

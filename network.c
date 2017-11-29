@@ -1,4 +1,4 @@
-    /*
+/*
 
 This is where functionality for writing information directly to the networking device is located.  It will also contain
 functions for sniffing the network interface for information.  The information can be used as new attack parameters, or
@@ -722,4 +722,23 @@ void *thread_read_network(void *arg) {
     pthread_exit(NULL);
 
     return;
+}
+
+
+int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_function) {
+    NetworkAnalysisFunctions *nptr = NULL;
+
+    if (!flt || !incoming_function) return -1;
+
+    if ((nptr = (NetworkAnalysisFunctions *)calloc(1, sizeof(NetworkAnalysisFunctions))) == NULL)
+        return -1;
+
+    nptr->incoming_function = incoming_function;
+    nptr->flt = flt;
+
+    // insert so the network functionality will begin calling our function for these paackets
+    nptr->next = ctx->IncomingPacketFunctions;
+    ctx->IncomingPacketFunctions = nptr;
+
+    return 1;
 }

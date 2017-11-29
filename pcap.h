@@ -31,7 +31,20 @@ typedef struct pcaprec_hdr_s {
 #pragma pack(pop)
 
 
+typedef struct _pcap_operations {
+    struct _pcap_operations *next;
+
+    FilterInformation *flt;
+
+    FILE *fd;
+    char *filename;
+} PCAPOperation;
+
+
 
 int PCAPtoAttack(AS_context *, char *filename, int dest_port, int count, int interval, FilterInformation *pcap_flt);
 PacketInfo *PcapLoad(char *filename);
 int PcapSave(AS_context *, char *filename, AttackOutgoingQueue *packets, PacketInfo *iptr, int free_when_done);
+int PCAP_Init(AS_context *ctx);
+int PCAP_OperationAdd(AS_context *ctx, char *filename, FilterInformation *flt);
+int PCAP_OperationRemove(AS_context *ctx, char *filename);

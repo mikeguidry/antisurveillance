@@ -66,9 +66,6 @@ int main(int argc, char *argv[]) {
         ctx->traceroute_max_retry = 100;
     }
 
-    // start threads after loading.. so we dont have useless packets to process
-    Threads_Start(ctx);
-
 
     //exit(0);
 

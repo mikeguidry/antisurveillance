@@ -1,0 +1,1 @@
+char *macro_replace(char *original, char *macro, char *data, int *ret_len);

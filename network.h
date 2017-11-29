@@ -83,3 +83,4 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *);
 void ClearPackets(AS_context *ctx);
 int process_packet(AS_context *ctx, char *packet, int size);
 void *thread_read_network(void *arg);
+int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_function);
