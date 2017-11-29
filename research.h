@@ -292,6 +292,9 @@ typedef struct _connection_information {
     // will contain all hop information used as starting point
     // for analysis
     TracerouteQueue *information;
+
+    char *content;
+    int content_size;
 } ResearchNodeInformation;
 
 // we list all chosen client/server here for use in attack lists

@@ -1917,7 +1917,7 @@ TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *nod
 Analysis is distance, and geoip/etc investigation between two NODE_PROCESSING_INSTRUCTION + curiousity
 
 ResearchNodeOptions is a local structure used to represent ipv4/6, OS emulation information, and original queue for a node1...
-it shouldnt need the original queue, and should contain all its own memory so it doesnt reference anything else.. essentially work alone
+it shouldnt need the original queue, and should contain all its own memory so it doesnt reference anything else.. essentially  work alone
 ConnectionOptions is a list of currently used, or generated + verified details which can be used for an attack, and whether it currently is
 (attack ptr)
 has border score, count, and hop_country already in memory prepared for using with other things
@@ -1958,3 +1958,140 @@ nodoe1/2 traceroute queue
 
 
 */
+
+// count how many attacks/connections are being used in a country..
+// this will allow us to take a list of countries, and load balance between attacking their surveillance platforms
+// the rest  of the system should be commpletely automated... insert targets, and walaaa
+int Research_CountCountry(AS_context *ctx, int country) {
+    int c = 0;
+    ResearchConnectionOptions *optr = ctx->research_connections;
+    
+
+    while (optr != NULL) {
+        ResearchNodeInformation *nptr = &optr->server;
+
+        if (nptr->country == country) c++;
+
+        optr = optr->next;
+    }
+
+
+    return c;
+}
+
+TracerouteAnalysis *Research_AnalysisGet(AS_context *ctx) {
+    int c = L_count((LINK *)ctx->analysis_list);
+    int r = rand()%c;
+    int is_active = 0;
+    int ts = time(0);
+
+    TracerouteAnalysis *tptr = ctx->analysis_list;
+    while (tptr && r--) { tptr = tptr->next; }
+
+    if (tptr) {
+        // ** finish timmer.. to not use active attacks (anything with 5seconds or less activity..
+        // a single AS_perform() should reset this timer 0-1.5 seconds .. Max? maybe somemtimes on 
+        // completing queue itll be more but that wont matter then
+        //if ((ts - tptr->attackptr->ts_activity) < 5)
+    }
+
+    return tptr;
+}
+
+
+
+
+
+// *** we can expand beyond country soon.. in development
+// this is for HTTP specifically right now
+// ill move to another way with a call back to generate for a particular type
+int Research_BuildSmartASAttack(AS_context *ctx, int country) {
+    int ret = 0;
+    char *content_server = NULL;
+    int content_server_size = 0;
+    char *content_client = NULL;
+    int content_client_size = 0;
+    int ts = time(0);
+
+    TracerouteAnalysis *tptr = Research_AnalysisGet(ctx);
+    ResearchConnectionOptions *optr = NULL;
+    AS_attacks *aptr = NULL;
+
+    // generate fabricated http session body for client/server... using either C, or python callback for it
+    // this is one of the most important things to take place overall.. to ensure everything is different for resource exhaustion..
+    // or to link speccific macros/profiles/target sites with messaging, etc for intelligence manipulation
+    // the attacks will actually be taking aim at several subsystems all at once
+    //if (ResearchContentGenerator(ctx, country, &content_server, &content_server_size, &content_client, &content_client_size) != 1) goto end;
+
+    if ((rand()%100) < tptr->curiousity) {
+        // go modify tptr for curiousity.. using anoither function.. which can also initiate new resewarch etc
+    }
+
+    // allocate space for this structure we will use to store the final information
+    if ((optr = (ResearchConnectionOptions *)calloc(1, sizeof(ResearchConnectionOptions))) == NULL) goto end;
+
+    // ensure we know we are using traceroute analysis structure by time
+    tptr->ts = ts;
+
+    // ensure it has pointers  to client content
+    optr->client.content = content_client;
+    optr->client.content_size = content_client_size;
+
+    // ensure it has pointers to server content
+    optr->server.content = content_server;
+    optr->server.content_size = content_server_size;
+
+    // set to 0 so we dont free later..
+    optr->client.content = NULL;
+    optr->client.content_size = 0;
+
+    optr->server.content = NULL;
+    optr->server.content_size = 0;
+
+    // have somme way to configure lateer... lets use these two addresses for 1000 sessions
+    optr->count = 1000;
+    // timestamp
+    optr->ts = ts;
+
+    // copy address over
+    optr->client.ip = tptr->node1->target_ip;
+    optr->server.ip = tptr->node2->target_ip;
+
+    optr->client.country = country;
+    optr->server.country = country;
+
+    optr->client.asn_num = 0;
+    optr->server.asn_num = 0;
+
+    optr->server.os_emulation_id = 0;
+    optr->client.os_emulation_id = 0;
+
+    // country is same so... score is 1..
+    optr->border_score = 1;
+
+    // perform a walk from both client/server and fill in hop_country
+    // with each country between them
+    // modify border_score using this... or use a diff border score
+    // which can be used later for note below
+
+    // optr->client has a border score as well as server..
+    // they will be used later for advanced strategy..
+    // so we can assure we hit the most platforms possible
+    // by using particular targets in particular regions
+    // thus increasing overall worldwide effect
+
+
+    // call some functions related to this analysis structure? before/after.. finish later
+    //ResearchSmartHook()
+
+    // call http4 create with these parameters?? to generate AS_attacks structure
+
+    // link attack structure to this connection options
+    optr->attackptr = aptr;
+
+    ret = 1;
+
+    end:;
+    return ret;
+}
+
