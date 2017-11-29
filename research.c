@@ -66,6 +66,17 @@ need to scan for open dns servers (to get geoip dns automatically)
 
 
 
+
+border score is used to keep track of how many borders traffic between two targets goes through.. it can help determine the best
+overall worldwide strategies for attacking the most platforms simultaneously... 
+
+also we can keep a static list of all known fiber taps later.. and possibly even use neural networks to quickly determine whether or not
+others may expect to be in a location.. and other information used for research could be used as inputs in this NN
+
+the NN is also required to verify automatically generated content words etc to ensure they are less likely to be automatically filtered
+(using modified words/phrases/replacements and then seeing if it passes)..
+
+
 */
 
 
@@ -1860,15 +1871,15 @@ ResearchConnectionOptions *ResearchConnectionGet(AS_context *ctx, int country) {
 
 
 // find an analysis structure by either two nodes, or 1.. itll check both sides..
-TracerouteAnalysis *Traceroute_AnalysisFind(AS_context *ctx, TracerouteQueue *node1, TracerouteQueue *node2) {
+TracerouteAnalysis *Traceroute_AnalysisFind(AS_context *ctx, TracerouteQueue *client, TracerouteQueue *server) {
     TracerouteAnalysis *n1 = NULL, *n2 = NULL;
     TracerouteAnalysis *tptr = ctx->analysis_list;
 
 
     while (tptr != NULL) {
         // first we find exact match
-        if ((tptr->node1 == n1) && (tptr->node2 == n2)) break;
-        if ((tptr->node1 == n2) && (tptr->node2 == n1)) break;
+        if ((tptr->client == n1) && (tptr->server == n2)) break;
+        if ((tptr->client == n2) && (tptr->server == n1)) break;
 
         tptr = tptr->next;
     }
@@ -1879,8 +1890,8 @@ TracerouteAnalysis *Traceroute_AnalysisFind(AS_context *ctx, TracerouteQueue *no
     tptr = ctx->analysis_list;
     while (tptr != NULL) {
         // now we just make sure one side matches
-        if ((tptr->node1 == n1) || (tptr->node2 == n1)) break;
-        if ((tptr->node1 == n2) || (tptr->node2 == n2)) break;
+        if ((tptr->client == n1) || (tptr->server == n1)) break;
+        if ((tptr->client == n2) || (tptr->server == n2)) break;
 
         tptr = tptr->next;
     }
@@ -1891,15 +1902,15 @@ TracerouteAnalysis *Traceroute_AnalysisFind(AS_context *ctx, TracerouteQueue *no
 
 // create a traceroute analysis structure for storing informatiion regarding two sides of a connectioon
 // to be reused, or used again
-TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *node1, TracerouteQueue *node2) {
+TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *client, TracerouteQueue *server) {
     TracerouteAnalysis *tptr = NULL;
     if ((tptr = (TracerouteAnalysis *)calloc(1, sizeof(TracerouteAnalysis))) == NULL) return NULL;
 
     tptr->ts = time(0);
     tptr->active_ts = 0;
 
-    tptr->node1 = node1;
-    tptr->node2 = node2;
+    tptr->client = client;
+    tptr->server = server;
 
     // curiousity is % of whether or not we attempt to modify IP, or search for
     // simmilar/close things by a random generatred nunmber modulated by this
@@ -1916,12 +1927,12 @@ TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *nod
 /*
 Analysis is distance, and geoip/etc investigation between two NODE_PROCESSING_INSTRUCTION + curiousity
 
-ResearchNodeOptions is a local structure used to represent ipv4/6, OS emulation information, and original queue for a node1...
+ResearchNodeOptions is a local structure used to represent ipv4/6, OS emulation information, and original queue for a client...
 it shouldnt need the original queue, and should contain all its own memory so it doesnt reference anything else.. essentially  work alone
 ConnectionOptions is a list of currently used, or generated + verified details which can be used for an attack, and whether it currently is
 (attack ptr)
 has border score, count, and hop_country already in memory prepared for using with other things
-    TracerouteQueue *node1; TracerouteQueue *node2;
+    TracerouteQueue *client; TracerouteQueue *server;
     int border_score;  int curiousity;
     int active_ts; int ts;
 } TracerouteAnalysis;
@@ -2005,7 +2016,7 @@ TracerouteAnalysis *Research_AnalysisGet(AS_context *ctx) {
 // *** we can expand beyond country soon.. in development
 // this is for HTTP specifically right now
 // ill move to another way with a call back to generate for a particular type
-int Research_BuildSmartASAttack(AS_context *ctx, int country) {
+int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     int ret = 0;
     char *content_server = NULL;
     int content_server_size = 0;
@@ -2053,15 +2064,18 @@ int Research_BuildSmartASAttack(AS_context *ctx, int country) {
     // timestamp
     optr->ts = ts;
 
+
     // copy address over
-    optr->client.ip = tptr->node1->target_ip;
-    optr->server.ip = tptr->node2->target_ip;
+    GeoIP_lookup(ctx, tptr->client, NULL);
+    optr->client.ip = tptr->client->target_ip;
+    GeoIP_lookup(ctx, tptr->server, NULL);
+    optr->server.ip = tptr->server->target_ip;
 
-    optr->client.country = country;
-    optr->server.country = country;
+    optr->client.country = tptr->client->country;
+    optr->server.country = tptr->client->country;
 
-    optr->client.asn_num = 0;
-    optr->server.asn_num = 0;
+    optr->client.asn_num = tptr->client->asn_num;
+    optr->server.asn_num = tptr->server->asn_num;
 
     optr->server.os_emulation_id = 0;
     optr->client.os_emulation_id = 0;

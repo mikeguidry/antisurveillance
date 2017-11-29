@@ -256,8 +256,8 @@ void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr
 typedef struct _traceroute_analysis {
     struct _traceroute_analysis *next;
 
-    TracerouteQueue *node1;
-    TracerouteQueue *node2;
+    TracerouteQueue *client;
+    TracerouteQueue *server;
 
     // how many borders does each of these cross
     int border_score;
