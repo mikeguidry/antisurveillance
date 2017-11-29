@@ -60,8 +60,10 @@ int main(int argc, char *argv[]) {
     // *** change 
     if (argc > 2) {
         ctx->traceroute_max_retry = 0;
+
         Spider_Load(ctx, "traceroute");
-        ctx->traceroute_max_retry = 20;
+        
+        ctx->traceroute_max_retry = 100;
     }
 
     // start threads after loading.. so we dont have useless packets to process

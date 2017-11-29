@@ -144,11 +144,15 @@ typedef struct _connection_properties {
     int server_emulated_operating_system;
 } ConnectionProperties;
 
+
+
 typedef struct _count_element {
     int count;
     int ts;
     int max_setting;
 } CountElement;
+
+
 // for dynamically modifying our speed to help progress for diff times of day (local, or world traffic)
 typedef struct _perform_history {
     CountElement HistoricDataRaw[1024*10];
@@ -156,6 +160,7 @@ typedef struct _perform_history {
     int HistoricRawCurrent;
     int HistoricCurrent;
 } TraceroutePerformaceHistory;
+
 
 // lets contain all 'global' variables inside of a context structure
 // this will allow compiling as a library and including in other applications

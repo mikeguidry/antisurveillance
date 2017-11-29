@@ -270,6 +270,8 @@ typedef struct _traceroute_analysis {
 } TracerouteAnalysis;
 
 
+
+
 typedef struct _connection_information {
     uint32_t ip;
     struct in6_addr ipv6;
@@ -319,3 +321,5 @@ typedef struct _research_connection_options {
     // last timestamp used
     int last_ts;
 } ResearchConnectionOptions;
+
+

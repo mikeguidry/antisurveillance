@@ -97,7 +97,30 @@ need to scan for open dns servers (to get geoip dns automatically)
 #define offsetof(type, member) ( (int) & ((type*)0) -> member )
 #endif
 
-const char *geoip_countries[] = {"00","AP","EU","AD","AE","AF","AG","AI","AL","AM","CW","AO","AQ","AR","AS","AT","AU","AW","AZ","BA","BB","BD","BE","BF","BG","BH","BI","BJ","BM","BN","BO","BR","BS","BT","BV","BW","BY","BZ","CA","CC","CD","CF","CG","CH","CI","CK","CL","CM","CN","CO","CR","CU","CV","CX","CY","CZ","DE","DJ","DK","DM","DO","DZ","EC","EE","EG","EH","ER","ES","ET","FI","FJ","FK","FM","FO","FR","SX","GA","GB","GD","GE","GF","GH","GI","GL","GM","GN","GP","GQ","GR","GS","GT","GU","GW","GY","HK","HM","HN","HR","HT","HU","ID","IE","IL","IN","IO","IQ","IR","IS","IT","JM","JO","JP","KE","KG","KH","KI","KM","KN","KP","KR","KW","KY","KZ","LA","LB","LC","LI","LK","LR","LS","LT","LU","LV","LY","MA","MC","MD","MG","MH","MK","ML","MM","MN","MO","MP","MQ","MR","MS","MT","MU","MV","MW","MX","MY","MZ","NA","NC","NE","NF","NG","NI","NL","NO","NP","NR","NU","NZ","OM","PA","PE","PF","PG","PH","PK","PL","PM","PN","PR","PS","PT","PW","PY","QA","RE","RO","RU","RW","SA","SB","SC","SD","SE","SG","SH","SI","SJ","SK","SL","SM","SN","SO","SR","ST","SV","SY","SZ","TC","TD","TF","TG","TH","TJ","TK","TM","TN","TO","TL","TR","TT","TV","TW","TZ","UA","UG","UM","US","UY","UZ","VA","VC","VE","VG","VI","VN","VU","WF","WS","YE","YT","RS","ZA","ZM","ME","ZW","A1","A2","O1","AX","GG","IM","JE","BL","MF","BQ","SS",NULL};
+// geoip countries for turning geoip ASCII to simple identifier (1-255)
+// i found this list in the PHP version, and just reformatted it to C
+const char *geoip_countries[] = {"00","AP","EU","AD","AE","AF","AG",
+        "AI","AL","AM","CW","AO","AQ","AR","AS","AT","AU","AW","AZ",
+        "BA","BB","BD","BE","BF","BG","BH","BI","BJ","BM","BN","BO",
+        "BR","BS","BT","BV","BW","BY","BZ","CA","CC","CD","CF","CG",
+        "CH","CI","CK","CL","CM","CN","CO","CR","CU","CV","CX","CY",
+        "CZ","DE","DJ","DK","DM","DO","DZ","EC","EE","EG","EH","ER",
+        "ES","ET","FI","FJ","FK","FM","FO","FR","SX","GA","GB","GD",
+        "GE","GF","GH","GI","GL","GM","GN","GP","GQ","GR","GS","GT",
+        "GU","GW","GY","HK","HM","HN","HR","HT","HU","ID","IE","IL",
+        "IN","IO","IQ","IR","IS","IT","JM","JO","JP","KE","KG","KH",
+        "KI","KM","KN","KP","KR","KW","KY","KZ","LA","LB","LC","LI",
+        "LK","LR","LS","LT","LU","LV","LY","MA","MC","MD","MG","MH",
+        "MK","ML","MM","MN","MO","MP","MQ","MR","MS","MT","MU","MV",
+        "MW","MX","MY","MZ","NA","NC","NE","NF","NG","NI","NL","NO",
+        "NP","NR","NU","NZ","OM","PA","PE","PF","PG","PH","PK","PL",
+        "PM","PN","PR","PS","PT","PW","PY","QA","RE","RO","RU","RW",
+        "SA","SB","SC","SD","SE","SG","SH","SI","SJ","SK","SL","SM",
+        "SN","SO","SR","ST","SV","SY","SZ","TC","TD","TF","TG","TH",
+        "TJ","TK","TM","TN","TO","TL","TR","TT","TV","TW","TZ","UA",
+        "UG","UM","US","UY","UZ","VA","VC","VE","VG","VI","VN","VU",
+        "WF","WS","YE","YT","RS","ZA","ZM","ME","ZW","A1","A2","O1",
+        "AX","GG","IM","JE","BL","MF","BQ","SS",NULL};
 
 
 // find a spider structure by target address
@@ -133,8 +156,8 @@ TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struc
     }
 
     return sptr;
-    
 }
+
 
 // find a spider structure by its identifier (query identification ID fromm traceroute packets)
 TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int ttl) {
@@ -156,10 +179,7 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
     int missing = 0;
 
     //printf("traceroute_retry\n");
-    if (qptr == NULL) {
-        //printf("qptr is null? \n");
-        return -1;
-    }
+    if (qptr == NULL) return -1;
     
     if (ctx->traceroute_max_retry && (qptr->retry_count > ctx->traceroute_max_retry)) {
         //printf("reached max retry.. max: %d qptr: %d\n", ctx->traceroute_max_retry, qptr->retry_count);
@@ -186,9 +206,7 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
             }
             missing++;
         }
-        
         // if the source IP matches the target.. then it is completed
-
     }
 
     if (missing) {
@@ -203,8 +221,6 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
         qptr->completed = 0;
 
         //printf("Enabling incomplete traceroute %u [%d total]\n", qptr->target_ip, cur_ttl);
-    } else {
-        //printf("no missing on %u\n", qptr->target_ip);
     }
 
 
@@ -247,115 +263,16 @@ int Traceroute_RetryAll(AS_context *ctx) {
     return ret;
 }
 
-// walk all traceroutes with the same 'identifier' in order
-int walk_traceroute_hops(AS_context *ctx, TracerouteSpider *sptr, TracerouteSpider *needle, int cur_distance) {
-    int s_walk_ttl = 0;
-    TracerouteSpider *s_walk_ptr = NULL;
-    int ret_distance = 0;
-    TracerouteSpider *s_branch_ptr = NULL;
-    int bcount = 0;
-    int r = 0;
-
-    if (cur_distance > MAX_TTL) return 0;
-
-    printf("walk_traceroute_hops(): cur_distance %d\n", cur_distance);
-
-    // walk for all possible TTLs
-    while (s_walk_ttl < MAX_TTL) {
-        if ((s_walk_ptr = Traceroute_FindByIdentifier(ctx, sptr->identifier_id, s_walk_ttl)) != NULL) {
-            printf("1 s_walk_ptr ttl %d returned %p identifier %u ttl %d\n", s_walk_ttl, s_walk_ptr, sptr->identifier_id,sptr->ttl);
-
-            // if we have a match...
-            if (s_walk_ptr == needle) {
-                // since ist the same identifier.. we calculate the difference between TTLs
-                ret_distance = needle->ttl - sptr->ttl;
-
-                if (ret_distance < 0) ret_distance = abs(ret_distance);
-
-                ret_distance += cur_distance;
-
-                goto end;
-
-            }
-        } else {
-            printf("culdnt find identifier %X ttl %d\n", sptr->identifier_id, s_walk_ttl);
-        }
-
-        s_walk_ttl++;
-    }
-
-    s_walk_ttl = 0;
-    // walk for all possible TTLs
-    while (s_walk_ttl < MAX_TTL) {
-        if ((s_walk_ptr = Traceroute_FindByIdentifier(ctx, sptr->identifier_id, s_walk_ttl)) != NULL) {
-            printf("2 s_walk_ptr ttl %d returned %p identifier %u ttl %d\n", s_walk_ttl, s_walk_ptr, sptr->identifier_id, sptr->ttl);
-
-            // count branches in this particular identifier's TTL (traceroute noode, and what other traceroutes have simmilar)
-            bcount = L_count_offset((LINK *)s_walk_ptr->branches, offsetof(TracerouteSpider, branches));
-            printf("branch count: %d\n", bcount);
-             
-            // if there are branches to transverse
-            if (bcount) {
-                s_branch_ptr = s_walk_ptr->branches;
-                while (s_branch_ptr != NULL) {
-
-                    cur_distance += 1;
-
-                    // recursively look through that branche's entire traceroute hop list
-                    r = walk_traceroute_hops(ctx, s_branch_ptr, needle, cur_distance);
-
-                    if (r > 0) {
-                        ret_distance = needle->ttl - sptr->ttl;
-
-                        if (ret_distance < 0) ret_distance = abs(ret_distance);
-
-                        ret_distance += cur_distance;
-
-                        // add the distance that was returned fromm that call to walk_traceroute_hops()
-                        ret_distance += r;
-
-                        goto end;
-                    }
-
-                    cur_distance -= 1;
-
-                    s_branch_ptr = s_branch_ptr->branches;
-                }
-            }
-        } else {
-            //printf("culdnt find identifier %X ttl %d\n", sptr->identifier_id, s_walk_ttl);
-        }
-
-        s_walk_ttl++;
-    }
-
-end:;
-    return ret_distance;
-}
 
 
 
 
 // this can be handeled recursively because we have max TTL of 30.. its not so bad
 int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider *looking_for, int distance) {
-    TracerouteSpider *startptr = NULL;
-    TracerouteSpider *lookingptr = NULL;
-
-    TracerouteSpider *sptr2 = NULL;
-    TracerouteSpider *lptr2 = NULL;
-
-    TracerouteSpider *s_walk_ptr = NULL;
-    TracerouteSpider *l_walk_ptr = NULL;
-
-    int sdistance = 0;
-    int ldistance = 0;
-
-    int s_ttl_walk = 0;
-    int l_ttl_walk = 0;
-
-    int cur_distance = distance;
-    int ret = 0;
-    int ttl_diff = 0;
+    int i = 0, n = 0;
+    int ret = 0, r = 0;
+    TracerouteSpider *sptr = NULL;
+    TracerouteQueue *q[2];
 
     // if distance is moore than max ttl.. lets return
     if (distance >= MAX_TTL) return 0;
@@ -363,33 +280,39 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
     // if pointers are NULL for some reason
     if (!start || !looking_for) return 0;
 
-    // ensure we dont go in infinite loop
-    //if (start->search_context.second == looking_for) return 0;
-    //start->search_context.second = looking_for;
-
     // dbg msg
     printf("Traceroute_Search: start %p [%u] looking for %p [%u] distance: %d\n",  start, start->hop_ip, looking_for, looking_for->hop_ip, distance);
-    
 
-    // lets find it again by target...
-    if ((startptr = Traceroute_FindByTarget(ctx, start->target_ip, NULL)) == NULL) {
-        printf("start: couldnt find target.. lets ?? dunno\n");
-        // lets try to perform actionss fromm the structuree we were passed
-        startptr = looking_for;
+    // get both original queue structures
+    if ((q[0] = TracerouteQueueFindByIdentifier(ctx, start->identifier_id)) == NULL) goto end;
+    if ((q[1] = TracerouteQueueFindByIdentifier(ctx, looking_for->identifier_id)) == NULL) goto end;
+
+
+    // first we check q[0] looking for the target IP from looking_for (thus why we set n=0.. )
+    for (i = n = 0; i < MAX_TTL; i++) {
+        sptr = q[n]->responses[i];
+        if (sptr->hop_ip == looking_for->hop_ip) {
+
+            r = sptr->ttl - looking_for->ttl;
+            if (r < 0) r = abs(r);
+            return r;
+
+            break;
+        }
     }
-    sdistance = 0; // keep track of startptr's search distance
-    //s_ttl_walk = 0; // ttl walk is what TTL we are currently checking
 
-    if ((lookingptr = Traceroute_FindByTarget(ctx,looking_for->target_ip, NULL)) == NULL) {
-        printf("looking: couldnt find target.. lets ?? dunno\n");
-        lookingptr = startptr;
+    // now lets recursively scan both sides looking for a response
+    for (n = 0; n < 2; n++) {
+        for (i = 0; i < MAX_TTL; i++) {
+            sptr = q[n]->responses[i];
+            if (sptr != NULL) {
+                // recursively call using this structure
+                r = Traceroute_Search(ctx, sptr, looking_for, distance + 1);
+            }
+        }
     }
-    //ldistance = 0; // keep track of lookingptr's search distance
-    //l_ttl_walk = 0; // current ttl we are checking
 
-    printf("will wak %p %p\n", startptr, lookingptr);
-    sdistance = walk_traceroute_hops(ctx, startptr, lookingptr, 0);
-    printf("sdistance: %d\n", sdistance);
+    end:;
 
     return ret;
 }
@@ -544,7 +467,6 @@ int Traceroute_AdjustActiveCount(AS_context *ctx) {
     // ret is used here so we dont go over max amt of queue allowed..
     // this allowedw this function to get reused during modifying traffic parameters
     while (disabled && (ret < ctx->traceroute_max_active)) {
-
         // pick a random queue
         r = rand()%count;
 
@@ -635,27 +557,10 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             // link into list containing all..
             L_link_ordered_offset((LINK **)&ctx->traceroute_spider, (LINK *)snew, offsetof(TracerouteSpider, next));
 
-
-            //Traceroute_Insert(ctx, snew);
-            /*
-            // now lets link into 'hops' list.. all these variations are required for final strategy
-            if ((sptr = Spider_Find(ctx, snew->hop_ip, &snew->hop_ipv6)) != NULL) {
-                //printf("--------------\nFound Spider %p [%u] branches %d\n", sptr->hop, snew->hop, branch_count(sptr->branches));
-
-                // we found it as a spider.. so we can add it as a BRANCH to a hop (the router which responded is already listed)
-                L_link_ordered_offset((LINK **)&sptr->branches, (LINK *)snew, offsetof(TracerouteSpider, branches));
-            } else {
-                // we couldnt find this hop/router so we add it as new
-                L_link_ordered_offset((LINK **)&ctx->traceroute_spider_hops, (LINK *)snew, offsetof(TracerouteSpider, hops_list));
-            }
-
-            // link with other from same traceroute queue (by its identifier ID)...
-            // this is another dimension of the strategy.. required .. branches of a single hop wasnt enough
-            Spider_IdentifyTogether(ctx, snew);
-*/
-
+            // insert into list for traceroute information
             Traceroute_Insert(ctx, snew);
 
+            // link it to the original queue by its identifier
             Spider_IdentifyTogether(ctx, snew);
 
             // log for watchdog to adjust traffic speed
@@ -800,7 +705,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 
 // When we initialize using Traceroute_Init() it added a filter for ICMP, and set this function
 // as the receiver for any packets seen on the wire thats ICMP
-int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
+int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
     struct in_addr cnv;
     TracerouteResponse *rptr = NULL;
@@ -898,7 +803,6 @@ int Traceroute_Perform(AS_context *ctx) {
 
     // zero icmp header since its in the stack
     memset(&icmp, 0, sizeof(struct icmphdr));
-
 
     printf("Traceroute_Perform: Queue %d [completed %d] max: %d\n", L_count((LINK *)tptr), Traceroute_Count(ctx, 1, 1), ctx->traceroute_max_active);
 
@@ -1083,7 +987,6 @@ int Traceroute_Perform(AS_context *ctx) {
     Traceroute_Watchdog(ctx);
 
     end:;
-
     return ret;
 }
 
@@ -1196,30 +1099,38 @@ int IPv4_compare(uint32_t comp, uint32_t ipv4) {
     int a=0,b=0,c=0,d=0;
     int a2=0,b2=0,c2=0,d2=0;
 
+    // get a.b.c.d for the IP we are comparing with
     d = (comp & 0xff000000) >> 24;
     c = (comp & 0x00ff0000) >> 16;
     b = (comp & 0x0000ff00) >> 8;
     a = (comp & 0x000000ff);
 
+    // get a.b.c.d for the IP we are comparing against
     d2 = (ipv4 & 0xff000000) >> 24;
     c2 = (ipv4 & 0x00ff0000) >> 16;
     b2 = (ipv4 & 0x0000ff00) >> 8;
     a2 = (ipv4 & 0x000000ff);
 
+    // A.b.c.d: which IP has a higher a?
     if (a2 < a) return -1;
     if (a2 > a) return 1;
 
+    // a.B.c.d: which IP has a higher b?
     if (b2 < b) return -1;
     if (b2 > b) return 1;
 
+    // a.b.C.d: which IP has a higher c?
     if (c2 < c) return -1;
     if (c2 > c) return 1;
 
+    // a.b.c.D: which IP has a higher d?
     if (d2 < d) return -1;
     if (d2 > d) return 1;
 
+    // 0 only if IPs are exact match
     if (d2 == d) return 0;
 }
+
 
 
 // lets see if we have a hop already in the spider.. then we just add this as a branch of it
@@ -1275,8 +1186,6 @@ int Spider_Load(AS_context *ctx, char *filename) {
     // open ascii format file
     if ((fd2 = fopen(fname, "r")) == NULL) goto end;
 
-
-
     // read all lines
     while (fgets(buf,1024,fd2)) {
         i = 0;
@@ -1295,6 +1204,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
         sscanf(buf, "%s %s %"SCNu32" %d %d %d %d %d", &type, &target, &identifier,
          &retry, &completed, &enabled, &activity, &ts);
 
+        // cannot allocate?? 
         if ((qnew = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) break;
 
         // set parameters from data file
@@ -1309,6 +1219,11 @@ int Spider_Load(AS_context *ctx, char *filename) {
         qnew->target_ip = inet_addr(target);
         qnew->identifier = identifier;
 
+        // void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr) {
+
+        // lookup on demand later.. so it loads fast...
+        // GeoIP_lookup(ctx, qnew); 
+
         //qnew->country = GEOIP_IPtoCountryID(ctx, target);
         //qnew->asn_num = GEOIP_IPtoASN(ctx, target);
         
@@ -1318,7 +1233,6 @@ int Spider_Load(AS_context *ctx, char *filename) {
         // turn randomizing into its own function later and set here..
         //for (n = 0; n < MAX_TTL; n++) qnew->ttl_list[n] = n;
         //qnew->max_ttl = MAX_TTL;
-
 
         qnew->next = ctx->traceroute_queue;
         ctx->traceroute_queue = qnew;
@@ -1362,11 +1276,12 @@ int Spider_Load(AS_context *ctx, char *filename) {
             slast = snew;
         }
 
-        //snew->country = GEOIP_IPtoCountryID(ctx, snew->hop_ip);
-        //snew->asn_num = GEOIP_IPtoASN(ctx, snew->hop_ip);
+        // GeoIP_lookup(ctx, qnew); 
 
-
+        // link into main list
         Traceroute_Insert(ctx, snew);
+
+        // link to original queue structure by identifier
         Spider_IdentifyTogether(ctx, snew);
 
         // before we fgets() again lets clear the buffer
@@ -1465,7 +1380,7 @@ int Traceroute_Init(AS_context *ctx) {
     FilterPrepare(flt, FILTER_PACKET_ICMP, 0);
 
     // prepare structure used by the network engine to ensure w get the packets we are looking for
-    nptr->incoming_function = &Traceroute_Incoming;
+    nptr->incoming_function = &Traceroute_IncomingICMP;
     nptr->flt = flt;
 
     // insert so the network functionality will begin calling our function for these paackets
@@ -1481,12 +1396,12 @@ int Traceroute_Init(AS_context *ctx) {
     // the data is extremely important to ensure attacks are successful
     // especially if we wanna do the most damage from a single node
     // distributed? good luck.
-    ctx->traceroute_max_retry = 20;
+    ctx->traceroute_max_retry = 100;
     // start at ttl 8 (need to change this dynamically from script) doing it manually for research
     ctx->traceroute_min_ttl = 0;
 
     // how many active at all times? we set it here so we can addjust it in watchdog later...
-    ctx->traceroute_max_active = 50;
+    ctx->traceroute_max_active = 1850;
 
     ret = 1;
 
@@ -1796,6 +1711,7 @@ int GEOIP_IPtoCountryID(AS_context *ctx, uint32_t addr) {
         return 0;
     }
 
+    // get the country ID from country ASCII
     ret = GEOIP_CountryToID(country);
 
     return ret;
@@ -1895,7 +1811,7 @@ int GEOIP_IPtoASN(AS_context *ctx, uint32_t addr) {
 }
 
 
-
+// perform geoip lookup on either type of structure that we moved here to increase loading speed
 void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr) {
     if (qptr != NULL) {
         qptr->country = GEOIP_IPtoCountryID(ctx, qptr->target_ip);
@@ -1907,21 +1823,6 @@ void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr
         sptr->asn_num = GEOIP_IPtoASN(ctx, sptr->target_ip);   
     }
 }
-
-
-
-
-
-/*
-
-for picking connection information we should sort by the count
-once all are zero it should get reset, or choose diff ips
-ill make a function to change IP addresses, etc a little bit
-so it finds things  in the same AS, and country
-which means the IP variation  will give a little different hash
-
-
-*/
 
 
 
@@ -1938,16 +1839,12 @@ ResearchConnectionOptions *ResearchConnectionGet(AS_context *ctx, int country) {
         // checking client country. we need to check for both.. and if neither match
         // than we can  verify against all hops, and ensure its within 1-2 hops or
         // close to the country
-        if (!country || (country && country == optr->client.country)) {
+        if (!country || (country && ((country == optr->server.country) || (country == optr->client.country)))) {
             ret = optr;
             break;
         }
         optr = optr->next;
     }
-
-
-
-
 
     end:;
 
@@ -1961,39 +1858,39 @@ ResearchConnectionOptions *ResearchConnectionGet(AS_context *ctx, int country) {
 }
 
 
-// we'd prob start with an analysis structure, and then build
-// connection information, & connection options from it
-
-/*
-
-
-
-// analysis structure regarding two nodes.. so we can cache calulations
-// and decide how important it is to investigate similar IPs etc
-// for further attacks
-typedef struct _traceroute_analysis {
-    struct _traceroute_analysis *next;
-
-    TracerouteQueue *node1;
-    TracerouteQueue *node2;
-
-    // how many borders does each of these cross
-    int border_score;
-
-    // how important is it to investigate similar/more like this?
-    int curiousity;
-
-    int active_ts;
-    int ts;
-} TracerouteAnalysis;
 
 // find an analysis structure by either two nodes, or 1.. itll check both sides..
 TracerouteAnalysis *Traceroute_AnalysisFind(AS_context *ctx, TracerouteQueue *node1, TracerouteQueue *node2) {
     TracerouteAnalysis *n1 = NULL, *n2 = NULL;
+    TracerouteAnalysis *tptr = ctx->analysis_list;
 
 
+    while (tptr != NULL) {
+        // first we find exact match
+        if ((tptr->node1 == n1) && (tptr->node2 == n2)) break;
+        if ((tptr->node1 == n2) && (tptr->node2 == n1)) break;
+
+        tptr = tptr->next;
+    }
+
+    // return the full match if we found it
+    if (tptr) return tptr;
+
+    tptr = ctx->analysis_list;
+    while (tptr != NULL) {
+        // now we just make sure one side matches
+        if ((tptr->node1 == n1) || (tptr->node2 == n1)) break;
+        if ((tptr->node1 == n2) || (tptr->node2 == n2)) break;
+
+        tptr = tptr->next;
+    }
+
+    // return the match any node query
+    return tptr;
 }
 
+// create a traceroute analysis structure for storing informatiion regarding two sides of a connectioon
+// to be reused, or used again
 TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *node1, TracerouteQueue *node2) {
     TracerouteAnalysis *tptr = NULL;
     if ((tptr = (TracerouteAnalysis *)calloc(1, sizeof(TracerouteAnalysis))) == NULL) return NULL;
@@ -2004,56 +1901,59 @@ TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *nod
     tptr->node1 = node1;
     tptr->node2 = node2;
 
-    curiousity = 0;
-    border_score = 0;
+    // curiousity is % of whether or not we attempt to modify IP, or search for
+    // simmilar/close things by a random generatred nunmber modulated by this
+    tptr->curiousity = 0;
+
+    tptr->border_score = 0;
+
+    // link into context list
+    L_link_ordered_offset((LINK **)&ctx->analysis_list, (LINK *)tptr, offsetof(TracerouteAnalysis, next));
 
     return tptr;
 }
 
+/*
+Analysis is distance, and geoip/etc investigation between two NODE_PROCESSING_INSTRUCTION + curiousity
 
-typedef struct _connection_information {
-    uint32_t ip;
-    struct in6_addr ipv6;
-    int is_ipv6;
+ResearchNodeOptions is a local structure used to represent ipv4/6, OS emulation information, and original queue for a node1...
+it shouldnt need the original queue, and should contain all its own memory so it doesnt reference anything else.. essentially work alone
+ConnectionOptions is a list of currently used, or generated + verified details which can be used for an attack, and whether it currently is
+(attack ptr)
+has border score, count, and hop_country already in memory prepared for using with other things
+    TracerouteQueue *node1; TracerouteQueue *node2;
+    int border_score;  int curiousity;
+    int active_ts; int ts;
+} TracerouteAnalysis;
 
-    // country, and ASN ID
-    int country;
-    int asn_num;
+ResearchConnectionOptions has an analysis Pointer
+a client/serfver researchnodeinformation side
+border score, hop_country[MAX_TTL], ts, ,and count`
 
-    // score is how many countries we go through towards the node
-    int border_score;
+researchinformationnode has 'information' ptr to gtraceroute queue
+country, asnum.. os EmulationParameters
+border score both ip types ipv4/ipv6
+-
+traceroute analysis has border score, curiosuoity (scan near),
+active ts, and ts 
 
-    // the traceroute queue for this node..
-    // will contain all hop information used as starting point
-    // for analysis
+nodoe1/2 traceroute queue 
+{
+    uint32_t ip; struct in6_addr ipv6; int is_ipv6;
+    int country; int asn_num;
+    int os_emulation_id; int border_score;
     TracerouteQueue *information;
 } ResearchNodeInformation;
-
 // we list all chosen client/server here for use in attack lists
-typedef struct _research_connection_options {
-    struct _research_connection_options *next;
-
-    ResearchNodeInformation client;
-    ResearchNodeInformation server;
-
+{}
+    ResearchNodeInformation client; ResearchNodeInformation server;
+    AS_attacks *attackptr;
     TracerouteAnalysis *analysis;
-
-    // list of all countries we pass through between these two clients
     int hop_country[MAX_TTL];
-
-    // score between client, and server (should be low)
     int border_score;
-
-    // how many times can we reuse?
     int count;
-
-    // timestamp created
-    int ts;
-
-    // last timestamp used
-    int last_ts;
+    int ts; int last_ts;
 } ResearchConnectionOptions;
-
 
 
 
