@@ -28,6 +28,14 @@ typedef struct _network_analysis_functions NetworkAnalysisFunctions;
 
 struct ifreq;
 
+struct _research_connection_options;
+typedef struct _research_connection_options ResearchConnectionOptions;
+
+typedef struct _traceroute_analysis;
+typedef struct _traceroute_analysis TracerouteAnalysis;
+
+
+
 // general attack structure...
 // should support everything from syn packets, to virtual connections
 typedef struct _as_attacks {
@@ -197,17 +205,6 @@ typedef struct _antisurveillance_context {
     BH_Queue *blackhole_queue;
     int blackhole_paused;
 
-    // active traceroutes
-    TracerouteQueue *traceroute_queue;
-    // internal database built from the traceroutes, and analysis
-    TracerouteSpider *traceroute_spider;
-    
-    //void *jump_table[256*256*256];
-    TracerouteSpider *traceroute_spider_hops;
-    // responses coming from the network to get analyzed & put into the spiderweb
-    TracerouteResponse *traceroute_responses;
-
-    
     AS_scripts *scripts;
 
     // paused operations *all*
@@ -225,13 +222,22 @@ typedef struct _antisurveillance_context {
 
     struct ifreq if_mac;
 
-    int traceroute_max_retry;
 
+    // active traceroutes
+    TracerouteQueue *traceroute_queue;
+    // internal database built from the traceroutes, and analysis
+    TracerouteSpider *traceroute_spider;
+    //void *jump_table[256*256*256];
+    TracerouteSpider *traceroute_spider_hops;
+    // responses coming from the network to get analyzed & put into the spiderweb
+    TracerouteResponse *traceroute_responses;
+    TracerouteAnalysis *analysis_list;
+
+    ResearchConnectionOptions *research_connections;
+    int traceroute_max_retry;
     // if we are doing a lot of lookups.. we can start at higher TTL
     int traceroute_min_ttl;
-
     int traceroute_max_active;
-
     TraceroutePerformaceHistory Traceroute_Traffic_Watchdog;
     int watchdog_ts;
 

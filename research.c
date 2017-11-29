@@ -370,102 +370,6 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
     // dbg msg
     printf("Traceroute_Search: start %p [%u] looking for %p [%u] distance: %d\n",  start, start->hop_ip, looking_for, looking_for->hop_ip, distance);
     
-    /*// use context here and use the next list..
-    search = start;
-    
-    // first we search all branches, and perform it recursively as well...
-    while (search != NULL) {
-
-        if (search->branches) {
-            // increase distance since we are accessing a branch
-            cur_distance++;
-
-            // get the first element
-            search_branch = search->branches;
-        
-            // we will loop until its NULL
-            while (search_branch != NULL) { */
-/*
-
-we should start looking for TARGETs .. not necessarily hops..
-hops are just used to connect the various nodes... although if a target is not found we must traceroute it, and hope it matches
-
-if we cant find the target.. its possible it is ignoring ICMP packets... but the routers should have responded
-so we can check traceroute queries to look for the target and grab its identifier
-(in the future.. all logs should contain the target, as well as the  identifier.. i think i might have it now)
-but double checck everywhere..
-or log the original queeues as well
-
-and if it doesnt match we need enough IPs in various locations to attempt to fill in the blank
-(there should be a way to queue for IP investigations, or modify the IP to adjust as close as possible)
-just to ensure we go through the fiber taps which we were targeting
-also we need to modify for other reasons thatll be clear soon to pull all 3 types of attacks together :)
-
-
-192.168.0.1   b      192.168.0.1         
-cox nola h           cox nola  h          
-cox houston             i            cox houston h                cox houston h
-                       i                                                                 cox L
-
-Traceroute_FindByHop
-Traceroute_FindByTarget
-Traceroute_FindByIdentifier
-
-when target -> identifier -> hop 
-
-hop -> branch (doesnt count as increment in distance.. its the same.. but once it leaves that structure
-to spider another identifier (diff ttl hop in same identifier/query) then it increments
-
-branch -> branch doesnt increment
-
-target -> hop increments
-hop -> target increments
-
------
-
-
-walks identifier (single traceroute list) looking for match
-if it finds it. the distance is the TTL diff between the start, and finding it
-
-if it doesnt match, then it checks all of those agfain but for each hop itll check whether or not it has ther branches (other traceroutes which share hops)
-and then itll enumerate over all of their hops looking for the alternative... each time it goes into these banches to verify itll take the TTL diff, and then increase distance
-
-as it goes into each of those as well... and if it finds it.. itll calculate the differencec between getting into that branch (its ttl) and the solution.. then itll have the
-other ttl calculation of ttl diff between the start, and the branch it is inside of (before starting a new distancce between that TTL, and its other TTL which matches)
-
-
-so walk_identifier(start, loooking for, initial_distance) could be run on both sides... 
-and when it goes into another banch it can calculate the ttl and change the distance and then recursively look
-
-it wouldnt use 100% recursive since it is looking up each TTL separately instead of following a linked list
-
-
-another option is to turn the entire thing into arbitrary nodes, or use something like infomap
-nodes which doesnt matter what is branches, TTL ,etc..
- (lose the bullshit C++ structure that is giving us issues)
-
- can hash all traceroute spider structures, and link them together
-
- prev next
-  ___      ___
- |   |    |   |
- |   | oo |   |  
-  ---      ---
-
-
-ok so .. when i was testing.. I was seeing some identifiers (Traceroutes) which had one TTL packet
-of 24.. and nothing below... so now im going to log all queries, and allow loading
-
-and this algorithm, or another functin which  detects high amounts of missing
-TTL will relaunch the traceroute queries again for those to replace
-TTLs which are  missing (especially if >50-60% of traceroute is missing)
-this should allow a consitent retry method to fill in the gaps
-its essentailly due to rate limiting, etc...
-
-and since this will take place it might be possible to handle more packets quicker
-since we will just retry.. ill test a few possibilities to see what works fastest
-
-*/
 
     // lets find it again by target...
     if ((startptr = Traceroute_FindByTarget(ctx, start->target_ip, NULL)) == NULL) {
@@ -486,138 +390,8 @@ since we will just retry.. ill test a few possibilities to see what works fastes
     printf("will wak %p %p\n", startptr, lookingptr);
     sdistance = walk_traceroute_hops(ctx, startptr, lookingptr, 0);
     printf("sdistance: %d\n", sdistance);
-    // loop for each TTL...
 
-/*
-
-    // loop on startptr side
-    for (s_ttl_walk = 0; s_ttl_walk < MAX_TTL; s_ttl_walk++) {
-        if ((s_walk_ptr = Traceroute_FindByIdentifier(ctx, startptr->identifier, s_walk_ttl)) != NULL) {
-            if (s_walk_ptr == lookingptr) {
-                // did we find it???
-                ttl_diff = s_walk_ptr->ttl - lookingptr->ttl;
-                // turn -3 to 3... or -5 to 5.. etc.. we just need the difference
-                if (ttl_diff < 0) ttl_diff = abs(ttl_diff);
-
-                // and thats our distance
-                return t;
-            }
-        }
-    }
-
-    // loop on looking ptr side...
-
-
-    // we take both sides and follow the entire receiver heaader until we rewach MAX_TTL..
-    // looking for the other side...
-
-    // then we will branch into each TTL (following the similar hops).. every branch we will then follow all of its TTLs
-    // increasing distance as we get further and branch into it
-
-
-    do {
-
-        // look for both sides from each other..
-        sptr2 = startptr;
-        while (sptr2 != NULL) {
-
-            sptr2 = sptr->next;
-        }
-
-        lptr2 = lookingptr;
-        while (lptr2 != NULL) {
-            lptr2 = lptr2->next;
-        }
-
-
-    } while(1);
-
-
-*/
-/*
-                // if the IPv4 address matches.. we found it.. now we have to walk all paths until we literally reach it
-                // not just a pointer in the linked list... we have to see how many steps to arrive
-                if (search_branch->hop_ip == looking_for->hop_ip) {
-
-
-
-
-
-                    
-                }
-
-                // if not.. then we wanna recursively search this branch.. so increase distance, and  hit this function with this pointer
-                //ret = Traceroute_Search(search_branch, looking_for, cur_distance + 1);
-
-                // if it was found..return the distance
-                //if (ret) return ret;
-
-                // move to the next branch in this list
-                search_branch = search_branch->branches;
-            }
-
-            // we decrement hte distance since it wasn't used...
-            cur_distance--;
-        }
-
-        // movve to the next traceroute response in our main list
-        search = search->next;
-    }
-*/
     return ret;
-    // disabling anything under here .. dev'ing maybe rewrite
-    /*
-    // next we wanna search fromm the  identifiers list (it could be 2 routers away) so distance of 2..
-    search = start->identifiers;
-
-    // increase distance so that it is calculated correctly if it finds the needle in this haystack
-    cur_distance++;
-    // loop until the identifier list is completed..
-    while (search != NULL) {
-
-        // does the IPv4 address match?
-        if (start->hop_ip == looking_for->hop_ip) {
-            // calculate the TTL difference (which tells how many hops away.. which is pretty mcuh the same as branches)
-            ttl_diff = start->ttl - looking_for->ttl;
-
-            // if its <0 it means the start->ttl was alrady lower.. lets just get the absolute integer( turn negative to positive)
-            if (ttl_diff < 0) ttl_diff = abs(ttl_diff);
-
-            // if we have a value then add the current distance to it
-            if (ttl_diff) {
-                // set ret so that it returns it to the calling function
-                ret = ttl_diff + cur_distance;
-                break;
-            }
-
-            // otherwise we wanna go into this identifiers branch
-
-            // *** this was recursively doing an inf loop.. will fix soon
-            search_branch = NULL; // search->branches;
-
-            // we will loop until all the branches have been checked
-            while (search_branch != NULL) {
-                // we wanna check branches of that traceroute (identifier) we are checking    
-
-                // increase the distance, and call this function again to recursively use the same algorithm
-                ret = Traceroute_Search(search_branch, looking_for, cur_distance+1);
-
-                    // if it was found..
-                if (ret) return ret;
-
-                // move to the  next branch in this identifier list
-                search_branch = search_branch->branches;
-            }
-        }
-
-        // move to the next hop in this traceroute (identifier) list
-        search = search->identifiers;
-    }
-
-    // decrement the distance (just to keep things clean)
-    cur_distance--;
-
-    return ret;*/
 }
 
 
@@ -804,6 +578,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     int i = 0;
     int left = 0;
 
+
     //printf("Traceroute Analyze Single responsse %p\n", rptr);
 
     // if the pointer was NULL.. lets just return with 0 (no error...)
@@ -850,11 +625,12 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             CopyIPv6Address(&qptr->target_ipv6, &rptr->target_ipv6);
 
             snew->country = GEOIP_IPtoCountryID(ctx, snew->hop_ip);
-
+            snew->asn_num = GEOIP_IPtoASN(ctx, snew->hop_ip);
+            
             // in case later we wanna access the original queue which created the entry
             snew->queue = qptr;
 
-            snew->country = GEOIP_IPtoCountryID(ctx, snew->hop_ip);
+            //snew->country = GEOIP_IPtoCountryID(ctx, snew->hop_ip);
             
             // link into list containing all..
             L_link_ordered_offset((LINK **)&ctx->traceroute_spider, (LINK *)snew, offsetof(TracerouteSpider, next));
@@ -908,16 +684,16 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
         ctx->traceroute_spider_hops = snew;
     } else {
         while (sptr != NULL) {
+            // compare the current elements IP, and ours.. so we know whether we belong before, match, or after it
             i = IPv4_compare(sptr->hop_ip, snew->hop_ip);
 
             if (i == 0) {
-
+                // we match this element IP exactly.. add as a branch inside of its structure
                 snew->branches = sptr->branches;
                 sptr->branches = snew;
-
                 break;
             } else if (i == 1) {
-
+                // here .. lets ensure we are before this element by changing the next of last to this one
                 if (slast != NULL) {
 
                     snew->hops_list = slast->hops_list;
@@ -1003,6 +779,8 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 
     // current timestamp stating it was added at this time
     tptr->ts = time(0);
+
+    tptr->type = TRACEROUTE_ICMP;
 
     // add to traceroute queue...
     //L_link_ordered_offset((LINK **)&ctx->traceroute_queue, (LINK *)tptr, offsetof(TracerouteQueue, next));
@@ -1485,6 +1263,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
     TracerouteSpider *slast = NULL, *Blast = NULL;
     TracerouteQueue *qnew = NULL;
     char fname[32];
+    char *asnum_name = NULL;
 
     // traceroute responses (spider)
     sprintf(fname, "%s.txt", filename);
@@ -1529,6 +1308,10 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
         qnew->target_ip = inet_addr(target);
         qnew->identifier = identifier;
+
+        //qnew->country = GEOIP_IPtoCountryID(ctx, target);
+        //qnew->asn_num = GEOIP_IPtoASN(ctx, target);
+        
 
         // set all TTLs in the list to their values
         // ***
@@ -1578,6 +1361,10 @@ int Spider_Load(AS_context *ctx, char *filename) {
             slast->next = snew;
             slast = snew;
         }
+
+        //snew->country = GEOIP_IPtoCountryID(ctx, snew->hop_ip);
+        //snew->asn_num = GEOIP_IPtoASN(ctx, snew->hop_ip);
+
 
         Traceroute_Insert(ctx, snew);
         Spider_IdentifyTogether(ctx, snew);
@@ -1965,14 +1752,11 @@ int TracerouteResetRetryCount(AS_context *ctx) {
 
 // initialize other functionality in research besides traceroute
 int Research_Init(AS_context *ctx) {
-    GeoIP *gi = NULL;
     int ret = 0;
 
-    if ((gi = GeoIP_open("GeoIP.dat", GEOIP_STANDARD | GEOIP_SILENCE)) == NULL) return -1;
-
     // set context handler for geoip
-    ctx->geoip_handle = gi;
-
+    if ((ctx->geoip_handle = GeoIP_open("GeoIP.dat", GEOIP_STANDARD | GEOIP_SILENCE)) == NULL) return -1;
+    
     ctx->geoip_asn_handle = GeoIP_open("GeoIPASNum.dat", GEOIP_ASNUM_EDITION_V6 | GEOIP_SILENCE);
 
     ret = 1;
@@ -2026,12 +1810,83 @@ uint32_t ResearchGenerateIPCountry(AS_context *ctx, char *want_country) {
     int tries = 5000;
     uint32_t ret = 0;
 
+    // use max retry in case something goes wrong.. 5000 is a lot.
+    // i had this fail during testing for other reasons and it still worked fine
+    // due to the retry
     while (tries--) {
+        // generate a random IPv4 address
         addr = rand()%0xFFFFFFFF;
+        // get the  country as an ascii string for this IP address
         if ((country = (char *)GeoIP_country_code_by_ipnum(ctx->geoip_handle, addr)) != NULL) {
+            // if it matches the country we are trying to generate an IP address for
             if (strcmp(country, want_country)==0) {
+                // then we prepare ret to return this IP addresss
                 ret = addr;
                 break;
+            }
+        }
+    }
+
+    // return the address
+    return ret;
+}
+
+
+// Adds a single IP address to the traceroute queue which is randomly generated, and falls inside of a specific country
+int TracerouteAddCountryIP(AS_context *ctx, char *want_country) {
+    int ret = 0;
+    uint32_t ip = 0;
+
+    // generate a random IP address which matches this country
+    ip = ResearchGenerateIPCountry(ctx, want_country);
+
+    // if that was successful
+    if (ip != 0) {
+        // then we add the IP as a traceroute queue so we have analysis information
+        Traceroute_Queue(ctx, ip, NULL);
+
+        // success
+        ret = 1;
+    }
+
+    // return whether we were successful or not
+    return ret;
+}
+
+
+// IP to ASN #
+int GEOIP_IPtoASN(AS_context *ctx, uint32_t addr) {
+    char asn[16];
+    char *sptr = NULL;
+    char *asnum_name = NULL;
+    int i = 0;
+    int n = 0;
+    int ret = 0;
+
+    // if the handle for ASN lookups exist from opening the database successfully
+    if (ctx->geoip_asn_handle)
+        asnum_name = GeoIP_name_by_ipnum(ctx->geoip_asn_handle, addr);
+
+    if (asnum_name != NULL) {
+        strncpy(asn, asnum_name, sizeof(asn));
+        // find the first space ("AS0000<space>Some useless information")
+        if ((sptr = strchr(asnum_name, ' ')) != NULL) {
+            // turn that space into NULL, so "AS0000"
+            *sptr = 0;
+            // verify string is only "AS<number>""
+            if (asnum_name[0] == 'A' && asnum_name[1] == 'S') {
+                // if so.. get a pointer to the number only.. "0000"
+                sptr = (char  *)(asnum_name+2);
+                // verify all characters are numbers..
+                for (i = 0; i < strlen(sptr); i++) {
+                    // increase n if not a digit
+                    if (!isdigit(sptr[i])) n++;
+                }
+                // if there were only all digits.. 
+                if (n == 0) {
+                    // we respond with the number itself only
+                    ret = atoi(sptr);
+                }
             }
         }
     }
@@ -2040,18 +1895,166 @@ uint32_t ResearchGenerateIPCountry(AS_context *ctx, char *want_country) {
 }
 
 
-// Adds a single IP address to the traceroute queue which is randomly generated, and falls inside of a specific country
-int TracerouteAddCountryIP(AS_context *ctx, char *want_country) {
-    int ret = 0;
-    uint32_t ip = ResearchGenerateIPCountry(ctx, want_country);
 
-    if (ip != 0) {
-        Traceroute_Queue(ctx, ip, NULL);
-        ret = 1;
+void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr) {
+    if (qptr != NULL) {
+        qptr->country = GEOIP_IPtoCountryID(ctx, qptr->target_ip);
+        qptr->asn_num = GEOIP_IPtoASN(ctx, qptr->target_ip);
+    }
+
+    if (sptr != NULL) {
+        sptr->country = GEOIP_IPtoCountryID(ctx, sptr->target_ip);
+        sptr->asn_num = GEOIP_IPtoASN(ctx, sptr->target_ip);   
+    }
+}
+
+
+
+
+
+/*
+
+for picking connection information we should sort by the count
+once all are zero it should get reset, or choose diff ips
+ill make a function to change IP addresses, etc a little bit
+so it finds things  in the same AS, and country
+which means the IP variation  will give a little different hash
+
+
+*/
+
+
+
+// get least used connection options for the next fabricated attack.. possibly filtering by countries
+ResearchConnectionOptions *ResearchConnectionGet(AS_context *ctx, int country) {
+    ResearchConnectionOptions *optr = NULL;
+    ResearchConnectionOptions *ret = NULL;
+
+
+    // find by somme criteria.. will change
+    optr = ctx->research_connections;
+    while (optr != NULL) {
+
+        // checking client country. we need to check for both.. and if neither match
+        // than we can  verify against all hops, and ensure its within 1-2 hops or
+        // close to the country
+        if (!country || (country && country == optr->client.country)) {
+            ret = optr;
+            break;
+        }
+        optr = optr->next;
+    }
+
+
+
+
+
+    end:;
+
+    // increase count if we are returning w a structure
+    if (ret) {
+        ret->count++;
+        ret->last_ts = time(0);
     }
 
     return ret;
+}
+
+
+// we'd prob start with an analysis structure, and then build
+// connection information, & connection options from it
+
+/*
+
+
+
+// analysis structure regarding two nodes.. so we can cache calulations
+// and decide how important it is to investigate similar IPs etc
+// for further attacks
+typedef struct _traceroute_analysis {
+    struct _traceroute_analysis *next;
+
+    TracerouteQueue *node1;
+    TracerouteQueue *node2;
+
+    // how many borders does each of these cross
+    int border_score;
+
+    // how important is it to investigate similar/more like this?
+    int curiousity;
+
+    int active_ts;
+    int ts;
+} TracerouteAnalysis;
+
+// find an analysis structure by either two nodes, or 1.. itll check both sides..
+TracerouteAnalysis *Traceroute_AnalysisFind(AS_context *ctx, TracerouteQueue *node1, TracerouteQueue *node2) {
+    TracerouteAnalysis *n1 = NULL, *n2 = NULL;
+
 
 }
 
-//asnum_name = GeoIP_name_by_ipnum(gi, ipnum);	
+TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *node1, TracerouteQueue *node2) {
+    TracerouteAnalysis *tptr = NULL;
+    if ((tptr = (TracerouteAnalysis *)calloc(1, sizeof(TracerouteAnalysis))) == NULL) return NULL;
+
+    tptr->ts = time(0);
+    tptr->active_ts = 0;
+
+    tptr->node1 = node1;
+    tptr->node2 = node2;
+
+    curiousity = 0;
+    border_score = 0;
+
+    return tptr;
+}
+
+
+typedef struct _connection_information {
+    uint32_t ip;
+    struct in6_addr ipv6;
+    int is_ipv6;
+
+    // country, and ASN ID
+    int country;
+    int asn_num;
+
+    // score is how many countries we go through towards the node
+    int border_score;
+
+    // the traceroute queue for this node..
+    // will contain all hop information used as starting point
+    // for analysis
+    TracerouteQueue *information;
+} ResearchNodeInformation;
+
+// we list all chosen client/server here for use in attack lists
+typedef struct _research_connection_options {
+    struct _research_connection_options *next;
+
+    ResearchNodeInformation client;
+    ResearchNodeInformation server;
+
+    TracerouteAnalysis *analysis;
+
+    // list of all countries we pass through between these two clients
+    int hop_country[MAX_TTL];
+
+    // score between client, and server (should be low)
+    int border_score;
+
+    // how many times can we reuse?
+    int count;
+
+    // timestamp created
+    int ts;
+
+    // last timestamp used
+    int last_ts;
+} ResearchConnectionOptions;
+
+
+
+
+*/

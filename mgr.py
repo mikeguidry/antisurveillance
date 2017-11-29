@@ -132,6 +132,7 @@ def debug_console(a):
             variables.update(locals())
             shell = code.InteractiveConsole(variables)
             shell.interact()
+            os.remove("debug_console")
 
 
 # this is the function that gets called every iteration if running from the C side.. (Scripting_Perform())

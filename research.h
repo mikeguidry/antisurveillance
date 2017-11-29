@@ -58,6 +58,13 @@ typedef struct _lookup_queue {
 // this is pretty standard...
 #define MAX_TTL 30
 
+
+enum {
+    TRACEROUTE_ICMP,
+    TRACEROUTE_UDP,
+    TRACEROUTE_TCP
+};
+
 /*
 
 Traceroute queue which is used to determine the best IPs for manipulation of fiber cables
@@ -70,6 +77,9 @@ typedef struct _traceroute_queue {
     uint32_t target_ip;
     struct in6_addr target_ipv6;
     int target_is_ipv6;
+
+    // what type of traceroute are we performing?
+    int type;
 
     //timestamp added
     int ts;
@@ -90,6 +100,7 @@ typedef struct _traceroute_queue {
     uint32_t identifier;
 
     int country;
+    int asn_num;
 
     int completed;
 
@@ -139,6 +150,7 @@ typedef struct _traceroute_spider {
     int ts;
 
     int country;
+    int asn_num;
 
     // quick reference of IP (of the router.. / hop / gateway)
     uint32_t hop_ip;
@@ -235,3 +247,75 @@ int GEOIP_CountryToID(char *country);
 int GEOIP_IPtoCountryID(AS_context *ctx, uint32_t addr);
 uint32_t ResearchGenerateIPCountry(AS_context *ctx, char *want_country);
 int TracerouteAddCountryIP(AS_context *ctx, char *want_country);
+int GEOIP_IPtoASN(AS_context *ctx, uint32_t addr);
+void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr);
+
+// analysis structure regarding two nodes.. so we can cache calulations
+// and decide how important it is to investigate similar IPs etc
+// for further attacks
+typedef struct _traceroute_analysis {
+    struct _traceroute_analysis *next;
+
+    TracerouteQueue *node1;
+    TracerouteQueue *node2;
+
+    // how many borders does each of these cross
+    int border_score;
+
+    // how important is it to investigate similar/more like this?
+    int curiousity;
+
+    int active_ts;
+    int ts;
+} TracerouteAnalysis;
+
+
+typedef struct _connection_information {
+    uint32_t ip;
+    struct in6_addr ipv6;
+    int is_ipv6;
+
+    // country, and ASN ID
+    int country;
+    int asn_num;
+
+    // did we decide to emulate a particular OS?
+    int os_emulation_id;
+
+
+    // score is how many countries we go through towards the node
+    int border_score;
+
+    // the traceroute queue for this node..
+    // will contain all hop information used as starting point
+    // for analysis
+    TracerouteQueue *information;
+} ResearchNodeInformation;
+
+// we list all chosen client/server here for use in attack lists
+typedef struct _research_connection_options {
+    struct _research_connection_options *next;
+
+    ResearchNodeInformation client;
+    ResearchNodeInformation server;
+
+    // attack structure for these options
+    AS_attacks *attackptr;
+
+    TracerouteAnalysis *analysis;
+
+    // list of all countries we pass through between these two clients
+    int hop_country[MAX_TTL];
+
+    // score between client, and server (should be low)
+    int border_score;
+
+    // how many times can we reuse?
+    int count;
+
+    // timestamp created
+    int ts;
+
+    // last timestamp used
+    int last_ts;
+} ResearchConnectionOptions;
