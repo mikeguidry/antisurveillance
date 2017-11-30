@@ -27,3 +27,4 @@ typedef struct _as_scripts {
     int perform;
 } AS_scripts;
 
+AS_scripts *Scripting_FindFunction(AS_context *, char *);

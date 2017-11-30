@@ -2207,8 +2207,11 @@ typedef struct _content_context {
 
 } ContentContext;
 
+
+
 // This will call a python function  which is meant to generate client, and server side content
 int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_id, int site_category, char *IP_src, char *IP_dst, char *Country_src, char *Country_dst, char **client_body, int *client_body_size, char **server_body, int *server_body_size) {
+    char generator_function[] = "content_generator";
     int ret = -1;
     PyObject *pArgs = NULL;
     PyObject *pIP_src = NULL, *pIP_dst = NULL;
@@ -2275,79 +2278,69 @@ int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_i
     // to support
     //while (sptr != NULL) {
 
+    // find the script which has this function
+    sptr = Scripting_FindFunction(ctx, generator_function);
 
-    // This  code  hadd to take place here.. this function was getting pValue back ater releasing locks, etc..
-    // it had already invalidated alll of the information, and w as crashing
-        if (sptr->pModule != NULL) {
+    if (sptr) {
+        sptr->myThreadState = PyThreadState_New(sptr->mainInterpreterState);
+        
+        PyEval_ReleaseLock();
 
+        PyEval_AcquireLock();
 
-            sptr->myThreadState = PyThreadState_New(sptr->mainInterpreterState);
-            
-            PyEval_ReleaseLock();
-
-            PyEval_AcquireLock();
-
-            sptr->tempState = PyThreadState_Swap(sptr->myThreadState);
+        sptr->tempState = PyThreadState_Swap(sptr->myThreadState);
 
 
 
 
-            pFunc = PyObject_GetAttrString(sptr->pModule, "content_generator");
+        pFunc = PyObject_GetAttrString(sptr->pModule, generator_function);
 
-                // now we must verify that the function is accurate
-            if (pFunc && PyCallable_Check(pFunc)) {
-                // call the python function
+            // now we must verify that the function is accurate
+        if (pFunc && PyCallable_Check(pFunc)) {
+            // call the python function
 
-                pValue = PyObject_CallObject(pFunc, pArgs);
-
-                if (pValue != NULL) {
-//                    if (!PyErr_Occurred()) break;
-                }
-
-            }
+            pValue = PyObject_CallObject(pFunc, pArgs);
         }
 
-        //sptr = sptr->next;
-    //}
+
+        if (pValue != NULL) {        
+            // parse the returned 2 bodies into separate variables for processing
+            // it needs to get returned as a tuple.. (body, body2)
+            PyArg_ParseTuple(pValue, "s#s#", &new_client_body, &new_client_body_size, &new_server_body, &new_server_body_size);
+
+            // allocate memeory to hold these pointers since the returned ones are inside of python memory
+            if ((ret_client_body = (char *)malloc(new_client_body_size)) == NULL) goto end;
+            if ((ret_server_body = (char *)malloc(new_server_body_size)) == NULL) goto end;
+
+            // copy the data from internal python storage into the ones for the calling function
+            memcpy(ret_client_body, new_client_body, new_client_body_size);
+            memcpy(ret_server_body, new_server_body, new_server_body_size);
+
+            // free passed client body if they were even passed
+            if (*client_body != NULL) free(*client_body);
+            if (*client_body != NULL) free(*server_body);
+
+            *client_body = ret_client_body;
+            *client_body_size = new_client_body_size;
+            *server_body = ret_server_body;
+            *server_body_size = new_server_body_size;
+
+            // so we dont free these at the end of the function  (calling function gets their pointers above)
+            ret_client_body = NULL;
+            ret_server_body = NULL;   
+
+            ret = 1;
+        }
 
 
-    if (pValue != NULL) {        
-        // parse the returned 2 bodies into separate variables for processing
-        PyArg_ParseTuple(pValue, "s#s#", &new_client_body, &new_client_body_size, &new_server_body, &new_server_body_size);
-
-        // allocate memeory to hold these pointers since the returned ones are inside of python memory
-        if ((ret_client_body = (char *)malloc(new_client_body_size)) == NULL) goto end;
-        if ((ret_server_body = (char *)malloc(new_server_body_size)) == NULL) goto end;
-
-        // copy the data from internal python storage into the ones for the calling function
-        memcpy(ret_client_body, new_client_body, new_client_body_size);
-        memcpy(ret_server_body, new_server_body, new_server_body_size);
-
-        // free passed client body if they were even passed
-        if (*client_body != NULL) free(*client_body);
-        if (*client_body != NULL) free(*server_body);
-
-        *client_body = ret_client_body;
-        *client_body_size = new_client_body_size;
-        *server_body = ret_server_body;
-        *server_body_size = new_server_body_size;
-
-        // so we dont free these at the end of the function  (calling function gets their pointers above)
-        ret_client_body = NULL;
-        ret_server_body = NULL;   
-
-        ret = 1;
-    }
-
-
-    if (sptr->pModule != NULL) {
-        PyThreadState_Swap(eptr->tempState);
+        PyThreadState_Swap(sptr->tempState);
         PyEval_ReleaseLock();
 
         // Clean up thread state
-        PyThreadState_Clear(eptr->myThreadState);
-        PyThreadState_Delete(eptr->myThreadState);
-        eptr->myThreadState = NULL;
+        PyThreadState_Clear(sptr->myThreadState);
+        PyThreadState_Delete(sptr->myThreadState);
+
+        sptr->myThreadState = NULL;
     }
 
     // cleanup
@@ -2394,13 +2387,7 @@ int ResearchContentGenerator(AS_context *ctx, int src_country, int dst_country, 
     ret = ResearchPyCallbackContentGenerator(ctx, language, site_id, site_category, IP_src, IP_dst, "US", "US",
     content_client, content_client_size, content_server, content_server_size);
 
-/*
-*content_client = new_content_client;
-*content_server = new_content_server;
-*content_client_size = new_content_client_size;
-*content_server_size = new_content_server_size;
-*/
-end:;
+    end:;
     return ret;
 
 }

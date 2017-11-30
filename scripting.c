@@ -1761,3 +1761,50 @@ void ThreadProc( void *data )
 
 */
 
+// this will check all scripts for a callable function by name.. and return the pointer to that
+// this will allow several different python files to get loaded, and itll verify each for functions
+// it would like to call, or callback
+AS_scripts *Scripting_FindFunction(AS_context *ctx, char *func_name) {
+    AS_scripts *eptr = ctx->scripts;
+    AS_scripts *ret = NULL;
+    PyObject *pFunc = NULL;
+    
+
+    while (eptr != NULL) {
+        
+        if (eptr->pModule) {
+            
+            eptr->myThreadState = PyThreadState_New(eptr->mainInterpreterState);
+            
+            PyEval_ReleaseLock();
+            PyEval_AcquireLock();
+
+            eptr->tempState = PyThreadState_Swap(eptr->myThreadState);
+
+            // we want to execute a particular function under this module we imported
+            pFunc = PyObject_GetAttrString(eptr->pModule, func_name);
+
+            // now we must verify that the function is accurate
+            if (pFunc && PyCallable_Check(pFunc)) {
+                ret = eptr;
+                Py_XDECREF(pFunc);
+                break;
+            }
+
+
+            PyThreadState_Swap(eptr->tempState);
+
+            PyEval_ReleaseLock();
+
+            // Clean up thread state
+            PyThreadState_Clear(eptr->myThreadState);
+            PyThreadState_Delete(eptr->myThreadState);
+
+            eptr->myThreadState = NULL;
+        }
+
+        eptr = eptr->next;
+    }
+
+    return eptr;
+}
