@@ -28,7 +28,7 @@ def signal_handler(signal, frame):
     print('You pressed Ctrl+C!')
     mgr = antisurveillance.manager()
     mgr.exit()
-    sys.exit(0)
+    #sys.exit(0)
         
 #install signal handler for SIGINT (ctrl-c)        
 signal.signal(signal.SIGINT, signal_handler)
@@ -183,21 +183,17 @@ def script_perform():
 def init():
     # get a pointer? inn python?  to the manager so we can interface w it
     a = antisurveillance.manager()
-
     # this should be removed and done completely in C.. i need to see how the object is allocated and hook it or somethiing..
     # would rather work on other stuff first ***
     a.setctx(ctx)
-
     #pprint(a)
 
     #you could load a previously dumped pcap.. so it would expand, and replay those sessions -- and dump the updated pcap at the end
     #loop a few times and see how much the sessions/packets grow
     #a.pcapload(filename="py_output.pcap")
     #a.pcapload(filename="tcp6.pcap")
-
     #turn networking off so that we will dump all packets, and they wont get wrote to the live internet
     #a.networkoff()
-
     #build an HTTP session
     #build_http(a)
 
@@ -236,7 +232,6 @@ def init():
     #print("count %d") % cnt
     #if (cnt == 0):
     #    top_sites_research(a)
-
     return 1
     
 

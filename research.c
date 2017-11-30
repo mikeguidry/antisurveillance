@@ -40,6 +40,12 @@ for attacks dynamically fromm live traffic.. thus never having to worry about up
 soon ill move to python 3.. i started and decided to put it off.. but now that i realize i need to support all languages
 ill do it soon to extend into unicode, and allow non-USA characters, etc...
 
+The traceroute code isnt as necessary for attacking mass surveillance directly.  Just a few traceroutes in real time,
+could help you find client ips which would reach different routing in a country.  GeoIP is pretty important since you can
+assume your going through surveillance into, and out of a country.
+
+The blackhole attack however, especially, IPv6 requires the traceroute data.. It also will increase probability, and help
+find new IPv6 addresses.  
 */
 
 
@@ -700,6 +706,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     // current timestamp stating it was added at this time
     tptr->ts = time(0);
 
+    // set for traceroute ICMP
     tptr->type = TRACEROUTE_ICMP;
 
     // add to traceroute queue...
@@ -813,7 +820,6 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
 
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
-
         // this is the current TTL for this target
         iptr->ttl = tptr->ttl_list[tptr->current_ttl];
 
@@ -891,13 +897,86 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
 }
 
 
+// analyze all queued responses...
+int Traceroute_AnalyzeResponses(AS_context *ctx) {
+    int ret = 0;
+    TracerouteResponse *rptr = NULL, *rnext = NULL;
+
+    // now process all queued responses we have from incoming network traffic.. it was captured on a thread specifically for reading packets
+    rptr = ctx->traceroute_responses;
+
+    // loop until all responsses have been analyzed
+    while (rptr != NULL) {
+        // call this function which will take care of the response, and build the traceroute spider for strategies
+        if (TracerouteAnalyzeSingleResponse(ctx, rptr) == 1) ret++;
+
+        // get pointer to next so we have it after freeing
+        rnext = rptr->next;
+
+        // free this response structure..
+        free(rptr);
+
+        // move to next
+        rptr = rnext;
+    }
+
+    // we cleared the list so ensure the context is updated
+    ctx->traceroute_responses = NULL;
+
+    return ret;
+}
+
+
+
+int Traceroute_MaxQueue(AS_context *ctx, int _tcount) {
+    int ret = 0;
+    int tcount = _tcount;
+    TracerouteQueue *tptr = NULL;
+
+    // count how many traceroutes are in queue and active
+    //tcount = Traceroute_Count(ctx, 0, 0);
+
+    // if the amount of active is lower than our max, then we will activate some other ones
+    if (tcount < ctx->traceroute_max_active) {
+        
+        // how many to ativate?
+        tcount = ctx->traceroute_max_active - tcount;
+    
+        // start on the  linked list...enumerating each
+        tptr = ctx->traceroute_queue;
+        while (tptr != NULL) {
+            // ensure this one isnt completed, and isnt already enabled..
+            if (!tptr->completed && !tptr->enabled) {
+                // if we already activated enough then we are done
+                if (!tcount) break;
+
+                // activate this particular traceroute target
+                tptr->enabled = 1;
+
+                // decrease the coutner
+                tcount--;
+
+                ret++;
+            }
+
+            // move to the next target
+            tptr = tptr->next;
+        }
+    }
+
+
+    end:;
+    return ret;
+}
+
+
+
 // iterate through all current queued traceroutes handling whatever circumstances have surfaced for them individually
 // todo: allow doing random TTLS (starting at 5+) for 10x... most of the end hosts or hops will respond like this
 // we can prob accomplish much more
 // *** need to add UDP/TCP traceroute support for retry
 int Traceroute_Perform(AS_context *ctx) {
     TracerouteQueue *tptr = ctx->traceroute_queue;
-    TracerouteResponse *rptr = ctx->traceroute_responses, *rnext = NULL;
     struct icmphdr icmp;
     PacketBuildInstructions *iptr = NULL;
     AttackOutgoingQueue *optr = NULL;
@@ -959,38 +1038,29 @@ int Traceroute_Perform(AS_context *ctx) {
 
                 // if the current TTL isnt disqualified already
                 if (tptr->ttl_list[tptr->current_ttl] != 0) {
-                    Traceroute_SendICMP(ctx, tptr);
+                    if (tptr->type == TRACEROUTE_ICMP)
+                        Traceroute_SendICMP(ctx, tptr);
+                    /*else if (tptr->type == TRACEROUTE_UDP)
+                        Traceroute_SendUDP(ctx, tptr);
+                        else if (tptr->type == TRACEROUTE_TCP)
+                        Traceroute_SendTCP(ctx, tptr);*/
                 }
             }
         }
 
+        // count for enabling some in Traceroute_MaxQueue()
+        if (tptr->enabled) tcount++;
+
         tptr = tptr->next;
     }
 
-    // now process all queued responses we have from incoming network traffic.. it was captured on a thread specifically for reading packets
-    rptr = ctx->traceroute_responses;
-
-    // loop until all responsses have been analyzed
-    while (rptr != NULL) {
-        // call this function which will take care of the response, and build the traceroute spider for strategies
-        TracerouteAnalyzeSingleResponse(ctx, rptr);
-
-        // get pointer to next so we have it after freeing
-        rnext = rptr->next;
-
-        // free this response structure..
-        free(rptr);
-
-        // move to next
-        rptr = rnext;
-    }
-
-    // we cleared the list so ensure the context is updated
-    ctx->traceroute_responses = NULL;
+    // analyze all queued responses from the network thread
+    Traceroute_AnalyzeResponses(ctx);
 
     // *** we will log to the disk every 20 calls (for dev/debugging)
     // moved to every 40 because the randomly disabling and enabling should be more than MAX_TTL at least
     if ((ccount++ % 40)==0) {
+        // save data to disk... need to redo this for incremental
         Spider_Save(ctx);
 
         // lets randomly enable or disable queues.... 20% of the time we reach this..
@@ -998,33 +1068,8 @@ int Traceroute_Perform(AS_context *ctx) {
             Traceroute_AdjustActiveCount(ctx);
     }
 
-    // count how many traceroutes are in queue and active
-    tcount = Traceroute_Count(ctx, 0, 0);
-
-    // if the amount of active is lower than our max, then we will activate some other ones
-    if (tcount < ctx->traceroute_max_active) {
-        
-        // how many to ativate?
-        tcount = ctx->traceroute_max_active - tcount;
-    
-        // start on the  linked list...enumerating each
-        tptr = ctx->traceroute_queue;
-        while (tptr != NULL) {
-            // ensure this one isnt completed, and isnt already enabled..
-            if (!tptr->completed && !tptr->enabled) {
-                // if we already activated enough then we are done
-                if (!tcount) break;
-
-                // activate this particular traceroute target
-                tptr->enabled = 1;
-
-                // decrease the coutner
-                tcount--;
-            }
-            // move to the next target
-            tptr = tptr->next;
-        }
-    }
+    // if our queue is lower than the max.. then enable some others
+    Traceroute_MaxQueue(ctx, tcount);
 
     // do we adjust max active?
     Traceroute_Watchdog(ctx);

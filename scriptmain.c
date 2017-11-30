@@ -35,7 +35,7 @@ the issues that allow these attacks.
 volatile sig_atomic_t flag = 0;
 void ctrlc_exit(int sig){ // can be called asynchronously
     flag=1;
-    exit(0);
+   // exit(0);
 }
 
 

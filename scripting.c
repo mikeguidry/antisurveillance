@@ -245,6 +245,7 @@ static PyObject *PyASC_NetworkOn(PyAS_Config* self){
 // *** figure out how to set this without using this solution...
 static PyObject *PyASC_CTXSet(PyAS_Config* self, PyObject *Pctx){
     void *ctx = PyLong_AsVoidPtr(Pctx);
+
     self->ctx = ctx;
 
     Py_INCREF(Py_None);
@@ -1352,8 +1353,8 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
     char *dirs[] = { "/tmp", "/var/tmp", ".", NULL };
     char buf[1024];
     int i = 0;
-    PyObject *pCtx = NULL;
-    PyObject *pPerform = NULL;
+    PyObject *pCtx = NULL, *pSetCTX = NULL;
+    PyObject *pPerform = NULL, *pASPtr = NULL;
 
     if (eptr == NULL) return -1;
     
@@ -1387,6 +1388,21 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
         // we set the context as a global script variable so it bridges properly to the correct structures for management
         pCtx = PyLong_FromVoidPtr((void *)eptr->ctx);
         PyObject_SetAttrString(pModule, "ctx", pCtx);
+
+        /*
+        // *** todo finish
+        // new way to get the pointer into the that function
+        //pASPtr =  PyObject_GetAttrString(pModule, "antisurveillances");
+        pSetCTX = PyObject_GetAttrString(pModule, "antisurveillances.setctx");
+        printf("setctx %p\n", pSetCTX);
+        if (pSetCTX && PyCallable_Check(pSetCTX)) {
+            if ((pValue = PyObject_CallObject(pFunc, pCtx)) != NULL) {
+                printf("Called OK\n");
+                Py_XDECREF(pValue);
+                pValue = NULL;
+            }
+        }*/
+
 
         // lets check if it has a script_perform() function.. if so we will use it later
         pPerform = PyObject_GetAttrString(pModule, "script_perform");
@@ -1504,6 +1520,7 @@ int Scripting_Perform(AS_context *ctx) {
     }
 
     end:;
+    printf("33\n");
     return ret;
 }
 
@@ -1736,13 +1753,3 @@ void ThreadProc( void *data )
 
 */
 
-
-/*
-
-python callbacks.....
-so C can call python to generate content bodies, etc
-or modify connections.. IPs. etc
-the main systems should have a way to enable/check with callbacks to see if anything custom was developed for them
-
-
-*/
