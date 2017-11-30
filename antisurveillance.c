@@ -230,69 +230,6 @@ int Subsystems_Perform(AS_context *ctx) {
     BH_Perform(ctx);
 }
 
-int Test_Generate(AS_context *ctx, int argc, char *argv[]) {
-    int server_port, client_port;
-    uint32_t server_ip, client_ip;
-    int count = 1;
-    int repeat_interval = 1;
-    int r = 0;
-    int loop_count = 0;
-    int i = 0;
-
-    if (argc == 1) {
-        bad_syntax:;
-        printf("%s ipv4_client_ip client_port ipv4_server_ip server_port client_body_file server_body_file repeat_count repeat_interval\n",
-            argv[0]);
-        exit(-1);
-    }
-    
-    // client information
-    client_ip       = inet_addr(argv[1]);
-    client_port     = atoi(argv[2]);
-
-    // server information
-    server_ip       = inet_addr(argv[3]);
-    server_port     = atoi(argv[4]);
-
-    // client request data (in a file)
-    ctx->G_client_body   = FileContents(argv[5], &ctx->G_client_body_size);
-    // server responsse data (in a file)
-    ctx->G_server_body   = FileContents(argv[6], &ctx->G_server_body_size);
-
-
-    // how maany times to repeat this session on the internet?
-    // it will randomize source port, etc for each..
-    count           = atoi(argv[7]);
-    // how many seconds in between each request?
-    // this is because its expecting to handling tens of thousands simul from each machine
-    // millions depending on how much of an area the box will cover for disruption of the surveillance platforms
-    repeat_interval = atoi(argv[8]);
-
-    if (!client_ip || !server_ip || !client_port || !server_port || !ctx->G_client_body ||
-             !ctx->G_server_body || !count || !repeat_interval) goto bad_syntax;
-
-    // Initialize an attack structure regarding passed information
-    if ((r = AS_session_queue(ctx, 1, client_ip, server_ip, client_port, server_port, count, repeat_interval, 1,
-                 (void *)&HTTP4_Create)) != 1) {
-        printf("error adding session\n");
-        exit(-1);
-    }
-
-    return 1;
-}
-
-
-int Test_PCAP(AS_context *ctx, char *filename) {
-    int i = 0;
-
-    printf("Loading data from packet capture for attacks: %s\n", filename);
-
-    i = PCAPtoAttack(ctx, filename, 80, 99999, 1, NULL);
-
-    printf("Total from PCAP(80) : %d\n", L_count((LINK *)ctx->attack_list));
-
-    return 1;
-}
 
 
 // All binaries (revolving around scripting, or C loops) requires these initialization routines

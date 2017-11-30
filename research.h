@@ -111,6 +111,8 @@ typedef struct _traceroute_queue {
 
     TracerouteSpider *responses[MAX_TTL+1];
 
+    TracerouteSpider *queue_fuzzy_list;
+
     // higher priorities are checked more often, and wont have a retry max
     int priority;
 } TracerouteQueue;
@@ -142,6 +144,9 @@ typedef struct _traceroute_spider {
 
     // all same hops end up linked to the first one in the list
     struct _traceroute_spider *hops_list;
+
+    struct _traceroute_spider *main_fuzzy_list;
+    struct _traceroute_spider *queue_fuzzy_list;
 
     // the queue which linked into this tree
     // it wiill get removed fromm the active list to speed up the process

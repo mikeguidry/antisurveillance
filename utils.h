@@ -21,3 +21,4 @@ void CopyIPv6Address(void *dst, void *src);
 int CompareIPv6Addresses(struct in6_addr *first, struct in6_addr *second);
 void L_link_ordered_offset(LINK **list, LINK *ele, int offset);
 int L_count_offset(LINK *lptr, int offset);
+int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, int *_is_ipv6);

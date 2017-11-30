@@ -235,3 +235,42 @@ int L_count_offset(LINK *lptr, int offset) {
 
     return count;
 }
+
+
+
+// this prepares fabricated connections using either IPv4, or IPv6 addresses.. it detects IPv6 by the :
+int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, int *_is_ipv6) {
+     int is_ipv6 = 0;
+
+    if (ascii_ip == NULL) return 0;
+
+    is_ipv6 = strchr(ascii_ip, ':') ? 1 : 0;
+
+    if (!is_ipv6) {
+        *ipv4_dest = inet_addr(ascii_ip);
+        if (_is_ipv6 != NULL) *_is_ipv6 = 0;
+    } else {
+        if (_is_ipv6 != NULL) *_is_ipv6 = 1;
+        inet_pton(AF_INET6, ascii_ip, ipv6_dest);
+    }
+
+    return 1;   
+}
+
+
+// this prepares fabricated connections using either IPv4, or IPv6 addresses.. it detects IPv6 by the :
+char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src) {
+    char final[50]; // its 45-46.. or 16.. whatever
+    struct in_addr dst;
+    char *buf = NULL;
+
+    if (ipv4_dest) {
+        dst.s_addr = ipv4_dest;
+        strncpy(final, inet_ntoa(dst), sizeof(final));
+    } else {
+        buf = inet_ntop(AF_INET6, ipv6_src, &final, sizeof(final)); 
+    }
+
+    return strdup(final);
+}
+

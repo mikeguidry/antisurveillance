@@ -292,8 +292,7 @@ char *ConnectionData(AS_attacks *attack, int side, int *_size) {
         iptr = iptr->next;
     }
 
-    sptr = ret = (char *)malloc(size);
-    if (ret == NULL) return NULL;
+    if ((sptr = ret = (char *)malloc(size)) == NULL) return NULL;
 
     iptr = attack->packet_build_instructions;
 

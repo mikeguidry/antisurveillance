@@ -41,25 +41,6 @@ if pythoon didnt require indentions i'd prob try it more often
 
 
 
-// this prepares fabricated connections using either IPv4, or IPv6 addresses.. it detects IPv6 by the :
-int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, int *_is_ipv6) {
-     int is_ipv6 = 0;
-
-    if (ascii_ip == NULL) return 0;
-
-    is_ipv6 = strchr(ascii_ip, ':') ? 1 : 0;
-
-    if (!is_ipv6) {
-        *ipv4_dest = inet_addr(ascii_ip);
-        if (_is_ipv6 != NULL) *_is_ipv6 = 0;
-    } else {
-        if (_is_ipv6 != NULL) *_is_ipv6 = 1;
-        inet_pton(AF_INET6, ascii_ip, ipv6_dest);
-    }
-
-    return 1;   
-}
-
 
 // python configuration structure which has anything the script requires over time
 typedef struct {
@@ -1363,7 +1344,7 @@ void PyASC_Initialize(void) {
 
 // this is fro another project..
 // once stable, and moving through itll be redesigned completely...
-int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObject *pArgs) {
+PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObject *pArgs) {
     PyObject *pName=NULL, *pModule=NULL, *pFunc=NULL;
     PyObject *pValue=NULL;
     int ret = 0;
@@ -1419,8 +1400,11 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
     if ((pModule = eptr->pModule) == NULL) goto end;
 
     eptr->myThreadState = PyThreadState_New(eptr->mainInterpreterState);
+    
     PyEval_ReleaseLock();
+
     PyEval_AcquireLock();
+
     eptr->tempState = PyThreadState_Swap(eptr->myThreadState);
 
     //PyEval_AcquireThread(evars->python_thread);
@@ -1438,13 +1422,15 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
         // we must extract the integer and return it.. 
         // for init it will contain the module identifier for
         // passing messages between the module & others
-        ret = PyLong_AsLong(pValue);
+        ret = pValue;
         // usually you have to use Py_DECREF() here.. 
         // so if the application requires a more intersting object type from python, then adjust that here   
     }
 
+
+
     PyThreadState_Swap(eptr->tempState);
-    	PyEval_ReleaseLock();
+    PyEval_ReleaseLock();
 
     // Clean up thread state
     PyThreadState_Clear(eptr->myThreadState);
@@ -1456,8 +1442,7 @@ int PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObj
 end:;
     if (pFunc != NULL)
         Py_XDECREF(pFunc);
-    if (pValue != NULL)
-        Py_XDECREF(pValue);    
+    //if (pValue != NULL) Py_XDECREF(pValue);    
 
     return ret;
 }
@@ -1537,7 +1522,7 @@ int Scripting_Init(AS_context *ctx) {
 
 
     // pretty sure this is why interactive console was failing..
-    // I was missing it..
+    // I was missing it..   -- I was wrong.  It was the garbage collector...
     PyEval_InitThreads();
 
 

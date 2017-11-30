@@ -37,6 +37,8 @@ and auto populate server/client bodies for session fabricating...
 in the end i want the system to be able to run on a network.. or router and update itself, and its sites to use
 for attacks dynamically fromm live traffic.. thus never having to worry about updating etc
 
+soon ill move to python 3.. i started and decided to put it off.. but now that i realize i need to support all languages
+ill do it soon to extend into unicode, and allow non-USA characters, etc...
 
 */
 
@@ -59,6 +61,7 @@ for attacks dynamically fromm live traffic.. thus never having to worry about up
 #include "research.h"
 #include "utils.h"
 #include "identities.h"
+#include "scripting.h"
 
 // for geoip
 #include "GeoIP.h"
@@ -250,13 +253,11 @@ int Traceroute_RetryAll(AS_context *ctx) {
 
     if (ret) {
         Traceroute_AdjustActiveCount(ctx);
-        printf("%d traceroutes being retried\n", ret);
+        //printf("%d traceroutes being retried\n", ret);
     }
 
     return ret;
 }
-
-
 
 
 
@@ -350,7 +351,6 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
 // find queue by IP
 int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
-
     while (qptr != NULL) {
 
         if (qptr->target_ip == ipv4) break;
@@ -451,13 +451,13 @@ void ConsolidateTTL(TracerouteQueue *qptr) {
 int Traceroute_AdjustActiveCount(AS_context *ctx) {
     int ret = 0;
     int disabled = 0;
-    int count = 0;
     int r = 0;
+    int i = 0;
+    int total_count = 0;
     TracerouteQueue *qptr = ctx->traceroute_queue;
+    int *random_count = NULL;
 
     if (!qptr) return -1;
-
-    count = L_count((LINK *)qptr);
 
     // disable ALL currently enabled queues.. counting the amount
     while (qptr != NULL) {
@@ -468,31 +468,36 @@ int Traceroute_AdjustActiveCount(AS_context *ctx) {
                 disabled++;
             }
         }
+
+        total_count++;
         qptr = qptr->next;
     }
+
+    if ((random_count = (int *)calloc(1, sizeof(int) * disabled)) == NULL) goto end;
+
+    for (r = 0; r < disabled; r++) random_count[r] = rand()%total_count;
 
     // now enable the same amount of random queues
     // ret is used here so we dont go over max amt of queue allowed..
     // this allowedw this function to get reused during modifying traffic parameters
-    while (disabled && (ret < ctx->traceroute_max_active)) {
-        // pick a random queue
-        r = rand()%count;
+    qptr = ctx->traceroute_queue;
 
-        // find it..
-        qptr = ctx->traceroute_queue;
-        while (r-- && qptr) { qptr = qptr->next; }
-
-        // some issues that shouldnt even take place..
-        if (!qptr) continue;
-
-        if (!qptr->completed) {
-            qptr->enabled = 1;
-            disabled--;
-            ret++;
+    while (qptr && (ret < ctx->traceroute_max_active)) {
+        for (r = 0; r < disabled; r++) {
+            if (random_count[r] == i) {
+                qptr->enabled = 1;
+                ret++;
+            }
         }
 
-        // we will do that same loop until we have enough enabled..
+        i++;
+
+        qptr = qptr->next;
     }
+
+    end:;
+
+    if (random_count != NULL) free(random_count);
     
     return ret;
 }
@@ -791,6 +796,101 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
 static int ccount = 0;
 
 
+// moved into its own function so i can finish supporting UDP, and TCP traceroutes
+int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
+    PacketBuildInstructions *iptr = NULL;
+    struct icmphdr icmp;
+    int ret = 0;
+    TraceroutePacketData *pdata = NULL;
+    int i = 0;
+    AttackOutgoingQueue *optr = NULL;
+    
+    // prepare the ICMP header for the traceroute
+    icmp.type = ICMP_ECHO;
+    icmp.code = 0;
+    icmp.un.echo.sequence = tptr->identifier;
+    icmp.un.echo.id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
+
+    // create instruction packet for the ICMP(4/6) packet building functions
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+
+        // this is the current TTL for this target
+        iptr->ttl = tptr->ttl_list[tptr->current_ttl];
+
+        // determine if this is an IPv4/6 so it uses the correct packet building function
+        if (tptr->target_ip != 0) {
+            iptr->type = PACKET_TYPE_ICMP_4;
+            iptr->destination_ip = tptr->target_ip;
+            iptr->source_ip = ctx->my_addr_ipv4;
+        } else {
+            iptr->type = PACKET_TYPE_ICMP_6;
+            // destination is the target
+            CopyIPv6Address(&iptr->destination_ipv6, &tptr->target_ipv6);
+            // source is our ip address
+            CopyIPv6Address(&iptr->source_ipv6, &ctx->my_addr_ipv6);
+        }
+
+        // copy ICMP parameters into this instruction packet as a complete structure
+        memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
+
+        // set size to the traceroute packet data structure's size...
+        iptr->data_size = sizeof(TraceroutePacketData);
+
+        if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
+            pdata = (TraceroutePacketData *)iptr->data;
+
+            // lets include a little message since we are performing a lot..
+            // if ever on a botnet, or worm.. disable this obviously
+            strncpy(&pdata->msg, "performing traceroute research", sizeof(pdata->msg));
+
+            // set the identifiers so we know which traceroute queue the responses relates to
+            pdata->identifier = tptr->identifier;
+            pdata->ttl = iptr->ttl;
+        }
+
+        // lets build a packet from the instructions we just designed for either ipv4, or ipv6
+        // for either ipv4, or ipv6
+        if (iptr->type & PACKET_TYPE_ICMP_6)
+            i = BuildSingleICMP6Packet(iptr);
+        else if (iptr->type & PACKET_TYPE_ICMP_4)
+            i = BuildSingleICMP4Packet(iptr);
+
+        // if the packet building was successful
+        if (i == 1) {
+            // allocate a structure for the outgoing packet to get wrote to the network interface
+            if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
+                // we need to pass it the final packet which was built for the wire
+                optr->buf = iptr->packet;
+                optr->type = iptr->type;
+                optr->size = iptr->packet_size;
+
+                // remove the pointer from the instruction structure so it doesnt get freed in this function
+                iptr->packet = NULL;
+                iptr->packet_size = 0;
+
+                // the outgoing structure needs some other information
+                optr->dest_ip = iptr->destination_ip;
+                optr->ctx = ctx;
+
+                // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
+                if (AttackQueueAdd(ctx, optr, 1) == 0) {
+                    // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
+                    if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
+                        // if we for some reason cannot pthread (prob memory).. lets do it blocking
+                        AttackQueueAdd(ctx, optr, 0);
+                    }
+                }
+            }
+        }
+    }
+
+    PacketBuildInstructionsFree(&iptr);
+   
+    end:;
+    return ret;
+}
+
+
 // iterate through all current queued traceroutes handling whatever circumstances have surfaced for them individually
 // todo: allow doing random TTLS (starting at 5+) for 10x... most of the end hosts or hops will respond like this
 // we can prob accomplish much more
@@ -815,7 +915,6 @@ int Traceroute_Perform(AS_context *ctx) {
     // zero icmp header since its in the stack
     memset(&icmp, 0, sizeof(struct icmphdr));
 
-    // *** cpu hotspot.. traceroute_count().. maybe do real time updating of counters so theeres no reason to enumerate a huge list 
     printf("Traceroute_Perform: Queue %d [completed %d] max: %d\n", L_count((LINK *)tptr), Traceroute_Count(ctx, 1, 1), ctx->traceroute_max_active);
 
     // loop until we run out of elements
@@ -860,92 +959,12 @@ int Traceroute_Perform(AS_context *ctx) {
 
                 // if the current TTL isnt disqualified already
                 if (tptr->ttl_list[tptr->current_ttl] != 0) {
-                    // prepare the ICMP header for the traceroute
-                    icmp.type = ICMP_ECHO;
-                    icmp.code = 0;
-                    icmp.un.echo.sequence = tptr->identifier;
-                    icmp.un.echo.id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
-
-                    // create instruction packet for the ICMP(4/6) packet building functions
-                    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
-
-                        // this is the current TTL for this target
-                        iptr->ttl = tptr->ttl_list[tptr->current_ttl];
-                        
-                        // determine if this is an IPv4/6 so it uses the correct packet building function
-                        if (tptr->target_ip != 0) {
-                            iptr->type = PACKET_TYPE_ICMP_4;
-                            iptr->destination_ip = tptr->target_ip;
-                            iptr->source_ip = ctx->my_addr_ipv4;
-                        } else {
-                            iptr->type = PACKET_TYPE_ICMP_6;
-                            // destination is the target
-                            CopyIPv6Address(&iptr->destination_ipv6, &tptr->target_ipv6);
-                            // source is our ip address
-                            CopyIPv6Address(&iptr->source_ipv6, &ctx->my_addr_ipv6);
-                        }
-
-                        // copy ICMP parameters into this instruction packet as a complete structure
-                        memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
-
-                        // set size to the traceroute packet data structure's size...
-                        iptr->data_size = sizeof(TraceroutePacketData);
-
-                        if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
-                            pdata = (TraceroutePacketData *)iptr->data;
-
-                            // lets include a little message since we are performing a lot..
-                            // if ever on a botnet, or worm.. disable this obviously
-                            strncpy(&pdata->msg, "performing traceroute research", sizeof(pdata->msg));
-                            
-                            // set the identifiers so we know which traceroute queue the responses relates to
-                            pdata->identifier = tptr->identifier;
-                            pdata->ttl = iptr->ttl;
-                        }
-
-                        // lets build a packet from the instructions we just designed for either ipv4, or ipv6
-                        // for either ipv4, or ipv6
-                        if (iptr->type & PACKET_TYPE_ICMP_6)
-                            i = BuildSingleICMP6Packet(iptr);
-                        else if (iptr->type & PACKET_TYPE_ICMP_4)
-                            i = BuildSingleICMP4Packet(iptr);
-
-                        // if the packet building was successful
-                        if (i == 1) {
-                            // allocate a structure for the outgoing packet to get wrote to the network interface
-                            if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
-                                // we need to pass it the final packet which was built for the wire
-                                optr->buf = iptr->packet;
-                                optr->type = iptr->type;
-                                optr->size = iptr->packet_size;
-
-                                // remove the pointer from the instruction structure so it doesnt get freed in this function
-                                iptr->packet = NULL;
-                                iptr->packet_size = 0;
-
-                                // the outgoing structure needs some other information
-                                optr->dest_ip = iptr->destination_ip;
-                                optr->ctx = ctx;
-
-                                // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-                                if (AttackQueueAdd(ctx, optr, 1) == 0) {
-                                    // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
-                                    if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
-                                        // if we for some reason cannot pthread (prob memory).. lets do it blocking
-                                        AttackQueueAdd(ctx, optr, 0);
-                                    }
-                                }
-                            }
-                        }
-                        // dont need this anymore.. (we removed the data pointer from it so lets just clear everyting else)
-                        PacketBuildInstructionsFree(&iptr);
-                    }
+                    Traceroute_SendICMP(ctx, tptr);
                 }
             }
         }
 
         tptr = tptr->next;
-        tcount++;
     }
 
     // now process all queued responses we have from incoming network traffic.. it was captured on a thread specifically for reading packets
@@ -975,11 +994,12 @@ int Traceroute_Perform(AS_context *ctx) {
         Spider_Save(ctx);
 
         // lets randomly enable or disable queues.... 20% of the time we reach this..
-        //if ((rand()%100) < 20) Traceroute_AdjustActiveCount(ctx);
+        if ((rand()%100) < 20)
+            Traceroute_AdjustActiveCount(ctx);
     }
 
     // count how many traceroutes are in queue and active
-    //tcount = Traceroute_Count(ctx, 0, 0);
+    tcount = Traceroute_Count(ctx, 0, 0);
 
     // if the amount of active is lower than our max, then we will activate some other ones
     if (tcount < ctx->traceroute_max_active) {
@@ -1662,7 +1682,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
         ctx->watchdog_ts = ts;
 
-        printf("!!! up %d down %d and ret is %d\n", up, down, ret);
+        //printf("up %d down %d and ret is %d\n", up, down, ret);
 
         ret = 1;
 
@@ -1923,6 +1943,7 @@ TracerouteAnalysis *Traceroute_AnalysisFind(AS_context *ctx, TracerouteQueue *cl
 // to be reused, or used again
 TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *client, TracerouteQueue *server) {
     TracerouteAnalysis *tptr = NULL;
+    
     if ((tptr = (TracerouteAnalysis *)calloc(1, sizeof(TracerouteAnalysis))) == NULL) return NULL;
 
     tptr->ts = time(0);
@@ -2046,7 +2067,7 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     optr->server.ip = tptr->server->target_ip;
 
     optr->client.country = tptr->client->country;
-    optr->server.country = tptr->client->country;
+    optr->server.country = tptr->server->country;
 
     optr->client.asn_num = tptr->client->asn_num;
     optr->server.asn_num = tptr->server->asn_num;
@@ -2057,6 +2078,7 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     // country is same so... score is 1..
     optr->border_score = 1;
 
+    /*
     // perform a walk from both client/server and fill in hop_country
     // with each country between them
     // modify border_score using this... or use a diff border score
@@ -2067,7 +2089,7 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     // so we can assure we hit the most platforms possible
     // by using particular targets in particular regions
     // thus increasing overall worldwide effect
-
+    */
 
     // call some functions related to this analysis structure? before/after.. finish later
     //ResearchSmartHook()
@@ -2075,6 +2097,7 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     // call http4 create with these parameters?? to generate AS_attacks structure
 
     // link attack structure to this connection options
+
     optr->attackptr = aptr;
 
     ret = 1;
@@ -2085,48 +2108,163 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
 
 
 
-enum {
-    CONTENT_TYPE_EMAIL,
-    CONTENT_TYPE_MESSAGE,
-    CONTENT_TYPE_LOGIN,
-    CONTENT_TYPE_META,
-    CONTENT_TYPE_OTHER // RTSP?? voip... SIP
-};
-
-
-// site structure should be automatically populated fromm local gtraffic.. as well as any fed in pcaps...
-// it can also gtake somem compiled in informtion regarding things like word press.. etc
-
-//} SiteStructure;
 // asn number can be used as a secondary type of country code to link entries together without all information
 // such as traceroute respopnsses
 
+// Content context... for long term message/relationship fabrication
+typedef struct _content_context {
+    int size;
+    struct _content_context *next;
+
+} ContentContext;
+
+// This will call a python function  which is meant to generate client, and server side content
+int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_id, int site_category, char *IP_src, char *IP_dst, char *Country_src, char *Country_dst, char **client_body, int *client_body_size, char **server_body, int *server_body_size) {
+    int ret = -1;
+    PyObject *pArgs = NULL;
+    PyObject *pIP_src = NULL, *pIP_dst = NULL;
+    PyObject *pCountry_src = NULL, *pCountry_dst = NULL;
+    PyObject *pBodyClient = NULL, *pBodyServer = NULL;
+    PyObject *pBodyClientSize = NULL, *pBodyServerSize = NULL;
+    PyObject *pSiteCategory = NULL, *pSiteID = NULL;
+    PyObject *pLanguage = NULL;
+    PyObject *pFunc = NULL, *pValue = NULL;
+    AS_scripts *eptr = ctx->scripts;
+    AS_scripts *sptr = ctx->scripts;
+    
+    char *new_client_body = NULL;
+    int new_client_body_size = 0;
+    char *new_server_body = NULL;
+    int new_server_body_size = 0;
+    char *ret_client_body = NULL;
+    char *ret_server_body = NULL;
+
+    pIP_src = PyString_FromString(IP_src);
+    pIP_dst = PyString_FromString(IP_dst);
+    pCountry_src = PyString_FromString(Country_src);
+    pCountry_dst = PyString_FromString(Country_dst);
+
+    // if original bodies were passed then lets use them, otherwise we use a NULL byte and size of 1
+    if (*client_body) {
+        pBodyClient = PyString_FromStringAndSize(*client_body, *client_body_size);
+        pBodyClientSize = PyInt_FromLong(*client_body_size);
+    } else {
+        pBodyClient = PyString_FromStringAndSize("", 1);
+        pBodyClientSize = PyInt_FromLong(1);
+    }
+    if (*server_body) {
+        pBodyServer = PyString_FromStringAndSize(*server_body, *server_body_size);
+        pBodyServerSize = PyInt_FromLong(*server_body_size);
+    } else {
+        pBodyServer = PyString_FromStringAndSize("", 1);
+        pBodyServerSize = PyInt_FromLong(1);
+    }
+
+    pSiteID = PyInt_FromLong(site_id);
+    pSiteCategory = PyInt_FromLong(site_category);
+    pLanguage = PyInt_FromLong(language);
+
+
+    if ((pArgs = PyTuple_New(11)) == NULL) goto end;
+
+    //def content_generator(language,site_id,site_category,ip_src,ip_dst,ip_src_geo,ip_dst_geo,client_body,client_body_size,server_body,server_body_size):
+
+    PyTuple_SetItem(pArgs, 0, pLanguage);
+    PyTuple_SetItem(pArgs, 1, pSiteID);
+    PyTuple_SetItem(pArgs, 2, pSiteCategory);
+    PyTuple_SetItem(pArgs, 3, pIP_src);
+    PyTuple_SetItem(pArgs, 4, pIP_src);
+    PyTuple_SetItem(pArgs, 5, pCountry_src);
+    PyTuple_SetItem(pArgs, 6, pCountry_dst);
+    PyTuple_SetItem(pArgs, 7, pBodyClient);
+    PyTuple_SetItem(pArgs, 8, pBodyClientSize);
+    PyTuple_SetItem(pArgs, 9, pBodyServer);
+    PyTuple_SetItem(pArgs,10, pBodyServerSize);
+
+    // call all scripts looking for content_generator..
+    // i need a new way to do callback, and checking for their functions.. ill redo scripting context system shortly
+    // to support
+    while (sptr != NULL) {
+        // call the python function
+        pValue = PythonLoadScript(sptr, NULL, "content_generator", pArgs);
+
+        if (pValue != NULL)
+            break;
+
+        sptr = sptr->next;
+    }
+
+
+    if (pValue != NULL) {
+        // parse the returned 2 bodies into separate variables for processing
+        PyArg_ParseTuple(pValue, "s#s#", &new_client_body, &new_client_body_size, &new_server_body, &new_server_body_size);
+
+        // allocate memeory to hold these pointers since the returned ones are inside of python memory
+        if ((ret_client_body = (char *)malloc(new_client_body_size)) == NULL) goto end;
+        if ((ret_server_body = (char *)malloc(new_server_body_size)) == NULL) goto end;
+
+
+        // copy the data from internal python storage into the ones for the calling function
+        memcpy(ret_client_body, new_client_body, new_client_body_size);
+        memcpy(ret_server_body, new_server_body, new_server_body_size);
+
+        // free passed client body if they were even passed
+        if (*client_body != NULL) free(*client_body);
+        if (*client_body != NULL) free(*server_body);
+
+        *client_body = ret_client_body;
+        *client_body_size = new_client_body_size;
+        *server_body = ret_server_body;
+        *server_body_size = new_server_body_size;
+
+        // so we dont free these at the end of the function  (calling function gets their pointers above)
+        ret_client_body = NULL;
+        ret_server_body = NULL;   
+
+        ret = 1;
+    }
+
+    // cleanup
+    end:;
+    if (pIP_src != NULL) Py_DECREF(pIP_src);
+    if (pIP_dst != NULL) Py_DECREF(pIP_dst);
+    if (pCountry_src != NULL) Py_DECREF(pCountry_src);
+    if (pCountry_dst != NULL) Py_DECREF(pCountry_dst);
+    if (pBodyClient != NULL) Py_DECREF(pBodyClient);
+    if (pBodyServer != NULL) Py_DECREF(pBodyServer);
+    if (pBodyClientSize != NULL) Py_DECREF(pBodyClientSize);
+    if (pBodyServerSize != NULL) Py_DECREF(pBodyServerSize);
+    if (pSiteID != NULL) Py_DECREF(pSiteID);
+    if (pSiteCategory != NULL) Py_DECREF(pSiteCategory);
+    if (pLanguage != NULL) Py_DECREF(pLanguage);
+    if (pArgs != NULL) Py_DECREF(pArgs);
+    if (pFunc != NULL) Py_DECREF(pFunc);
+    if (pValue != NULL) Py_DECREF(pValue);
+
+    if (ret_client_body != NULL) free(ret_client_body);
+    if (ret_server_body != NULL) free(ret_server_body);
+
+    return ret;
+}
+
+
+//int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_id, int site_category, char *IP_src, char *IP_dst, char *Country_src, *Country_dst, char **client_body, int *client_body_size, char **server_body, int *server_body_size);
 // generate content for an upcoming connection
-int ResearchContentGenerator(AS_context *ctx, int src_country, int dst_country, char **content_server, int *content_server_size, char **content_client, int *content_client_size) {
+int ResearchContentGenerator(AS_context *ctx, int src_country, int dst_country, char **content_client, int *content_client_size, char **content_server, int *content_server_size) {
     int ret = 0;
     char *new_content_server = NULL, *new_content_client = NULL;
     int new_content_server_size = 0, new_content_client_size = 0;
+    int country = GEOIP_CountryToID("US");
+    int language=0;
+    int site_id = 0;
+    int site_category = 0;
+    char *IP_src = "127.0.0.1";
+    char *IP_dst = "127.0.0.1";
 
 
+    // try python version from scripts (callback)    
+    ret = ResearchPyCallbackContentGenerator(ctx, language, site_id, site_category, IP_src, IP_dst, country, country, content_client, content_client_size, content_server, content_server_size);
 
-    // are we going to use pyython callback for content generation?
-    // we need to send python the IPP addresses, and their geos if we have them
-    // the AS could comme in handy if we begin returning dicts or lists of particular
-    // IP information  etc and someone wishes to use python for other logic
-
-    //python_call_function(ctx->scripts, "content_generator", 0);
-
-
-
-
-    // free incoming pointers and update with the new data
-    free(*content_server);
-    *content_server = new_content_server;
-    *content_server_size = new_content_server_size;
-
-    free(*content_client);
-    *content_client = new_content_client;
-    *content_client_size = new_content_client_size;
 
 end:;
     return ret;
@@ -2135,7 +2273,7 @@ end:;
 
 
 
-// *** move to macro.h
+
 // macros are needed to replace things like first names, usernames, emails, passwords, messages, etc.. in sessions
 typedef struct _macro_variable {
     struct _macro_variable *next;
@@ -2145,19 +2283,14 @@ typedef struct _macro_variable {
     void *macro_ctx;
     void *function;
 
+    // if we have some static data that we can replace it with
+    // itll randomly pick an element
     char  **macro_data;
     int macro_data_count;
 } MacroVariable;
 
 
 /*
-
-
-macros should be able to replace binary as well, but checksums wont be perfect.. the fact is it can find ascii (english  anywaays)
-easily and try to replace.. these surveillance platforms more than likely dont have exact perfection for binary protocols anyways
-
-so repllacing hello with another string of similar size etc shhould be fine
-
 
 HTTP_SERVER_NAME
 HTTP_VERSION

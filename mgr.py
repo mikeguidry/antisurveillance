@@ -11,10 +11,12 @@ import socket
 import random
 import struct
 import os.path
-import readline # optional, will allow Up/Down/History in the console
+import readline
 import code
 import encodings
 import gc
+
+perform_counter = 0
 
 #temporary fix for crash.. have to ensure all of my code is using correct references (inc/decrease)
 # i needed to disable so interactive console works :)
@@ -124,16 +126,19 @@ def script_enable(a):
 
 # i wanted to way to enable/disable the debug console mid execution..
 def debug_console(a):
-    e = os.path.exists("debug_console")
+    fname = "debug_console"
+    e = os.path.exists(fname)
     if e is True:
-        skip = a.skip()
-        if (skip == 1):
-            variables = globals().copy()
-            variables.update(locals())
-            shell = code.InteractiveConsole(variables)
-            shell.interact()
-            os.remove("debug_console")
+        variables = globals().copy()
+        variables.update(locals())
+        shell = code.InteractiveConsole(variables)
+        shell.interact()
+        os.remove(fname)
 
+
+def script_reload():
+    import mgr
+    reload(mgr)
 
 # this is the function that gets called every iteration if running from the C side.. (Scripting_Perform())
 # the software will call AS_perform() itself out of the this scope.. so no need to call the one above in python
@@ -145,6 +150,7 @@ def script_perform():
 
     debug_console(a)
 
+    
     # how many packets did that generate?
     print("network %05d attack %05d traceroute queue %05d\n") % (a.networkcount(), a.attackcount(), a.traceroutecount())
     
@@ -152,7 +158,7 @@ def script_perform():
     #traceroute_random_ip(a)
     cnt = a.traceroutecount()
     if (cnt == 0):
-        traceroute_random_ip(a,1000)
+        #traceroute_random_ip(a,1000)
         a.tracerouteretry()
         #print("traceroute count 0 .. adding");
         #a.traceroutequeue(target="8.8.8.8")
@@ -234,3 +240,12 @@ def init():
     return 1
     
 
+
+
+# The script can do whatever it needs to generate specific HTTP session bodies relating to a specific site, category, country,
+# and whatever other decisions...
+def content_generator(language,site_id,site_category,ip_src,ip_dst,ip_src_geo,ip_dst_geo,client_body,client_body_size,server_body,server_body_size):
+    server_body = open("server_body", 'rU').read()
+    client_body = open("client_body", 'rU').read()
+
+    return client_body, server_body
