@@ -338,3 +338,4 @@ int fourteen_check_id(int country_id);
 int fourteen_check(char *country);
 int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4);
 int testcallback(AS_context *ctx);
+int Spider_Load_threaded(AS_context *ctx, char *filename);

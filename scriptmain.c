@@ -61,6 +61,7 @@ int main(int argc, char *argv[]) {
     if (argc > 2) {
         ctx->traceroute_max_retry = 0;
 
+        //Spider_Load_threaded(ctx, "traceroute");
         Spider_Load(ctx, "traceroute");
         
         ctx->traceroute_max_retry = 100;

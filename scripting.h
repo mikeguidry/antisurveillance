@@ -25,6 +25,10 @@ typedef struct _as_scripts {
 
     // did this script have a script_perform() function whenever it was loaded into memory?
     int perform;
+
+    pthread_mutex_t lock_mutex;
 } AS_scripts;
 
 AS_scripts *Scripting_FindFunction(AS_context *, char *);
+int Scripting_ThreadPost(AS_context *ctx, AS_scripts *sptr);
+int Scripting_ThreadPre(AS_context *ctx, AS_scripts *sptr);

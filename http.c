@@ -116,7 +116,6 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
 
 
 
-
 // The thread has been started to perform a GZIP attack without affecting non GZIP attack packets
 void *thread_gzip_attack(void *arg) {
     int i = 0;

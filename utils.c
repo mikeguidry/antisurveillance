@@ -269,10 +269,12 @@ char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src) {
     struct in_addr dst;
     char *buf = NULL;
 
+    memset(final, 0, sizeof(final));
+
     if (ipv4_dest) {
         dst.s_addr = ipv4_dest;
         strncpy(final, inet_ntoa(dst), sizeof(final));
-    } else {
+    } else if (ipv6_src != NULL) {
         buf = inet_ntop(AF_INET6, ipv6_src, &final, sizeof(final)); 
     }
 

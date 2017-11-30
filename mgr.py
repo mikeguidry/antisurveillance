@@ -42,6 +42,12 @@ def traceroute_random_ip(a,b):
         a.traceroutequeue(target=ip)
         cnt = cnt + 1
 
+def agents(a):
+    if 'agents' not in globals():
+        agents = open("agents.txt").readlines()
+        print("%d useragents loaded") % count(agents)
+    return random.choice(agents)
+
 #add DNS results from top sites into traceroute queue
 #the purpose is so we can automatically target mass surveillance platforms worldwide
 # in all countries without requiring any data ahead of time except some IPs

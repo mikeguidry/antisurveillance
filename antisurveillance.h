@@ -79,7 +79,7 @@ typedef struct _as_attacks {
     int join;
     pthread_mutex_t pause_mutex;// : PTHREAD_MUTEX_INITIALIZER;
 
-
+    
     pthread_t thread;
 
     // do we repeat this attack again whenever its completed?
@@ -252,6 +252,9 @@ typedef struct _antisurveillance_context {
     GeoIP *geoip_asn_handle;
 
     PCAPOperation *pcap_operations;
+
+    pthread_mutex_t traceroute_mutex;
+    pthread_t traceroute_thread;
 
 } AS_context;
 

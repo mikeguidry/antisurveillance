@@ -24,7 +24,7 @@ overall worldwide strategies for attacking the most platforms simultaneously...
 also we can keep a static list of all known fiber taps later.. and possibly even use neural networks to quickly determine whether or not
 others may expect to be in a location.. and other information used for research could be used as inputs in this NN
 
-the NN is also required to verify automatically generated content words etc to ensure they are less likely to be automatically filtered
+the NN is also required to verify automaticttally generated content words etc to ensure they are less likely to be automatically filtered
 (using modified words/phrases/replacements and then seeing if it passes)..
 
 
@@ -46,6 +46,24 @@ assume your going through surveillance into, and out of a country.
 
 The blackhole attack however, especially, IPv6 requires the traceroute data.. It also will increase probability, and help
 find new IPv6 addresses.  
+
+-------------
+
+I'll have to make this thing take live capture packets and reuse them for traceroute...
+
+
+'Fuzzy' links are going to be where we assume, and insert links to fill in gaps in traceroute data.
+Priority should help drastically in ensuring needed targets are thoroughly analyzed for path
+calculations.
+
+I will chain IP generator to this especially for IPv6.  It wiill help take IP addresses, and then
+use traceroute to attempt to find randomm subnets for use.  
+
+I will have to try IPv6 GeoIP as well since i haven't used it before
+
+
+
+
 */
 
 
@@ -707,7 +725,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     tptr->ts = time(0);
 
     // set for traceroute ICMP
-    tptr->type = TRACEROUTE_ICMP;
+    tptr->type = TRACEROUTE_UDP;
 
     // add to traceroute queue...
     //L_link_ordered_offset((LINK **)&ctx->traceroute_queue, (LINK *)tptr, offsetof(TracerouteQueue, next));
@@ -723,6 +741,94 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     end:;
     return ret;
 }
+
+
+// All of the packets are coming back as ICMP anyways.. so maybe should remove this.
+// I'll see how things go... some may not i have to check thoroughly
+int Traceroute_IncomingUDP(AS_context *ctx, PacketBuildInstructions *iptr) {
+    int ret = -1;
+    struct in_addr cnv;
+    TracerouteResponse *rptr = NULL;
+    TraceroutePacketData *pdata = NULL;
+    FILE *fd;
+    char fname[1024];
+    uint32_t identifier = 0;
+    int ttl = 0;
+    char *Asrc = NULL;
+    char *Adst = NULL;
+
+//char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src);
+
+    sprintf(fname, "pkt/%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
+    if ((fd = fopen(fname, "wb")) != NULL) {
+        fwrite(iptr->packet, 1,iptr->packet_size, fd);
+        fclose(fd);        
+    }
+
+    Asrc = IP_prepare_ascii(iptr->source_ip, NULL);
+    Adst = IP_prepare_ascii(iptr->destination_ip, NULL);
+
+    printf("SRC: %s DST: %s\n", Asrc ? Asrc : "NULL", Adst ? Adst : "NULL");
+
+    if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
+        printf("ipv4 Getting our own packets.. probably loopback\n");
+        return 0;
+    }
+
+    if (!iptr->source_ip && CompareIPv6Addresses(&ctx->my_addr_ipv6, &iptr->source_ipv6)) {
+        printf("ipv6 Getting our own packets.. probably loopback\n");
+        return 0;
+    }
+
+    // data isnt big enough to contain the identifier
+    if (iptr->data_size < sizeof(TraceroutePacketData)) {
+        printf("less size\n");
+        goto end;
+    }
+
+    // the responding hops may have encapsulated the original ICMP within its own.. i'll turn the 28 into a sizeof() calculation
+    // ***
+    if (iptr->data_size > sizeof(TraceroutePacketData) && ((iptr->data_size >= sizeof(TraceroutePacketData) + 28))) {
+        printf("+28\n");
+        pdata = (TraceroutePacketData *)(iptr->data + 28);//(sizeof(struct iphdr) + sizeof(struct icmphdr)));
+    } else {
+        pdata = (TraceroutePacketData *)iptr->data;
+        printf("normal\n");
+    }
+
+    // the packet has the TTL, and the identifier (to find the original target information)
+    ttl = pdata->ttl;
+    identifier = pdata->identifier;
+
+    printf("TTL: %d identifier: %X\n", ttl, identifier);
+
+    // this function is mainly to process quickly.. so we will fill another structure so that it can get processed
+    // later again with calculations directly regarding its query
+
+    // allocate a new structure for traceroute analysis functions to deal with it later
+    if ((rptr = (TracerouteResponse *)calloc(1, sizeof(TracerouteResponse))) == NULL) goto end;
+    rptr->identifier = identifier;
+    rptr->ttl = ttl;
+    
+    // copy over IP parameters
+    rptr->hop_ip = iptr->source_ip;
+    CopyIPv6Address(&rptr->hop_ipv6, &iptr->source_ipv6);
+
+    // maybe lock a mutex here (have 2... one for incoming from socket, then moving from that list here)
+    L_link_ordered_offset((LINK **)&ctx->traceroute_responses, (LINK *)rptr, offsetof(TracerouteResponse, next));
+
+    // thats about it for the other function to determine the original target, and throw it into the spider web
+    ret = 1;
+
+    end:;
+
+    if (Asrc) free(Asrc);
+    if (Adst) free(Adst);
+
+    // iptr gets freed in the calling function
+    return ret;
+}
+
 
 
 // When we initialize using Traceroute_Init() it added a filter for ICMP, and set this function
@@ -812,11 +918,14 @@ typedef struct _dns_response_packet {
 
 
 // UDP will send a fake 'response' for DNS to a client from port 53.. this will allow bypassing a lot of firewalls
+// http://www.binarytides.com/dns-query-code-in-c-with-winsock/
 int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
     int i = 0, ret = 0;
     PacketBuildInstructions *iptr = NULL;
     TraceroutePacketData *pdata = NULL;
     DNSResponsePacket *dns_resp = NULL;
+   
+   printf("traceroute send udp\n");
     
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
@@ -842,20 +951,29 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
         iptr->destination_port = 1024 + (rand()%(65535-1024));
     
         // set size to the traceroute packet data structure's size...
-        iptr->data_size = sizeof(DNSResponsePacket);
+        iptr->data_size = sizeof(TraceroutePacketData);
 
         if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
-            dns_resp = (DNSResponsePacket *)iptr->data;
+            pdata = (TraceroutePacketData *)iptr->data;
 
             // prepare dns response packet...
+            
+            // lets include a little message since we are performing a lot..
+            // if ever on a botnet, or worm.. disable this obviously
+            strncpy(&pdata->msg, "performing traceroute research", sizeof(pdata->msg));
+
+            // set the identifiers so we know which traceroute queue the responses relates to
+            pdata->identifier = tptr->identifier;
+            pdata->ttl = iptr->ttl;
+
         }
 
         // lets build a packet from the instructions we just designed for either ipv4, or ipv6
         // for either ipv4, or ipv6
         if (iptr->type & PACKET_TYPE_UDP_6)
-            i = BuildSingleICMP6Packet(iptr);
+            i = BuildSingleUDP6Packet(iptr);
         else if (iptr->type & PACKET_TYPE_UDP_4)
-            i = BuildSingleICMP4Packet(iptr);
+            i = BuildSingleUDP4Packet(iptr);
 
         // if the packet building was successful
         if (i == 1)
@@ -972,13 +1090,13 @@ int Traceroute_AnalyzeResponses(AS_context *ctx) {
 
 
 
-int Traceroute_MaxQueue(AS_context *ctx, int _tcount) {
+int Traceroute_MaxQueue(AS_context *ctx) {
     int ret = 0;
-    int tcount = _tcount;
+    int tcount = 0;
     TracerouteQueue *tptr = NULL;
 
     // count how many traceroutes are in queue and active
-    //tcount = Traceroute_Count(ctx, 0, 0);
+    tcount = Traceroute_Count(ctx, 0, 0);
 
     // if the amount of active is lower than our max, then we will activate some other ones
     if (tcount < ctx->traceroute_max_active) {
@@ -1027,10 +1145,12 @@ int Traceroute_Perform(AS_context *ctx) {
     int i = 0, n = 0;
     TraceroutePacketData *pdata = NULL;
     TracerouteSpider *sptr = NULL;
-    int tcount  = 0;
     int ret = 0;
     // timestamp required for various states of traceroute functionality
     int ts = time(0);
+
+    // I used a pthread to load the database...
+    if (pthread_mutex_trylock(&ctx->traceroute_mutex) != 0) return 0;
 
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
@@ -1059,6 +1179,9 @@ int Traceroute_Perform(AS_context *ctx) {
         }
 
         if (!tptr->completed && tptr->enabled) {
+            // increase counter for ensuring we are always at max
+
+
             // lets increase the TTL by this number (every 1 second right now)
             if ((ts - tptr->ts_activity) > 1) {
                 tptr->ts_activity = time(0);
@@ -1084,22 +1207,22 @@ int Traceroute_Perform(AS_context *ctx) {
                 if (tptr->ttl_list[tptr->current_ttl] != 0) {
                     if (tptr->type == TRACEROUTE_ICMP)
                         Traceroute_SendICMP(ctx, tptr);
-                    /*else if (tptr->type == TRACEROUTE_UDP)
+                    else if (tptr->type == TRACEROUTE_UDP)
                         Traceroute_SendUDP(ctx, tptr);
-                        else if (tptr->type == TRACEROUTE_TCP)
+                    /*    else if (tptr->type == TRACEROUTE_TCP)
                         Traceroute_SendTCP(ctx, tptr);*/
                 }
             }
         }
-
-        // count for enabling some in Traceroute_MaxQueue()
-        if (tptr->enabled) tcount++;
 
         tptr = tptr->next;
     }
 
     // analyze all queued responses from the network thread
     Traceroute_AnalyzeResponses(ctx);
+    
+    // if our queue is lower than the max.. then enable some others
+    Traceroute_MaxQueue(ctx);
 
     // *** we will log to the disk every 20 calls (for dev/debugging)
     // moved to every 40 because the randomly disabling and enabling should be more than MAX_TTL at least
@@ -1112,13 +1235,13 @@ int Traceroute_Perform(AS_context *ctx) {
             Traceroute_AdjustActiveCount(ctx);
     }
 
-    // if our queue is lower than the max.. then enable some others
-    Traceroute_MaxQueue(ctx, tcount);
-
     // do we adjust max active?
     Traceroute_Watchdog(ctx);
 
     end:;
+
+    pthread_mutex_unlock(&ctx->traceroute_mutex);
+
     return ret;
 }
 
@@ -1436,6 +1559,30 @@ int Spider_Load(AS_context *ctx, char *filename) {
 }
 
 
+void *thread_spider_load(void *arg) {
+    AS_context *ctx = (AS_context *)arg;
+
+    pthread_mutex_lock(&ctx->traceroute_mutex);
+
+    Spider_Load(ctx, "traceroute");
+
+    pthread_mutex_unlock(&ctx->traceroute_mutex);
+
+    pthread_exit(NULL);
+}
+
+
+int Spider_Load_threaded(AS_context *ctx, char *filename) {
+    if (pthread_create(&ctx->traceroute_thread, NULL, thread_spider_load, (void *)ctx) != 0) {
+        return Spider_Load(ctx, filename);
+    }
+    return 0;
+}
+
+
+
+
+
 //http://www.binarytides.com/get-local-ip-c-linux/
 uint32_t get_local_ipv4() {
     const char* google_dns_server = "8.8.8.8";
@@ -1513,12 +1660,12 @@ int Traceroute_Init(AS_context *ctx) {
     FilterPrepare(flt, FILTER_PACKET_ICMP, 0);
     if (Network_AddHook(ctx, flt, &Traceroute_IncomingICMP) != 1) goto end;
 
-/*
+
     // lets add UDP traceroute processing
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
     FilterPrepare(flt, FILTER_PACKET_UDP, 0);
     if (Network_AddHook(ctx, flt, &Traceroute_IncomingUDP) != 1) goto end;
-
+/*
     // lets add TCP traceroute processing
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
     FilterPrepare(flt, FILTER_PACKET_TCP, 0);
@@ -1667,6 +1814,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
     float perc_change = 0;
     int historic_avg_increase = 0;
 
+    if (ctx->traceroute_max_active > 10000) return 0;
 
     i = Traceroute_Count(ctx, 0, 0);
 
@@ -2282,16 +2430,8 @@ int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_i
     sptr = Scripting_FindFunction(ctx, generator_function);
 
     if (sptr) {
-        sptr->myThreadState = PyThreadState_New(sptr->mainInterpreterState);
-        
-        PyEval_ReleaseLock();
 
-        PyEval_AcquireLock();
-
-        sptr->tempState = PyThreadState_Swap(sptr->myThreadState);
-
-
-
+        Scripting_ThreadPre(ctx, sptr);
 
         pFunc = PyObject_GetAttrString(sptr->pModule, generator_function);
 
@@ -2332,15 +2472,7 @@ int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_i
             ret = 1;
         }
 
-
-        PyThreadState_Swap(sptr->tempState);
-        PyEval_ReleaseLock();
-
-        // Clean up thread state
-        PyThreadState_Clear(sptr->myThreadState);
-        PyThreadState_Delete(sptr->myThreadState);
-
-        sptr->myThreadState = NULL;
+        Scripting_ThreadPost(ctx, sptr);
     }
 
     // cleanup

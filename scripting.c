@@ -337,7 +337,7 @@ static PyObject *PyASC_FilterPrepare(PyAS_Config* self, PyObject *args, PyObject
     int packet_flags = 0;
     int familiar = 0;
     
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ssiii", kwd_list,  &source_ip, &destination_ip, &source_port, &destination_port, &packet_flags)) {
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ssiiii", kwd_list,  &source_ip, &destination_ip, &source_port, &destination_port, &packet_flags, &familiar)) {
         PyErr_Print();
         return NULL;
     }
@@ -925,8 +925,7 @@ static PyObject *PyASC_TracerouteStatus(PyAS_Config* self) {
                 return NULL;
             }
             for (i = 0; i < MAX_TTL; i++) {
-                printf("ttl_count[%d] = %d\n",
-                i, ttl_count[i]);
+                printf("ttl_count[%d] = %d\n", i, ttl_count[i]);
                 
                 PyList_SET_ITEM(PAttackList, i, PyLong_FromLong(ttl_count[i]));
             }
@@ -1361,6 +1360,9 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
     
     // The script has not been loaded before (the pointer isnt in the structure)
     if (!eptr->pModule) {
+
+        Scripting_ThreadPre(eptr->ctx, eptr);
+        
         // initialize python paths etc that we require for operating
         // I'm no python expert. I had to add some directories my first time playing with it.. and here we are.
         PyRun_SimpleString("import sys");
@@ -1418,19 +1420,15 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
         if (pPerform && PyCallable_Check(pPerform))
             eptr->perform = 1;
 
+        Scripting_ThreadPost(eptr->ctx, eptr);
+
     }
     
     // If the module didn't load properly.. then theres no reason to attempt to execute anything
     if ((pModule = eptr->pModule) == NULL) goto end;
 
-    eptr->myThreadState = PyThreadState_New(eptr->mainInterpreterState);
+    Scripting_ThreadPre(eptr->ctx, eptr);
     
-    PyEval_ReleaseLock();
-
-    PyEval_AcquireLock();
-
-    eptr->tempState = PyThreadState_Swap(eptr->myThreadState);
-
     //PyEval_AcquireThread(evars->python_thread);
 
     // we want to execute a particular function under this module we imported
@@ -1448,20 +1446,11 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
         // passing messages between the module & others
         ret = pValue;
 
-        printf("tuple check %d\n", PyTuple_Check(pValue));
         // usually you have to use Py_DECREF() here.. 
         // so if the application requires a more intersting object type from python, then adjust that here   
     }
 
-
-
-    PyThreadState_Swap(eptr->tempState);
-    PyEval_ReleaseLock();
-
-    // Clean up thread state
-    PyThreadState_Clear(eptr->myThreadState);
-    PyThreadState_Delete(eptr->myThreadState);
-    eptr->myThreadState = NULL;
+    Scripting_ThreadPost(eptr->ctx, eptr);
 
     
     //PyEval_ReleaseThread(evars->python_thread);
@@ -1588,6 +1577,9 @@ AS_scripts *Scripting_New(AS_context *ctx) {
     // add to script list
     sctx->next = ctx->scripts;
     ctx->scripts = sctx;
+
+    pthread_mutex_init(&sctx->lock_mutex, NULL);
+
 
     sctx->mainThreadState = PyThreadState_Get();
     sctx->mainInterpreterState = sctx->mainThreadState->interp;
@@ -1774,12 +1766,8 @@ AS_scripts *Scripting_FindFunction(AS_context *ctx, char *func_name) {
         
         if (eptr->pModule) {
             
-            eptr->myThreadState = PyThreadState_New(eptr->mainInterpreterState);
+            Scripting_ThreadPre(ctx, eptr);
             
-            PyEval_ReleaseLock();
-            PyEval_AcquireLock();
-
-            eptr->tempState = PyThreadState_Swap(eptr->myThreadState);
 
             // we want to execute a particular function under this module we imported
             pFunc = PyObject_GetAttrString(eptr->pModule, func_name);
@@ -1791,20 +1779,54 @@ AS_scripts *Scripting_FindFunction(AS_context *ctx, char *func_name) {
                 break;
             }
 
-
-            PyThreadState_Swap(eptr->tempState);
-
-            PyEval_ReleaseLock();
-
-            // Clean up thread state
-            PyThreadState_Clear(eptr->myThreadState);
-            PyThreadState_Delete(eptr->myThreadState);
-
-            eptr->myThreadState = NULL;
+            Scripting_ThreadPost(ctx, eptr);
         }
 
         eptr = eptr->next;
     }
 
     return eptr;
+}
+
+int Scripting_ThreadPre(AS_context *ctx, AS_scripts *sptr) {
+    int ret = 0;
+
+    if (sptr) {
+
+        pthread_mutex_lock(&sptr->lock_mutex);
+
+        sptr->myThreadState = PyThreadState_New(sptr->mainInterpreterState);
+        
+        PyEval_ReleaseLock();
+        PyEval_AcquireLock();
+
+        sptr->tempState = PyThreadState_Swap(sptr->myThreadState);
+
+        ret = 1;
+    }
+
+    return ret;
+}
+
+int Scripting_ThreadPost(AS_context *ctx, AS_scripts *sptr) {
+    int ret = 0;
+
+    if (sptr) {
+
+        PyThreadState_Swap(sptr->tempState);
+        PyEval_ReleaseLock();
+
+        // Clean up thread state
+        PyThreadState_Clear(sptr->myThreadState);
+        PyThreadState_Delete(sptr->myThreadState);
+
+        sptr->myThreadState = NULL;
+
+        pthread_mutex_unlock(&sptr->lock_mutex);
+
+        ret = 1;
+
+    }
+
+    return ret;
 }
