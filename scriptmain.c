@@ -67,10 +67,11 @@ int main(int argc, char *argv[]) {
     }
 
 
-    //exit(0);
-
     // call the init() function in the script
     PythonLoadScript(sctx, script, "init", NULL);
+
+    testcallback(ctx);
+    exit(0);
 
     while (ctx->script_enable) {
             // call AS_perform() once to iterate all attacks

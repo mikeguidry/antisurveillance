@@ -479,15 +479,15 @@ int Traceroute_AdjustActiveCount(AS_context *ctx) {
         qptr = qptr->next;
     }
 
+    // by making an array of which to re-enable.. we dont loop over the  list several times..
+    // it'll just handle it in one shot
     if ((random_count = (int *)calloc(1, sizeof(int) * disabled)) == NULL) goto end;
 
+    // pick which to enable
     for (r = 0; r < disabled; r++) random_count[r] = rand()%total_count;
 
-    // now enable the same amount of random queues
-    // ret is used here so we dont go over max amt of queue allowed..
-    // this allowedw this function to get reused during modifying traffic parameters
+    // iterate the traceroute queue list and enable ones in the array we just created
     qptr = ctx->traceroute_queue;
-
     while (qptr && (ret < ctx->traceroute_max_active)) {
         for (r = 0; r < disabled; r++) {
             if (random_count[r] == i) {
@@ -495,7 +495,6 @@ int Traceroute_AdjustActiveCount(AS_context *ctx) {
                 ret++;
             }
         }
-
         i++;
 
         qptr = qptr->next;
@@ -503,6 +502,7 @@ int Traceroute_AdjustActiveCount(AS_context *ctx) {
 
     end:;
 
+    // free array since we dont need it anymore
     if (random_count != NULL) free(random_count);
     
     return ret;
@@ -738,8 +738,6 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     // ttl has to be extracted as well (possibly from the identifier)
     int ttl = 0;
 
-    //printf("incoming\n");
-
     if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
         //printf("ipv4 Getting our own packets.. probably loopback\n");
         return 0;
@@ -749,7 +747,7 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
         //printf("ipv6 Getting our own packets.. probably loopback\n");
         return 0;
     }
-        
+
     // data isnt big enough to contain the identifier
     if (iptr->data_size < sizeof(TraceroutePacketData)) goto end;
 
@@ -800,7 +798,77 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
 }
 
 
+
+
 static int ccount = 0;
+
+// used to falsify DNS responses..also later for when we are going to do our own DNS queries in app
+typedef struct _dns_response_packet {
+
+} DNSResponsePacket;
+
+
+
+
+
+// UDP will send a fake 'response' for DNS to a client from port 53.. this will allow bypassing a lot of firewalls
+int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
+    int i = 0, ret = 0;
+    PacketBuildInstructions *iptr = NULL;
+    TraceroutePacketData *pdata = NULL;
+    DNSResponsePacket *dns_resp = NULL;
+    
+    // create instruction packet for the ICMP(4/6) packet building functions
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+        // this is the current TTL for this target
+        iptr->ttl = tptr->ttl_list[tptr->current_ttl];
+
+        // determine if this is an IPv4/6 so it uses the correct packet building function
+        if (tptr->target_ip != 0) {
+            iptr->type = PACKET_TYPE_UDP_4;
+            iptr->destination_ip = tptr->target_ip;
+            iptr->source_ip = ctx->my_addr_ipv4;
+        } else {
+            iptr->type = PACKET_TYPE_UDP_6;
+            // destination is the target
+            CopyIPv6Address(&iptr->destination_ipv6, &tptr->target_ipv6);
+            // source is our ip address
+            CopyIPv6Address(&iptr->source_ipv6, &ctx->my_addr_ipv6);
+        }
+
+        // ports to use (we can  randomize later on diff tries besides 53)
+        // This will look like a DNS response coming back to the client
+        iptr->source_port = 53;
+        iptr->destination_port = 1024 + (rand()%(65535-1024));
+    
+        // set size to the traceroute packet data structure's size...
+        iptr->data_size = sizeof(DNSResponsePacket);
+
+        if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
+            dns_resp = (DNSResponsePacket *)iptr->data;
+
+            // prepare dns response packet...
+        }
+
+        // lets build a packet from the instructions we just designed for either ipv4, or ipv6
+        // for either ipv4, or ipv6
+        if (iptr->type & PACKET_TYPE_UDP_6)
+            i = BuildSingleICMP6Packet(iptr);
+        else if (iptr->type & PACKET_TYPE_UDP_4)
+            i = BuildSingleICMP4Packet(iptr);
+
+        // if the packet building was successful
+        if (i == 1)
+            NetworkQueueAddBest(ctx, iptr);
+
+    }
+
+    PacketBuildInstructionsFree(&iptr);
+   
+    end:;
+    return ret;
+}
+
 
 
 // moved into its own function so i can finish supporting UDP, and TCP traceroutes
@@ -862,32 +930,8 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
             i = BuildSingleICMP4Packet(iptr);
 
         // if the packet building was successful
-        if (i == 1) {
-            // allocate a structure for the outgoing packet to get wrote to the network interface
-            if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
-                // we need to pass it the final packet which was built for the wire
-                optr->buf = iptr->packet;
-                optr->type = iptr->type;
-                optr->size = iptr->packet_size;
-
-                // remove the pointer from the instruction structure so it doesnt get freed in this function
-                iptr->packet = NULL;
-                iptr->packet_size = 0;
-
-                // the outgoing structure needs some other information
-                optr->dest_ip = iptr->destination_ip;
-                optr->ctx = ctx;
-
-                // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-                if (AttackQueueAdd(ctx, optr, 1) == 0) {
-                    // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
-                    if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
-                        // if we for some reason cannot pthread (prob memory).. lets do it blocking
-                        AttackQueueAdd(ctx, optr, 0);
-                    }
-                }
-            }
-        }
+        if (i == 1)
+            NetworkQueueAddBest(ctx, iptr);
     }
 
     PacketBuildInstructionsFree(&iptr);
@@ -1620,7 +1664,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
     int total_historic_to_use = 4;
     CountElement *cptr[total_historic_to_use+1];
     
-    float perc_change;
+    float perc_change = 0;
     int historic_avg_increase = 0;
 
 
@@ -2173,7 +2217,7 @@ int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_i
     PyObject *pBodyClientSize = NULL, *pBodyServerSize = NULL;
     PyObject *pSiteCategory = NULL, *pSiteID = NULL;
     PyObject *pLanguage = NULL;
-    PyObject *pFunc = NULL, *pValue = NULL;
+    PyObject *pFunc = NULL, *pValue = NULL, *pTuple = NULL;
     AS_scripts *eptr = ctx->scripts;
     AS_scripts *sptr = ctx->scripts;
     
@@ -2229,25 +2273,51 @@ int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_i
     // call all scripts looking for content_generator..
     // i need a new way to do callback, and checking for their functions.. ill redo scripting context system shortly
     // to support
-    while (sptr != NULL) {
-        // call the python function
-        pValue = PythonLoadScript(sptr, NULL, "content_generator", pArgs);
-
-        if (pValue != NULL)
-            break;
-
-        sptr = sptr->next;
-    }
+    //while (sptr != NULL) {
 
 
-    if (pValue != NULL) {
+    // This  code  hadd to take place here.. this function was getting pValue back ater releasing locks, etc..
+    // it had already invalidated alll of the information, and w as crashing
+        if (sptr->pModule != NULL) {
+
+
+            sptr->myThreadState = PyThreadState_New(sptr->mainInterpreterState);
+            
+            PyEval_ReleaseLock();
+
+            PyEval_AcquireLock();
+
+            sptr->tempState = PyThreadState_Swap(sptr->myThreadState);
+
+
+
+
+            pFunc = PyObject_GetAttrString(sptr->pModule, "content_generator");
+
+                // now we must verify that the function is accurate
+            if (pFunc && PyCallable_Check(pFunc)) {
+                // call the python function
+
+                pValue = PyObject_CallObject(pFunc, pArgs);
+
+                if (pValue != NULL) {
+//                    if (!PyErr_Occurred()) break;
+                }
+
+            }
+        }
+
+        //sptr = sptr->next;
+    //}
+
+
+    if (pValue != NULL) {        
         // parse the returned 2 bodies into separate variables for processing
         PyArg_ParseTuple(pValue, "s#s#", &new_client_body, &new_client_body_size, &new_server_body, &new_server_body_size);
 
         // allocate memeory to hold these pointers since the returned ones are inside of python memory
         if ((ret_client_body = (char *)malloc(new_client_body_size)) == NULL) goto end;
         if ((ret_server_body = (char *)malloc(new_server_body_size)) == NULL) goto end;
-
 
         // copy the data from internal python storage into the ones for the calling function
         memcpy(ret_client_body, new_client_body, new_client_body_size);
@@ -2269,22 +2339,36 @@ int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_i
         ret = 1;
     }
 
+
+    if (sptr->pModule != NULL) {
+        PyThreadState_Swap(eptr->tempState);
+        PyEval_ReleaseLock();
+
+        // Clean up thread state
+        PyThreadState_Clear(eptr->myThreadState);
+        PyThreadState_Delete(eptr->myThreadState);
+        eptr->myThreadState = NULL;
+    }
+
     // cleanup
     end:;
-    if (pIP_src != NULL) Py_DECREF(pIP_src);
-    if (pIP_dst != NULL) Py_DECREF(pIP_dst);
-    if (pCountry_src != NULL) Py_DECREF(pCountry_src);
-    if (pCountry_dst != NULL) Py_DECREF(pCountry_dst);
-    if (pBodyClient != NULL) Py_DECREF(pBodyClient);
-    if (pBodyServer != NULL) Py_DECREF(pBodyServer);
-    if (pBodyClientSize != NULL) Py_DECREF(pBodyClientSize);
-    if (pBodyServerSize != NULL) Py_DECREF(pBodyServerSize);
-    if (pSiteID != NULL) Py_DECREF(pSiteID);
-    if (pSiteCategory != NULL) Py_DECREF(pSiteCategory);
-    if (pLanguage != NULL) Py_DECREF(pLanguage);
-    if (pArgs != NULL) Py_DECREF(pArgs);
-    if (pFunc != NULL) Py_DECREF(pFunc);
     if (pValue != NULL) Py_DECREF(pValue);
+    if (pFunc != NULL) Py_DECREF(pFunc);
+
+    //if (pArgs != NULL) Py_DECREF(pArgs);
+
+    if (pLanguage != NULL) Py_DECREF(pLanguage);
+    if (pSiteCategory != NULL) Py_DECREF(pSiteCategory);
+    if (pSiteID != NULL) Py_DECREF(pSiteID);
+    if (pBodyServerSize != NULL) Py_DECREF(pBodyServerSize);
+    if (pBodyClientSize != NULL) Py_DECREF(pBodyClientSize);
+    if (pBodyServer != NULL) Py_DECREF(pBodyServer);
+    if (pBodyClient != NULL) Py_DECREF(pBodyClient);
+    if (pCountry_dst != NULL) Py_DECREF(pCountry_dst);
+    if (pCountry_src != NULL) Py_DECREF(pCountry_src);
+    if (pIP_dst != NULL) Py_DECREF(pIP_dst);
+    if (pIP_src != NULL) Py_DECREF(pIP_src);
+    
 
     if (ret_client_body != NULL) free(ret_client_body);
     if (ret_server_body != NULL) free(ret_server_body);
@@ -2306,13 +2390,33 @@ int ResearchContentGenerator(AS_context *ctx, int src_country, int dst_country, 
     char *IP_src = "127.0.0.1";
     char *IP_dst = "127.0.0.1";
 
-
     // try python version from scripts (callback)    
-    ret = ResearchPyCallbackContentGenerator(ctx, language, site_id, site_category, IP_src, IP_dst, country, country, content_client, content_client_size, content_server, content_server_size);
+    ret = ResearchPyCallbackContentGenerator(ctx, language, site_id, site_category, IP_src, IP_dst, "US", "US",
+    content_client, content_client_size, content_server, content_server_size);
 
-
+/*
+*content_client = new_content_client;
+*content_server = new_content_server;
+*content_client_size = new_content_client_size;
+*content_server_size = new_content_server_size;
+*/
 end:;
     return ret;
+
+}
+
+int testcallback(AS_context *ctx) {
+    int i = 0;
+    char *content_client = NULL, *content_server = NULL;
+    int content_client_size = 0;
+    int content_server_size = 0;
+    
+    i = ResearchContentGenerator(ctx, i, i, &content_client, &content_client_size, &content_server, &content_server_size);
+
+    printf("conntent_client %p content server %p size %d %d\n", content_client, content_server, content_client_size,
+    content_server_size);
+
+    return i;
 
 }
 

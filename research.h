@@ -337,3 +337,4 @@ typedef struct _research_connection_options {
 int fourteen_check_id(int country_id);
 int fourteen_check(char *country);
 int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4);
+int testcallback(AS_context *ctx);

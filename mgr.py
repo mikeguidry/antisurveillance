@@ -243,4 +243,5 @@ def content_generator(language,site_id,site_category,ip_src,ip_dst,ip_src_geo,ip
     server_body = open("server_body", 'rU').read()
     client_body = open("client_body", 'rU').read()
 
-    return client_body, server_body
+    print("done")
+    return (client_body, server_body)

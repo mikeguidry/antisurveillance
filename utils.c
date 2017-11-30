@@ -35,6 +35,11 @@ LINK *L_last(LINK *list) {
 }
 
 
+void L_link_unordered(LINK **list, LINK *ele) {
+    ele->next = *list;
+    *list = ele;
+}
+
 // Orderd linking (first in first out) which is required for packets
 void L_link_ordered(LINK **list, LINK *ele) {
     LINK *_last = NULL;

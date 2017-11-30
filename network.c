@@ -742,3 +742,39 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
 
     return 1;
 }
+
+
+
+int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr) {
+    int ret = 0;
+    AttackOutgoingQueue *optr = NULL;
+
+    // allocate a structure for the outgoing packet to get wrote to the network interface
+    if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
+        // we need to pass it the final packet which was built for the wire
+        optr->buf = iptr->packet;
+        optr->type = iptr->type;
+        optr->size = iptr->packet_size;
+
+        // remove the pointer from the instruction structure so it doesnt get freed in this function
+        iptr->packet = NULL;
+        iptr->packet_size = 0;
+
+        // the outgoing structure needs some other information
+        optr->dest_ip = iptr->destination_ip;
+        optr->ctx = ctx;
+
+        // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
+        if (AttackQueueAdd(ctx, optr, 1) == 0) {
+            // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
+            if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
+            // if we for some reason cannot pthread (prob memory).. lets do it blocking
+                AttackQueueAdd(ctx, optr, 0);
+            }
+        }
+
+        ret = 1;
+    }
+
+    return ret;
+}

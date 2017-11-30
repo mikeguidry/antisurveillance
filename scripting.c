@@ -248,8 +248,9 @@ static PyObject *PyASC_CTXSet(PyAS_Config* self, PyObject *Pctx){
 
     self->ctx = ctx;
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    return PyInt_FromLong(1);
+    //Py_INCREF(Py_None);
+    //return Py_None;
 }
 
 
@@ -1354,7 +1355,7 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
     char buf[1024];
     int i = 0;
     PyObject *pCtx = NULL, *pSetCTX = NULL;
-    PyObject *pPerform = NULL, *pASPtr = NULL;
+    PyObject *pPerform = NULL, *pASPtr = NULL, *pManager = NULL;
 
     if (eptr == NULL) return -1;
     
@@ -1392,23 +1393,30 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
         /*
         // *** todo finish
         // new way to get the pointer into the that function
-        //pASPtr =  PyObject_GetAttrString(pModule, "antisurveillances");
-        pSetCTX = PyObject_GetAttrString(pModule, "antisurveillances.setctx");
-        printf("setctx %p\n", pSetCTX);
-        if (pSetCTX && PyCallable_Check(pSetCTX)) {
-            if ((pValue = PyObject_CallObject(pFunc, pCtx)) != NULL) {
-                printf("Called OK\n");
-                Py_XDECREF(pValue);
-                pValue = NULL;
-            }
-        }*/
+        pASPtr =  PyObject_GetAttrString(pModule, "antisurveillance");
+        if (pASPtr) {
+            pManager = PyObject_GetAttrString(pASPtr, "manager");
+            if (pManager) {
+                pSetCTX = PyObject_GetAttrString(pManager, "setctx");
 
+                printf("setctx %p manager %p asptr %p\n", pSetCTX, pManager, pASPtr);
+                
+                if (pSetCTX && PyCallable_Check(pSetCTX)) {
+                    if ((pValue = PyObject_CallObject(pSetCTX, pCtx)) != NULL) {
+                        printf("Called OK\n");
+
+                        Py_XDECREF(pValue);
+                        pValue = NULL;
+                    }
+                }
+            }
+        }
+        */
 
         // lets check if it has a script_perform() function.. if so we will use it later
         pPerform = PyObject_GetAttrString(pModule, "script_perform");
-        if (pPerform && PyCallable_Check(pPerform)) {
+        if (pPerform && PyCallable_Check(pPerform))
             eptr->perform = 1;
-        }
 
     }
     
@@ -1439,6 +1447,8 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
         // for init it will contain the module identifier for
         // passing messages between the module & others
         ret = pValue;
+
+        printf("tuple check %d\n", PyTuple_Check(pValue));
         // usually you have to use Py_DECREF() here.. 
         // so if the application requires a more intersting object type from python, then adjust that here   
     }
@@ -1456,8 +1466,7 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
     
     //PyEval_ReleaseThread(evars->python_thread);
 end:;
-    if (pFunc != NULL)
-        Py_XDECREF(pFunc);
+    if (pFunc != NULL) Py_XDECREF(pFunc);
     //if (pValue != NULL) Py_XDECREF(pValue);    
 
     return ret;
@@ -1520,7 +1529,6 @@ int Scripting_Perform(AS_context *ctx) {
     }
 
     end:;
-    printf("33\n");
     return ret;
 }
 
@@ -1534,8 +1542,8 @@ int Scripting_Init(AS_context *ctx) {
     // initialize python required function
     Py_Initialize();
 
-// ----
-// https://www.codeproject.com/Articles/11805/Embedding-Python-in-C-C-Part-I
+    // ----
+    // https://www.codeproject.com/Articles/11805/Embedding-Python-in-C-C-Part-I
 
 
     // pretty sure this is why interactive console was failing..
