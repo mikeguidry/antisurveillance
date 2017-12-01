@@ -5,6 +5,11 @@
 #include <net/if.h>
 #include "GeoIP.h"
 
+
+
+#define JTABLE_SIZE 1024
+
+
 struct _packet_info;
 struct _packet_instructions;
 //typedef struct _packet_info PacketInfo;
@@ -37,6 +42,8 @@ typedef struct _traceroute_analysis TracerouteAnalysis;
 struct _pcap_operations;
 typedef struct _pcap_operations PCAPOperation;
 
+struct _site_identifiers;
+typedef struct _site_identifiers SiteIdentifier;
 
 // general attack structure...
 // should support everything from syn packets, to virtual connections
@@ -232,6 +239,7 @@ typedef struct _antisurveillance_context {
 
     // active traceroutes
     TracerouteQueue *traceroute_queue;
+    TracerouteQueue *traceroute_queue_identifier[JTABLE_SIZE];
     // internal database built from the traceroutes, and analysis
     TracerouteSpider *traceroute_spider;
     //void *jump_table[256*256*256];
@@ -253,9 +261,11 @@ typedef struct _antisurveillance_context {
 
     PCAPOperation *pcap_operations;
 
-    pthread_mutex_t traceroute_mutex;
+    //pthread_mutex_t traceroute_mutex;
     pthread_t traceroute_thread;
 
+
+    SiteIdentifier *site_list;
 } AS_context;
 
 

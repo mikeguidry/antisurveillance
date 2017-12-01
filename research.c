@@ -448,12 +448,12 @@ int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4) {
 
 // find a traceroute queue structure by the identifier it used
 int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier) {
-    TracerouteQueue *qptr = ctx->traceroute_queue;
+    TracerouteQueue *qptr = ctx->traceroute_queue_identifier[identifier % JTABLE_SIZE];
     while (qptr != NULL) {
 
         if (qptr->identifier == identifier) break;
 
-        qptr = qptr->next;
+        qptr = qptr->next_identifier;
     }
 
     return qptr;
@@ -702,8 +702,11 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
                 // here .. lets ensure we are before this element by changing the next of last to this one
                 if (slast != NULL) {
 
-                    snew->hops_list = slast->hops_list;
-                    slast->hops_list = snew;
+                    snew->hops_list = sptr->hops_list;
+                    sptr->hops_list = snew;
+
+                    //snew->hops_list = slast->hops_list;
+                    //slast->hops_list = snew;
 
                 } else {
 
@@ -793,6 +796,10 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     //L_link_ordered_offset((LINK **)&ctx->traceroute_queue, (LINK *)tptr, offsetof(TracerouteQueue, next));
     tptr->next = ctx->traceroute_queue;
     ctx->traceroute_queue = tptr;
+
+    tptr->next_identifier = ctx->traceroute_queue_identifier[tptr->identifier % JTABLE_SIZE];
+    ctx->traceroute_queue_identifier[tptr->identifier % JTABLE_SIZE] = tptr;
+
 
     // enable default TTL list
     for (i = ctx->traceroute_min_ttl; i < MAX_TTL; i++) tptr->ttl_list[i] = (i - ctx->traceroute_min_ttl);
@@ -1193,7 +1200,7 @@ int Traceroute_Perform(AS_context *ctx) {
     int ts = time(0);
 
     // I used a pthread to load the database...
-    if (pthread_mutex_trylock(&ctx->traceroute_mutex) != 0) return 0;
+    //if (pthread_mutex_trylock(&ctx->traceroute_mutex) != 0) return 0;
 
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
@@ -1280,7 +1287,7 @@ int Traceroute_Perform(AS_context *ctx) {
 
     end:;
 
-    pthread_mutex_unlock(&ctx->traceroute_mutex);
+    //pthread_mutex_unlock(&ctx->traceroute_mutex);
 
     return ret;
 }
@@ -1305,41 +1312,61 @@ FILE *file_open_dump(char *filename) {
     return fopen(fname, "wb");
 }
 
+#pragma pack(push,1)
+typedef struct _data_entry {
+    unsigned char code;
+    uint32_t target_ip;
+    uint32_t hop_ip;
+    uint32_t identifier;
+    unsigned char completed;
+    unsigned char enabled;
+    int ts;
+    int activity;
+    int retry;
+    int ttl;
+} DataEntry;
+#pragma pack(pop)
+
+
+
 // dump traceroute data to disk.. printing a little information..
 // just here temporarily.. 
 int Spider_Save(AS_context *ctx) {
     TracerouteSpider *sptr = NULL;
     int count = 0;
     FILE *fd = NULL;
-    FILE *fd2 = NULL;
+    
     char fname[32];
     TracerouteSpider *bptr = NULL;
     char Ahop[16], Atarget[16];
     struct in_addr conv;
     TracerouteQueue *qptr = NULL;
+    DataEntry dentry;
 
     // open file for writing traceroute queues...
-    sprintf(fname, "traceroute_queue.txt", "w");
-    fd = fopen(fname, "w");
+    sprintf(fname, "traceroute.dat");
+    fd = fopen(fname, "wb");
 
-    // filename for debug data
-    sprintf(fname, "traceroute.txt", "w");
-    fd2 = fopen(fname, "w");
     //fd2 = NULL; // disabling it by settinng to NULL
 
     // dump all traceroute queues and their identifiers
     qptr = ctx->traceroute_queue;
     while (qptr != NULL) {
 
-        if (fd) {
-            conv.s_addr = qptr->target_ip;            
-            strcpy((char *)&Atarget, inet_ntoa(conv));
+        memset(&dentry, 0, sizeof(DataEntry));
+        // 1 = queue
+        dentry.code = 1;
 
-            fprintf(fd, "QUEUE,%s,%u,%d,%d,%d,%d,%d\n", Atarget,
-                qptr->identifier, qptr->retry_count, qptr->completed,
-                qptr->enabled, qptr->ts_activity, qptr->ts);
+        dentry.target_ip = qptr->target_ip;
+        
+        dentry.identifier = qptr->identifier;
+        dentry.completed = qptr->completed;
+        dentry.activity = qptr->ts_activity;
+        dentry.ts = qptr->ts;
+        dentry.retry = qptr->retry_count;
 
-        }
+        
+        fwrite(&dentry, 1, sizeof(DataEntry), fd);
 
         qptr = qptr->next;
     }
@@ -1347,8 +1374,23 @@ int Spider_Save(AS_context *ctx) {
     // enumerate spider and list information
     sptr = ctx->traceroute_spider_hops;
     while (sptr != NULL) {
+        memset(&dentry, 0, sizeof(DataEntry));
+
+        // hop..
+        dentry.code = 2;
+
+        dentry.target_ip = sptr->target_ip;
+        dentry.hop_ip = sptr->hop_ip;
+        dentry.identifier = sptr->identifier_id;
+        dentry.ts = sptr->ts;
+        
+        dentry.ttl = sptr->ttl;
+        fwrite(&dentry, 1, sizeof(DataEntry), fd);
+
         // if the output file is open then lets write some data
-        if (fd2) {
+        
+            //fwrite(&dentry, 1, sizeof(DataEntry), fd);
+            /*
             // we wanna turn the target, and hop IP from long to ascii
             conv.s_addr = sptr->hop_ip;
             strcpy((char *)&Ahop, inet_ntoa(conv));
@@ -1356,7 +1398,8 @@ int Spider_Save(AS_context *ctx) {
             strcpy((char *)&Atarget, inet_ntoa(conv));
             // and finally format & write it to the output file
             fprintf(fd2, "HOP,%s,%s,%u,%d\n", Ahop, Atarget, sptr->identifier_id, sptr->ttl);
-        }
+            */
+        
 
         // this message is for debugging/development.. how many branches are in this hop (similar)
         count = L_count_offset((LINK *)sptr->branches, offsetof(TracerouteSpider, branches));
@@ -1372,16 +1415,28 @@ int Spider_Save(AS_context *ctx) {
 
         // loop for each branch
         while (bptr != NULL) {
+            memset(&dentry, 0, sizeof(DataEntry));
+
+            // branch connected to most recent hop
+            dentry.code = 3;
+            dentry.target_ip = sptr->target_ip;
+            dentry.hop_ip = sptr->hop_ip;
+            dentry.identifier = sptr->identifier_id;
+            dentry.ts = sptr->ts;            
+            dentry.ttl = sptr->ttl;
+
             // if the file is open
-            if (fd2) {
+            
+                fwrite(&dentry, 1, sizeof(DataEntry), fd);
+                /*
                 // convert long ips to ascii
                 conv.s_addr = bptr->hop_ip;
                 strcpy((char *)&Ahop, inet_ntoa(conv));
                 conv.s_addr = bptr->target_ip;
                 strcpy((char *)&Atarget, inet_ntoa(conv));
                 // and format & write the data to the file
-                fprintf(fd2, "BRANCH,%s,%s,%u,%d\n", Ahop, Atarget, sptr->identifier_id, sptr->ttl);
-            }
+                fprintf(fd2, "BRANCH,%s,%s,%u,%d\n", Ahop, Atarget, sptr->identifier_id, sptr->ttl); */
+        
 
             // move to next in branch list
             bptr = bptr->branches;
@@ -1400,7 +1455,6 @@ int Spider_Save(AS_context *ctx) {
 
     // close file if it was open
     if (fd) fclose(fd);
-    if (fd2) fclose(fd2);
 
     return 0;
 }
@@ -1470,9 +1524,133 @@ TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *ho
 
 
 
+
 // load data from a file.. this is for development.. so I can use the python interactive debugger, and write various C code
 // for the algorithms required to determine the best IP addresses for manipulation of the mass surveillance networks
 int Spider_Load(AS_context *ctx, char *filename) {
+    FILE *fd = NULL, *fd2 = NULL;
+    char buf[1024];
+    char *sptr = NULL;
+    char type[16], hop[16],target[16];
+    int ttl = 0;
+    uint32_t identifier = 0;
+    int ts =0, enabled = 0, activity = 0, completed = 0, retry = 0;
+    int i = 0;
+    int n = 0;
+    TracerouteSpider *Sptr = NULL;
+    TracerouteSpider *snew = NULL;
+    TracerouteSpider *hop_last = NULL;
+    TracerouteSpider *slast = NULL, *Blast = NULL;
+
+    TracerouteQueue *qnew = NULL;
+    char fname[32];
+    char *asnum_name = NULL;
+    DataEntry dentry;
+    
+
+    // traceroute responses (spider)
+    sprintf(fname, "%s.dat", filename);
+    // open ascii format file
+    if ((fd = fopen(fname, "rb")) == NULL) goto end;
+
+    while (!feof(fd)) {
+        fread(&dentry, 1, sizeof(DataEntry), fd);
+        if (!dentry.target_ip) continue;
+        if (dentry.code == 1) {
+            // cannot allocate?? 
+            if ((qnew = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) break;
+
+            // set parameters from data file
+            qnew->completed = dentry.completed;
+            qnew->retry_count = dentry.retry;
+            qnew->ts = dentry.ts;
+            qnew->ts_activity = dentry.activity;
+
+            // we wanna control enabled here when we look for all TTL hops
+            qnew->enabled = dentry.enabled;
+            qnew->target_ip = dentry.target_ip;
+            qnew->identifier = dentry.identifier;
+            qnew->type = ((rand()%100) > 50) ? 1 : 0;
+
+            // add to queue list
+            qnew->next = ctx->traceroute_queue;
+            ctx->traceroute_queue = qnew;
+
+            // put  in jump table.. for finding by identifier quickly
+            qnew->next_identifier = ctx->traceroute_queue_identifier[qnew->identifier % JTABLE_SIZE];
+            ctx->traceroute_queue_identifier[qnew->identifier % JTABLE_SIZE] = qnew;
+
+        } else if (dentry.code == 2) {
+            // allocate structure for storing this entry into the traceroute spider
+            if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) == NULL) break;
+
+            // set various information we have read fromm the file into the new structure
+        
+            snew->target_ip = dentry.target_ip;
+            snew->hop_ip = dentry.hop_ip;
+            snew->ttl = dentry.ttl;
+            snew->identifier_id = dentry.identifier;
+            snew->ts = dentry.ts;
+
+            if (!slast) {
+                ctx->traceroute_spider = snew;
+                slast = snew;
+            } else {
+                slast->next = snew;
+                slast = snew;
+            }
+
+            if (!hop_last) {
+                ctx->traceroute_spider_hops = snew;
+                hop_last = snew;
+            } else {
+                hop_last->hops_list = snew;
+                hop_last = snew;
+            }
+
+        } else if (dentry.code == 3) {
+            // allocate structure for storing this entry into the traceroute spider
+            if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) == NULL) break;
+
+            // set various information we have read fromm the file into the new structure
+        
+            snew->target_ip = dentry.target_ip;
+            snew->hop_ip = dentry.hop_ip;
+            snew->ttl = dentry.ttl;
+            snew->identifier_id = dentry.identifier;
+            snew->ttl = dentry.ttl;
+
+            snew->branches = slast->branches;
+            slast->branches = snew;
+
+        }
+
+        if (dentry.code && dentry.code > 1) {
+            // link into main list
+            //Traceroute_Insert(ctx, snew);
+
+    
+            Spider_IdentifyTogether(ctx, snew);
+
+        }
+    }
+
+
+    //printf("calling Traceroute_RetryAll to deal with loaded data\n");
+    Traceroute_RetryAll(ctx);
+
+    end:;
+
+    if (fd) fclose(fd);
+
+    return 1;
+}
+
+
+
+// load data from a file.. this is for development.. so I can use the python interactive debugger, and write various C code
+// for the algorithms required to determine the best IP addresses for manipulation of the mass surveillance networks
+int Spider_Load_old(AS_context *ctx, char *filename) {
     FILE *fd = NULL, *fd2 = NULL;
     char buf[1024];
     char *sptr = NULL;
@@ -1551,6 +1729,10 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
         qnew->next = ctx->traceroute_queue;
         ctx->traceroute_queue = qnew;
+
+            qnew->next_identifier = ctx->traceroute_queue_identifier[qnew->identifier % JTABLE_SIZE];
+            ctx->traceroute_queue_identifier[qnew->identifier % JTABLE_SIZE] = qnew;
+
     }
 
     // first we load the traceroute responses.. so we can use the list for re-enabling ones which were  in progress
@@ -1619,14 +1801,15 @@ int Spider_Load(AS_context *ctx, char *filename) {
 }
 
 
+
 void *thread_spider_load(void *arg) {
     AS_context *ctx = (AS_context *)arg;
 
-    pthread_mutex_lock(&ctx->traceroute_mutex);
+    //pthread_mutex_lock(&ctx->traceroute_mutex);
 
     Spider_Load(ctx, "traceroute");
 
-    pthread_mutex_unlock(&ctx->traceroute_mutex);
+    //pthread_mutex_unlock(&ctx->traceroute_mutex);
 
     pthread_exit(NULL);
 }
@@ -2646,83 +2829,57 @@ need to try to ccompress using topp domains, etc
 */
 
 
-// All logged/loaded URLs (from live, pcap, or built in)
-typedef struct _site_url {
-    struct _site_url *next;
+SiteURL *URL_Add(SiteIdentifier *sident, char *url) {
+    SiteURL *siteptr = (SiteURL *)calloc(1, sizeof(SiteURL));
 
-    // how many times used?
-    int count;
-    // language for this url/content
-    int language;
-    // ajax? etc? it can determine things for % of gzip attack.. ajaxx = small
-    char *url;
+    if (siteptr == NULL) goto end;
 
-    // does this URL wannaa use a specific body we can modify/insert?
-    char *content;
-    int content_size;
-} SiteURL;
+    // lets duplicate the url
+    siteptr->url = strdup(url);
+    // eng static for now
+    siteptr->language = 1;
 
-// site specifics
-typedef struct _site_identifiers {
-    struct _site_identifiers *next;
+    L_link_ordered_offset((LINK **)&sident->url_list, (LINK *)siteptr, offsetof(SiteURL, next));
 
-    // what language?
-    int language;
+    end:;
+    return siteptr;
+}
 
-    // which category ID?
-    int category_id;
+SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
+    int ret = 0;
+    SiteIdentifier *siteptr = ctx->site_list;
+    SiteURL *uptr = NULL;
 
-    // domain/site
-    char *domain;
+    while (siteptr != NULL) {
+        if (strcmp(site, siteptr->domain)==0) {
+            break;
+        }
+    }
 
-    // URLs (macro-able) for building sessions...
-    SiteURL **url_list;
-    int url_count;    
-} SiteIdentifiers;
+    if (siteptr == NULL) {
+        if ((siteptr = (SiteIdentifier *)calloc(1, sizeof(SiteIdentifier))) == NULL) return -1;
+        siteptr->domain = strdup(site);
+    }
+
+    if  ((uptr = URL_Add(siteptr, url)) != NULL) {
+        uptr->language = siteptr->language;
+    }
+    
+
+    return siteptr;
+}
 
 
-// site categories
-typedef struct _site_categories {
-    struct _site_categories *next;
+/*
 
-    // category ID for this site
-    int category_id;
+imaginary/fuzzy routes
 
-    // language (redundant.. since site identifiers has language.. maybe remove)
-    int language;
+callbacks for packet incomming/outgoing
 
-    // category name
-    char *name;
-} SiteCategories;
+identities (getter/setter, OR synchronization w python/C)
+sites (sync)
+urls (sync)
 
-// languages
-typedef struct _languages {
-    struct _languages *next;
 
-    int language_id;
-    char *name;
 
-    // IE: chinese
-    int requires_unicode;
-} Languages;
-
-// pool for picking ip addresses..
-typedef struct _ip_addresses {
-    struct _ip_addresses;
-
-    // easy geo?
-    int country;
-
-    // what language? (if a country has multiple.. u can decide to change?)
-    int language;
-
-    // time is for frabricating messages between  parties to emulate 9am-5pm or afternoon...
-    // real as possible is best.
-    int time_restrictions;
-
-    uint32_t **v4_adddresses;
-    int v4_count;
-
-    struct in6_addr **v6_addresses;
-    int v6_count;    
-} IPAddresses;
+*/

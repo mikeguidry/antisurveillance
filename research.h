@@ -72,6 +72,7 @@ Traceroute queue which is used to determine the best IPs for manipulation of fib
 */
 typedef struct _traceroute_queue {
     struct _traceroute_queue *next;
+    struct _traceroute_queue *next_identifier;
 
     // IPv4 or 6 address
     uint32_t target_ip;
@@ -303,8 +304,92 @@ typedef struct _research_connection_options {
 } ResearchConnectionOptions;
 
 
+
+// All logged/loaded URLs (from live, pcap, or built in)
+typedef struct _site_url {
+    struct _site_url *next;
+
+    // how many times used?
+    int count;
+    // language for this url/content
+    int language;
+    // ajax? etc? it can determine things for % of gzip attack.. ajaxx = small
+    char *url;
+
+    // does this URL wannaa use a specific body we can modify/insert?
+    char *content;
+    int content_size;
+} SiteURL;
+
+// site specifics
+typedef struct _site_identifiers {
+    struct _site_identifiers *next;
+
+    // what language?
+    int language;
+
+    // which category ID?
+    int category_id;
+
+    // domain/site
+    char *domain;
+
+    // URLs (macro-able) for building sessions...
+    SiteURL *url_list;
+    int url_count;    
+} SiteIdentifier;
+
+// site categories
+typedef struct _site_categories {
+    struct _site_categories *next;
+
+    // category ID for this site
+    int category_id;
+
+    // language (redundant.. since site identifiers has language.. maybe remove)
+    int language;
+
+    // category name
+    char *name;
+} SiteCategories;
+
+// languages
+typedef struct _languages {
+    struct _languages *next;
+
+    int language_id;
+    char *name;
+
+    // IE: chinese
+    int requires_unicode;
+} Languages;
+
+// pool for picking ip addresses..
+typedef struct _ip_addresses {
+    struct _ip_addresses;
+
+    // easy geo?
+    int country;
+
+    // what language? (if a country has multiple.. u can decide to change?)
+    int language;
+
+    // time is for frabricating messages between  parties to emulate 9am-5pm or afternoon...
+    // real as possible is best.
+    int time_restrictions;
+
+    uint32_t **v4_adddresses;
+    int v4_count;
+
+    struct in6_addr **v6_addresses;
+    int v6_count;    
+} IPAddresses;
+
+
 int fourteen_check_id(int country_id);
 int fourteen_check(char *country);
 int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4);
 int testcallback(AS_context *ctx);
 int Spider_Load_threaded(AS_context *ctx, char *filename);
+SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url);
+SiteURL *URL_Add(SiteIdentifier *sident, char *url);

@@ -1,4 +1,4 @@
-# anti surveillance python example/testing
+# anti surveillance python example/testing - accountability.
 # itll be easy enough for a child to use.
 
 import antisurveillance
@@ -239,13 +239,20 @@ def init():
     #if (cnt == 0):
     #    top_sites_research(a)
 
-    a.filtercreate()
-    a.pcapcapturestart(filename="all.pcap")
+    #a.filtercreate()
+    #a.pcapcapturestart(filename="all.pcap")
 
     return 1
     
 
 
+
+#generate an IP address possibly by language/country..
+# this can be a callback BEFORE the C (research.c) generator is done or after... 
+def ip_generator(language, country, ip):
+    #we ignore IP passed and  just return a randomm one... just to demonstrate
+    ip = socket.inet_ntoa(struct.pack('>I', random.randint(1, 0xffffffff)))
+    return ip
 
 # The script can do whatever it needs to generate specific HTTP session bodies relating to a specific site, category, country,
 # and whatever other decisions...

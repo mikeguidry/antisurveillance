@@ -71,6 +71,8 @@ typedef struct _network_analysis_functions {
     FilterInformation *flt;
 
     PacketIncomingFunc incoming_function;
+
+    long long bytes_processed;
 } NetworkAnalysisFunctions;
 
 
@@ -78,7 +80,7 @@ int prepare_socket();
 void *thread_network_flush(void *arg);
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr);
 void *AS_queue_threaded(void *arg);
-int AttackQueueAdd(AS_context *,AttackOutgoingQueue *optr, int only_try);
+int OutgoingQueueAdd(AS_context *,AttackOutgoingQueue *optr, int only_try);
 int FlushAttackOutgoingQueueToNetwork(AS_context *);
 void ClearPackets(AS_context *ctx);
 int process_packet(AS_context *ctx, char *packet, int size);

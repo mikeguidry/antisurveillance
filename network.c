@@ -158,7 +158,7 @@ void ClearPackets(AS_context *ctx) {
 // Adds a queue to outgoing packet list which is protected by a thread.. try means return if it fails
 // This is so we can attempt to add the packet to the outgoing list, and if it would block then we can
 // create a thread... if thread fails for some reason (memory, etc) then itll block for its last call here
-int AttackQueueAdd(AS_context *ctx, AttackOutgoingQueue *optr, int only_try) {
+int OutgoingQueueAdd(AS_context *ctx, AttackOutgoingQueue *optr, int only_try) {
     //if (ctx == NULL) return -1;
 
     if (only_try) {
@@ -187,7 +187,7 @@ void *AS_queue_threaded(void *arg) {
     AttackOutgoingQueue *optr = (AttackOutgoingQueue *)arg;
     AS_context *ctx = optr->ctx;
 
-    AttackQueueAdd(ctx, optr, 0);
+    OutgoingQueueAdd(ctx, optr, 0);
 
     pthread_exit(NULL);
 }
@@ -222,11 +222,11 @@ int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     optr->ctx = ctx;
 
     // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-    if (AttackQueueAdd(ctx, optr, 1) == 0) {
+    if (OutgoingQueueAdd(ctx, optr, 1) == 0) {
         // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
         if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
             // if we for some reason cannot pthread (prob memory).. lets do it blocking
-            AttackQueueAdd(ctx, optr, 0);
+            OutgoingQueueAdd(ctx, optr, 0);
         }
     }
 
@@ -477,6 +477,8 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         if (FilterCheck(nptr->flt, iptr)) {
             // maybe verify respoonse, and break the loop inn some case
             nptr->incoming_function(ctx, iptr);
+
+            nptr->bytes_processed += size;
         }
 
         // move to the next network filter to see if it wants the packet
@@ -765,16 +767,16 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr) {
         optr->ctx = ctx;
 
         // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-        if (AttackQueueAdd(ctx, optr, 1) == 0) {
+        if (OutgoingQueueAdd(ctx, optr, 1) == 0) {
             // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
             if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
             // if we for some reason cannot pthread (prob memory).. lets do it blocking
-                AttackQueueAdd(ctx, optr, 0);
+                OutgoingQueueAdd(ctx, optr, 0);
             }
         }
 
         ret = 1;
     }
 
-    return ret;
+    return ret; 
 }

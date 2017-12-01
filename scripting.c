@@ -1588,7 +1588,6 @@ AS_scripts *Scripting_New(AS_context *ctx) {
     sctx->mainThreadState = PyThreadState_Get();
     sctx->mainInterpreterState = sctx->mainThreadState->interp;
 
-
     return sctx;
 }
 
