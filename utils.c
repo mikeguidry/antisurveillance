@@ -281,3 +281,9 @@ char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src) {
     return strdup(final);
 }
 
+
+
+int file_exist(char *filename) {
+    struct stat stv;
+    return (stat(filename, &stv) == 0);
+}

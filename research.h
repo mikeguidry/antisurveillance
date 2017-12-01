@@ -234,8 +234,8 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
 int Traceroute_Count(AS_context *ctx, int, int);
 int Spider_Print(AS_context *ctx);
 
-int Traceroute_Search(AS_context *, TracerouteSpider *start, TracerouteSpider *looking_for, int distance);
-int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second);
+int Traceroute_Search(AS_context *, TracerouteSpider *start, TracerouteSpider *looking_for, int distance, int);
+int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second, int);
 int Spider_Load(AS_context *ctx, char *filename);
 TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int ttl);
 TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struct in6_addr *hop_ipv6);
@@ -258,67 +258,36 @@ int TracerouteAddRandomIP(AS_context *ctx, char *want_country);
 int GEOIP_IPtoASN(AS_context *ctx, uint32_t addr);
 void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr);
 
-// analysis structure regarding two nodes.. so we can cache calulations
-// and decide how important it is to investigate similar IPs etc
-// for further attacks
-typedef struct _traceroute_analysis {
-    struct _traceroute_analysis *next;
-
-    TracerouteQueue *client;
-    TracerouteQueue *server;
-
-    // how many borders does each of these cross
-    int border_score;
-
-    // how important is it to investigate similar/more like this?
-    int curiousity;
-
-    int active_ts;
-    int ts;
-} TracerouteAnalysis;
-
-
-
-
-typedef struct _connection_information {
-    uint32_t ip;
-    struct in6_addr ipv6;
-    int is_ipv6;
-
-    // country, and ASN ID
-    int country;
-    int asn_num;
-
-    // did we decide to emulate a particular OS?
-    int os_emulation_id;
-
-
-    // score is how many countries we go through towards the node
-    int border_score;
-
-    // the traceroute queue for this node..
-    // will contain all hop information used as starting point
-    // for analysis
-    TracerouteQueue *information;
-
-    char *content;
-    int content_size;
-} ResearchNodeInformation;
 
 // we list all chosen client/server here for use in attack lists
 typedef struct _research_connection_options {
     struct _research_connection_options *next;
 
-    ResearchNodeInformation client;
-    ResearchNodeInformation server;
+    TracerouteQueue *client;
+    char *client_content;
+    int client_content_size;
+
+    TracerouteQueue *server;
+    char  *server_content;
+    int server_content_size;
 
     // attack structure for these options
     AS_attacks *attackptr;
 
-    TracerouteAnalysis *analysis;
+    // did we use fuzzy data to build relationship?
+    int imaginary;
 
+    int site_id;
+    int site_category;
+    int client_os;
+    int server_os;
+
+    
     // list of all countries we pass through between these two clients
     int hop_country[MAX_TTL];
+    // access to the hops directly for further info
+    // this is a 'virtual traceroute' from one host to another
+    TracerouteSpider *hops[MAX_TTL];
 
     // score between client, and server (should be low)
     int border_score;

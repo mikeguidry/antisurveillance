@@ -744,7 +744,7 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
 }
 
 
-
+// merge this with the other attackqueueadd.. and make 2 smaller functions for each input type..
 int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = 0;
     AttackOutgoingQueue *optr = NULL;

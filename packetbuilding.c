@@ -582,9 +582,6 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
 
     end:;
 
-    if (ret != 1) {
-        printf("Error! PKT build icmp\n");
-    }
 
     PtrFree(&final_packet);
     
@@ -627,6 +624,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
 
     // prepare ICMP header
     // copy over ICMP parameters from its own structure..
+    // I didn't want to support all different ICMP scenarios in PacketBuildInstructions structures
     memcpy((void *)&p->icmp, &iptr->icmp, sizeof(struct icmphdr));
     /*
     p->icmp.type = ICMP_ECHO;
@@ -910,8 +908,7 @@ int PacketTCP4BuildOptions(PacketBuildInstructions *iptr) {
     }*/
 
 
-    current_options = (char *)calloc(1, current_options_size);
-    if (current_options == NULL) return -1;
+    if ((current_options = (char *)calloc(1, current_options_size)) == NULL) return -1;
 
     PtrFree(&iptr->options);
 

@@ -100,6 +100,12 @@ surveillance hacks although wouldn't ever reach the real Internet due to the str
 It would allow you to take a machine in particular data centers executing these attacks paired with a blackhole controlling mechanism
 which would constantly protect your network.  It wouldn't be full protection but it would require exponential increases in
 resources to obtain information on your network.
+
+If you are using this application to manipulat surveillance systems, logging systems, or other passive tapping frameworks then you are
+essentially taking some control over these devices.  You can manipulate its actions to help you locate them at least.
+
+
+
 /* this can also be used standalone .. if you select sources, and dest correctly.. you can split up the pcaps by 2 sides
 and also set timestamps to future.. and prepare for attacks at particular times
 notes on binaray protocols:
@@ -374,3 +380,46 @@ https://public-dns.info//
 
 
 I'll try to branch phantomjs, and python together to help automate scraping sites to generate fabricated sessions...
+
+
+
+
+
+----------------------------------------
+for  the majority of peole to use this software....
+it needs content generation ... it now callls python
+ip generation/control (or list loading/unloading) is necessary
+and taking certain content, and chaining it to specific IP addresses.. or countries
+
+also allowing python content  generator to tell gzip attack to get performed on somme body before it turns into an attack
+
+these 3 things would allow any language, site, content, etc to get generated and replayed inf times 
+OS emualtion.. tcp options
+finding OS parameters fromm pcaps (matching user agent with ttl/window/etc)
+
+ill make some basic instructions for top sites, examples of pcap loading... etc
+
+its pretty much ready to go now except it'll be much better to see how it can all be done dynamically with the few commands and python
+also i didnt  finish http header omdification in C.. so that'll have to take place in python...
+
+i will try to allow macros to go into C though s o you can have dates, hostnames, etc replaced if you wish..
+C will always be faster.. python might not be a problem eitheer but it'd be nice too load up arrays of things in python
+and C will pick as it needs it
+
+USA better get ready to renegotiate its intelligence sharing contracts... all because they thought it'd be wise to let
+US government employees rape american citizens. yeah.. Ok.  lets see how it ends ;)
+this software is just a demonstration.... i bet those rapists are in the ground... if it requires 1 more demonstration..
+then thats fine.. but i assure you ... the price will be heavy.
+and worse case?  LOL ill save that.
+--------------------------------------------
+
+
+ResearchConnectionOptions *optr = NULL;
+
+TracerouteAnalysis *Research_AnalysisGet(AS_context *ctx)
+
+int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country):
+TracerouteAnalysis *tptr = Research_AnalysisGet(ctx);
+if ((optr = (ResearchConnectionOptions *)calloc(1, sizeof(ResearchConnectionOptions))) == NULL) goto end;
+
+

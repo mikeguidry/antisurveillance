@@ -236,7 +236,6 @@ int Subsystems_Perform(AS_context *ctx) {
 // All binaries (revolving around scripting, or C loops) requires these initialization routines
 AS_context *Antisurveillance_Init() {
     int i = 0;
-    int aggressive = 140000;
     char *Eaggressive = NULL;
     AS_context *ctx = AS_ctx_new();
     AS_scripts *sctx = NULL;
@@ -252,21 +251,14 @@ AS_context *Antisurveillance_Init() {
         if (i > 10) i = 10;
         if (i < 0) i = 0;
 
-        // aggressive-ness starts at quarter second, and decreases 10% for each level to 10 (which would be no sleep)
-        aggressive = (1000000 / 4) - (i * 25000);
-        
-        printf("Aggressive: %d [%d]\n", i, aggressive);
-
         ctx->aggressive = i;
-    } else {
-        ctx->aggressive = 0;
     }
 
     // initialize scripting subsystem
     Scripting_Init();
 
     if ((sctx = Scripting_New(ctx)) == NULL) {
-        printf("Initialize scripting bad\n");
+        printf("Initialize scripting failed.\n");
         return NULL;
     }
 

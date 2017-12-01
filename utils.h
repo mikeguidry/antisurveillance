@@ -24,3 +24,4 @@ int L_count_offset(LINK *lptr, int offset);
 int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, int *_is_ipv6);
 void L_link_unordered(LINK **list, LINK *ele);
 char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src);
+int file_exist(char *filename);

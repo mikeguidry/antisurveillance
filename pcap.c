@@ -347,7 +347,7 @@ int PCAP_OperationAdd(AS_context *ctx, char *filename, FilterInformation *flt) {
     int ret = 0;
     pcap_hdr_t hdr;
 
-    if ((fd = fopen(filename, "wb")) == NULL) goto end;
+    if ((fd = fopen(filename, "ab")) == NULL) goto end;
 
     if ((cptr = (PCAPOperation *)calloc(1, sizeof(PCAPOperation))) == NULL) goto end;
 
@@ -367,8 +367,10 @@ int PCAP_OperationAdd(AS_context *ctx, char *filename, FilterInformation *flt) {
     hdr.snaplen = 65535;
     hdr.network = 1;//layer = ethernet
 
-    // write the global header...
-    fwrite((void *)&hdr, 1, sizeof(pcap_hdr_t), fd);
+    // if the file is/was empty... lets write global header
+    if (!ftell(fd))
+        // write the global header...
+        fwrite((void *)&hdr, 1, sizeof(pcap_hdr_t), fd);
 
     // add to pcap operations list.. order is irrelevant since each handler doesn't change, or free anything
     cptr->next = ctx->pcap_operations;

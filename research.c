@@ -19,7 +19,9 @@ need to scan for open dns servers (to get geoip dns automatically)
 
 
 border score is used to keep track of how many borders traffic between two targets goes through.. it can help determine the best
-overall worldwide strategies for attacking the most platforms simultaneously... 
+overall worldwide strategies for attacking the most platforms simultaneously... on the other hand for a virus/trojan it can determine
+the best way to get logged at the least amount of ISPs, etc.... as a precaution  during attacks/hacks
+
 
 also we can keep a static list of all known fiber taps later.. and possibly even use neural networks to quickly determine whether or not
 others may expect to be in a location.. and other information used for research could be used as inputs in this NN
@@ -64,6 +66,39 @@ I will have to try IPv6 GeoIP as well since i haven't used it before
 
 
 
+--------------------------------------
+http://etutorials.org/Networking/network+security+assessment/Chapter+4.+IP+Network+Scanning/4.2+TCP+Port+Scanning/
+
+I have some attack, and research scenarios which will use things like this:
+
+
+4.2.3.4 IP ID header scanning
+
+IP ID header scanning (also known as idle or dumb scanning) is an obscure scanning technique that involves abusing implementation peculiarities within the TCP/IP stack of most operating systems. Three hosts are involved:
+
+The host, from which the scan is launched
+
+The target host, which will be scanned
+
+A zombie or idle host, which is an Internet-based server that is queried with spoofed port scanning against the target host to identify open ports from the perspective of the zombie host
+
+IP ID header scanning is extraordinarily stealthy due to its blind nature. Determined attackers will often use this type of scan to map out IP-based trust relationships between machines, such as firewalls and VPN gateways.
+
+The listing returned by the scan shows open ports from the perspective of the zombie host, so you can try scanning a target using various zombies you think might be trusted (such as hosts at remote offices or DMZ machines). Figure 4-10 depicts the process undertaken during an IP ID header scan.
+
+Figure 4-10. IP ID header scanning and the parties involved
+
+figs/NSA_0410.gif
+hping2 was originally used in a manual fashion to perform such low-level TCP scanning, which was time consuming and tricky to undertake against an entire network of hosts. A white paper that fully discusses using the tool to perform IP ID header scanning by hand is available from http://www.kyuzz.org/antirez/papers/dumbscan.html.
+
+nmap supports such IP ID header scanning with the option:
+
+-sI <zombie host[:probe port]>
+
+
+OR
+nmap/idle_scan.cc
+
 */
 
 
@@ -98,6 +133,8 @@ I will have to try IPv6 GeoIP as well since i haven't used it before
 #endif
 
 
+extern char generator_function[];
+
 
 // geoip countries for turning geoip ASCII to simple identifier (1-255)
 // i found this list in the PHP version, and just reformatted it to C
@@ -126,7 +163,7 @@ const char *geoip_countries[] = {"00","AP","EU","AD","AE","AF","AG",
 
 // Global Mass Surveillance - The Fourteen Eyes (https://www.privacytools.io/)
 // These will be priority.. especially since anything crossing these borders can more than likely assume that path
-// will have surveillance platforms crossing their borders.
+// will have surveillance platforms monitoring their packets crossing these borders.
 char *fourteen_eyes[] = {"AU","CA","NZ","GB","US","DE","FR","NL","NO","BE","DE","IT","ES","SE",NULL};
 
 int fourteen_check(char *country) {
@@ -284,13 +321,28 @@ int Traceroute_RetryAll(AS_context *ctx) {
 }
 
 
+/*
+Traceroute isnt as successful as I imagined at first on a mass scale.  The UDP version I believe is doing a little bettter.. Anyways.
+I added prioritization for attacks which require a particular path, or target to be accurate.  The others I decided would work fine by
+using fuzzy branches, or imaginary nodes.  It is the best guess at placing information, or links where they have not been proven.
+*/
+int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, TracerouteSpider *node2) {
+    int ret = 0;
+
+
+    end:;
+    return ret;
+}
+
+
 
 // this can be handeled recursively because we have max TTL of 30.. its not so bad
-int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider *looking_for, int distance) {
+int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider *looking_for, int distance, int fuzzy) {
     int i = 0, n = 0;
     int ret = 0, r = 0;
     TracerouteSpider *sptr = NULL;
     TracerouteQueue *q[2];
+    int imaginary = 0;
 
     // if distance is moore than max ttl.. lets return
     if (distance >= MAX_TTL) return 0;
@@ -299,7 +351,13 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
     if (!start || !looking_for) return 0;
 
     // dbg msg
-    printf("Traceroute_Search: start %p [%u] looking for %p [%u] distance: %d\n",  start, start->hop_ip, looking_for, looking_for->hop_ip, distance);
+    printf("Traceroute_Search: start %p [%u] looking for %p [%u] distance: %d imaginary %d\n",  start, start->hop_ip, looking_for, looking_for->hop_ip, distance, imaginary);
+
+
+    // this call is allowing/wanting fuzzy relationships.. we should fill in anything that isnt found
+    if (fuzzy) {
+
+    }
 
     // get both original queue structures
     if ((q[0] = TracerouteQueueFindByIdentifier(ctx, start->identifier_id)) == NULL) goto end;
@@ -320,12 +378,15 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
     }
 
     // now lets recursively scan both sides looking for a response
-    for (n = 0; n < 2; n++) {
-        for (i = 0; i < MAX_TTL; i++) {
-            sptr = q[n]->responses[i];
-            if (sptr != NULL) {
-                // recursively call using this structure
-                r = Traceroute_Search(ctx, sptr, looking_for, distance + 1);
+    // without imaginary first...then with
+    for (imaginary = 0; imaginary < 2; imaginary++) {
+        for (n = 0; n < 2; n++) {
+            for (i = 0; i < MAX_TTL; i++) {
+                sptr = q[n]->responses[i];
+                if (sptr != NULL) {
+                    // recursively call using this structure
+                    r = Traceroute_Search(ctx, sptr, looking_for, distance + 1, imaginary);
+                }
             }
         }
     }
@@ -344,7 +405,7 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
 // the other strategy will be using two nodes running this code which will be on diff parts of the world so we ca ensure eah side of the packets
 // get processed correctly.. in the begininng (before they modify) it wont matter.. later once they attempt to filter out, and procecss
 // it might matter but it'll make the entire job/technology that much more difficult
-int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second) {
+int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second, int imaginary) {
     int ret = 0;
     TracerouteSpider *srch_main = NULL;
     TracerouteSpider *srch_branch = NULL;
@@ -357,7 +418,7 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
     if (first->hop_ip == second->hop_ip) return 1;
 
     // we wanna call this function Traceroute_Search to find the distance  of the two spider parameters passed
-    distance = Traceroute_Search(ctx,first, second, 0);
+    distance = Traceroute_Search(ctx,first, second, 0, imaginary);
 
     // print distance to screen
     printf("distance: %d\n", distance);
@@ -510,6 +571,7 @@ int Traceroute_AdjustActiveCount(AS_context *ctx) {
         for (r = 0; r < disabled; r++) {
             if (random_count[r] == i) {
                 qptr->enabled = 1;
+                qptr->type = (rand()%100) > 50 ? 1 : 0;
                 ret++;
             }
         }
@@ -725,7 +787,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     tptr->ts = time(0);
 
     // set for traceroute ICMP
-    tptr->type = TRACEROUTE_UDP;
+    tptr->type = TRACEROUTE_ICMP;
 
     // add to traceroute queue...
     //L_link_ordered_offset((LINK **)&ctx->traceroute_queue, (LINK *)tptr, offsetof(TracerouteQueue, next));
@@ -758,49 +820,47 @@ int Traceroute_IncomingUDP(AS_context *ctx, PacketBuildInstructions *iptr) {
     char *Adst = NULL;
 
 //char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src);
-
+/*
     sprintf(fname, "pkt/%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
     if ((fd = fopen(fname, "wb")) != NULL) {
         fwrite(iptr->packet, 1,iptr->packet_size, fd);
         fclose(fd);        
-    }
+    } */
 
     Asrc = IP_prepare_ascii(iptr->source_ip, NULL);
     Adst = IP_prepare_ascii(iptr->destination_ip, NULL);
 
-    printf("SRC: %s DST: %s\n", Asrc ? Asrc : "NULL", Adst ? Adst : "NULL");
+    //printf("SRC: %s DST: %s\n", Asrc ? Asrc : "NULL", Adst ? Adst : "NULL");
 
     if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
-        printf("ipv4 Getting our own packets.. probably loopback\n");
+        //printf("ipv4 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     if (!iptr->source_ip && CompareIPv6Addresses(&ctx->my_addr_ipv6, &iptr->source_ipv6)) {
-        printf("ipv6 Getting our own packets.. probably loopback\n");
+        //printf("ipv6 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     // data isnt big enough to contain the identifier
     if (iptr->data_size < sizeof(TraceroutePacketData)) {
-        printf("less size\n");
+        //printf("less size\n");
         goto end;
     }
 
     // the responding hops may have encapsulated the original ICMP within its own.. i'll turn the 28 into a sizeof() calculation
     // ***
     if (iptr->data_size > sizeof(TraceroutePacketData) && ((iptr->data_size >= sizeof(TraceroutePacketData) + 28))) {
-        printf("+28\n");
         pdata = (TraceroutePacketData *)(iptr->data + 28);//(sizeof(struct iphdr) + sizeof(struct icmphdr)));
     } else {
         pdata = (TraceroutePacketData *)iptr->data;
-        printf("normal\n");
     }
 
     // the packet has the TTL, and the identifier (to find the original target information)
     ttl = pdata->ttl;
     identifier = pdata->identifier;
 
-    printf("TTL: %d identifier: %X\n", ttl, identifier);
+    //printf("TTL: %d identifier: %X\n", ttl, identifier);
 
     // this function is mainly to process quickly.. so we will fill another structure so that it can get processed
     // later again with calculations directly regarding its query
@@ -835,7 +895,6 @@ int Traceroute_IncomingUDP(AS_context *ctx, PacketBuildInstructions *iptr) {
 // as the receiver for any packets seen on the wire thats ICMP
 int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
-    struct in_addr cnv;
     TracerouteResponse *rptr = NULL;
     TraceroutePacketData *pdata = NULL;
 
@@ -863,17 +922,6 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
         pdata = (TraceroutePacketData *)(iptr->data + 28);//(sizeof(struct iphdr) + sizeof(struct icmphdr)));
     else
         pdata = (TraceroutePacketData *)iptr->data;
-
-    /*
-    printf("Got packet from network! data size %d\n", iptr->data_size);
-    //printf("\n\n---------------------------\nTraceroute Incoming\n");
-
-    cnv.s_addr = iptr->source_ip;
-    printf("SRC: %s %u\n", inet_ntoa(cnv), iptr->source_ip);
-
-    cnv.s_addr = iptr->destination_ip;
-    printf("DST: %s %u\n", inet_ntoa(cnv), iptr->destination_ip);
-    */
 
     // the packet has the TTL, and the identifier (to find the original target information)
     ttl = pdata->ttl;
@@ -908,24 +956,19 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
 
 static int ccount = 0;
 
-// used to falsify DNS responses..also later for when we are going to do our own DNS queries in app
-typedef struct _dns_response_packet {
-
-} DNSResponsePacket;
-
-
 
 
 
 // UDP will send a fake 'response' for DNS to a client from port 53.. this will allow bypassing a lot of firewalls
 // http://www.binarytides.com/dns-query-code-in-c-with-winsock/
+// *** must finish.. in reality the packet is irrelevant.. since routers dont process the infromation whatsoever...
+// only the final host would even 'see' or process the DNS structure
 int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
     int i = 0, ret = 0;
     PacketBuildInstructions *iptr = NULL;
     TraceroutePacketData *pdata = NULL;
-    DNSResponsePacket *dns_resp = NULL;
    
-   printf("traceroute send udp\n");
+   //printf("traceroute send udp\n");
     
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
@@ -1179,9 +1222,6 @@ int Traceroute_Perform(AS_context *ctx) {
         }
 
         if (!tptr->completed && tptr->enabled) {
-            // increase counter for ensuring we are always at max
-
-
             // lets increase the TTL by this number (every 1 second right now)
             if ((ts - tptr->ts_activity) > 1) {
                 tptr->ts_activity = time(0);
@@ -1245,7 +1285,25 @@ int Traceroute_Perform(AS_context *ctx) {
     return ret;
 }
 
+FILE *file_open_dump(char *filename) {
+    char fname[1024];
+    char  *sptr = NULL;
+    char *zptr = NULL;
+    int i = 0;
 
+    i = file_exist(filename);
+    if (!i) {
+        return fopen(filename, "wb");
+    }
+    if ((sptr = strchr(filename, '.')) == NULL) return NULL;
+    *sptr = 0; sptr++;
+    strcpy(fname, filename);
+    zptr = (char *)((&fname) + strlen(fname));
+    zptr += sprintf(zptr, "%d_%d", getpid(), rand()%65535);
+    strcpy(zptr, sptr);
+
+    return fopen(fname, "wb");
+}
 
 // dump traceroute data to disk.. printing a little information..
 // just here temporarily.. 
@@ -1474,6 +1532,8 @@ int Spider_Load(AS_context *ctx, char *filename) {
         qnew->target_ip = inet_addr(target);
         qnew->identifier = identifier;
 
+        qnew->type = ((rand()%100) > 50) ? 1 : 0;
+
         // void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr) {
 
         // lookup on demand later.. so it loads fast...
@@ -1661,10 +1721,13 @@ int Traceroute_Init(AS_context *ctx) {
     if (Network_AddHook(ctx, flt, &Traceroute_IncomingICMP) != 1) goto end;
 
 
+/*
+    // UDP TTL packets come back as ICMP.. so no need to add a new handler
     // lets add UDP traceroute processing
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
     FilterPrepare(flt, FILTER_PACKET_UDP, 0);
     if (Network_AddHook(ctx, flt, &Traceroute_IncomingUDP) != 1) goto end;
+    */
 /*
     // lets add TCP traceroute processing
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
@@ -1808,7 +1871,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
     int prior_ts = 0;
     int which = 0;
     int up = 0, down = 0;
-    int total_historic_to_use = 4;
+    int total_historic_to_use = 6;
     CountElement *cptr[total_historic_to_use+1];
     
     float perc_change = 0;
@@ -2112,7 +2175,7 @@ void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr
 }
 
 
-
+/*
 // get least used connection options for the next fabricated attack.. possibly filtering by countries
 ResearchConnectionOptions *ResearchConnectionGet(AS_context *ctx, int country) {
     ResearchConnectionOptions *optr = NULL;
@@ -2315,7 +2378,7 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     // country is same so... score is 1..
     optr->border_score = 1;
 
-    /*
+  
     // perform a walk from both client/server and fill in hop_country
     // with each country between them
     // modify border_score using this... or use a diff border score
@@ -2326,7 +2389,7 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     // so we can assure we hit the most platforms possible
     // by using particular targets in particular regions
     // thus increasing overall worldwide effect
-    */
+  
 
     // call some functions related to this analysis structure? before/after.. finish later
     //ResearchSmartHook()
@@ -2342,7 +2405,7 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
     end:;
     return ret;
 }
-
+*/
 
 
 // asn number can be used as a secondary type of country code to link entries together without all information
@@ -2359,7 +2422,6 @@ typedef struct _content_context {
 
 // This will call a python function  which is meant to generate client, and server side content
 int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_id, int site_category, char *IP_src, char *IP_dst, char *Country_src, char *Country_dst, char **client_body, int *client_body_size, char **server_body, int *server_body_size) {
-    char generator_function[] = "content_generator";
     int ret = -1;
     PyObject *pArgs = NULL;
     PyObject *pIP_src = NULL, *pIP_dst = NULL;
@@ -2516,15 +2578,15 @@ int ResearchContentGenerator(AS_context *ctx, int src_country, int dst_country, 
     char *IP_dst = "127.0.0.1";
 
     // try python version from scripts (callback)    
-    ret = ResearchPyCallbackContentGenerator(ctx, language, site_id, site_category, IP_src, IP_dst, "US", "US",
-    content_client, content_client_size, content_server, content_server_size);
+    ret = ResearchPyCallbackContentGenerator(ctx, language, site_id, site_category, IP_src, IP_dst,
+        "US", "US", content_client, content_client_size, content_server, content_server_size);
 
     end:;
     return ret;
 
 }
 
-int testcallback(AS_context *ctx) {
+/*int testcallback(AS_context *ctx) {
     int i = 0;
     char *content_client = NULL, *content_server = NULL;
     int content_client_size = 0;
@@ -2537,7 +2599,7 @@ int testcallback(AS_context *ctx) {
 
     return i;
 
-}
+}*/
 
 
 
@@ -2583,3 +2645,84 @@ need to try to ccompress using topp domains, etc
 
 */
 
+
+// All logged/loaded URLs (from live, pcap, or built in)
+typedef struct _site_url {
+    struct _site_url *next;
+
+    // how many times used?
+    int count;
+    // language for this url/content
+    int language;
+    // ajax? etc? it can determine things for % of gzip attack.. ajaxx = small
+    char *url;
+
+    // does this URL wannaa use a specific body we can modify/insert?
+    char *content;
+    int content_size;
+} SiteURL;
+
+// site specifics
+typedef struct _site_identifiers {
+    struct _site_identifiers *next;
+
+    // what language?
+    int language;
+
+    // which category ID?
+    int category_id;
+
+    // domain/site
+    char *domain;
+
+    // URLs (macro-able) for building sessions...
+    SiteURL **url_list;
+    int url_count;    
+} SiteIdentifiers;
+
+
+// site categories
+typedef struct _site_categories {
+    struct _site_categories *next;
+
+    // category ID for this site
+    int category_id;
+
+    // language (redundant.. since site identifiers has language.. maybe remove)
+    int language;
+
+    // category name
+    char *name;
+} SiteCategories;
+
+// languages
+typedef struct _languages {
+    struct _languages *next;
+
+    int language_id;
+    char *name;
+
+    // IE: chinese
+    int requires_unicode;
+} Languages;
+
+// pool for picking ip addresses..
+typedef struct _ip_addresses {
+    struct _ip_addresses;
+
+    // easy geo?
+    int country;
+
+    // what language? (if a country has multiple.. u can decide to change?)
+    int language;
+
+    // time is for frabricating messages between  parties to emulate 9am-5pm or afternoon...
+    // real as possible is best.
+    int time_restrictions;
+
+    uint32_t **v4_adddresses;
+    int v4_count;
+
+    struct in6_addr **v6_addresses;
+    int v6_count;    
+} IPAddresses;

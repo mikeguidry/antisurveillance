@@ -1,5 +1,9 @@
 # antisurveillance
 
+This was really to prove a point, and be a demonstration of what will happen if these morons dont get
+their shit together.  It seems to be exactly what I thought  it'd be when I begain... I'll claim
+a release within 2 days.
+11/30/17
 
 pyanti:
 

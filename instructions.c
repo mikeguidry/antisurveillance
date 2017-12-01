@@ -575,8 +575,6 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     char *data = NULL;
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
-    FILE *fd = NULL;
-    char fname[32];
 
     //printf("Process ICMP4\n");
 
@@ -608,18 +606,11 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
 
     // copy data from the original packet
     if (data_size > 0) {
-
         if ((data = (char *)malloc(data_size)) == NULL) goto end;
         memcpy(data, (void *)(pptr->buf + sizeof(struct packeticmp4)), data_size);
 
         iptr->data = data;
         iptr->data_size = data_size;
-
-        /*sprintf(fname, "packets/icmp_data_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
-        if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
-            fwrite(data, 1, data_size, fd);
-            fclose(fd);
-        } */
     }
 
     // set to 0 in packet so we can  calculate correctly..
@@ -1710,3 +1701,4 @@ void PacketBuildInstructionsFree(PacketBuildInstructions **list) {
     return;
 }
 
+    

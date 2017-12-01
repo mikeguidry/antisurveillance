@@ -238,6 +238,10 @@ def init():
     #print("count %d") % cnt
     #if (cnt == 0):
     #    top_sites_research(a)
+
+    a.filtercreate()
+    a.pcapcapturestart(filename="all.pcap")
+
     return 1
     
 
