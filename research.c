@@ -322,18 +322,6 @@ int Traceroute_RetryAll(AS_context *ctx) {
 }
 
 
-/*
-Traceroute isnt as successful as I imagined at first on a mass scale.  The UDP version I believe is doing a little bettter.. Anyways.
-I added prioritization for attacks which require a particular path, or target to be accurate.  The others I decided would work fine by
-using fuzzy branches, or imaginary nodes.  It is the best guess at placing information, or links where they have not been proven.
-*/
-int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, TracerouteSpider *node2) {
-    int ret = 0;
-
-
-    end:;
-    return ret;
-}
 
 
 
@@ -343,6 +331,7 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
     int ret = 0, r = 0;
     TracerouteSpider *sptr = NULL;
     TracerouteQueue *q[2];
+    int d[MAX_TTL][2];
     int imaginary = 0;
 
     // if distance is moore than max ttl.. lets return
@@ -396,6 +385,7 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
 
     return ret;
 }
+
 
 
 // traceroutes are necessary to ensure a single nonde running this code can affect all mass surveillance programs worldwide
@@ -2508,19 +2498,35 @@ SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
 }
 
 
+
+IPAddresses *IPAddressesbyGeo(char *country) {
+    IPAddresses *iptr = ctx->ip_list;
+    while (iptr != NULL) {
+        if (strcmp(iptr->)country, country)==0) {
+            break;
+        }
+        iptr = iptr->next;
+    }
+
+    return iptr;
+}
+
+
 // generates a list of ip addresses in a particular country..
 // then we can use these to traceroute to gather information, then fill in gaps
 // w virtual traceroutes, and create smart attacks on fiber taps etc
 IPAddresses *GenerateIPAddressesCountry(AS_context *ctx, char *country, int count) {
     IPAddresses *ret = 0;
-    IPAddresses *iptr = NULL;
+    IPAddresses *iptr = IPAddressesbyGeo(country);
     uint32_t *list = NULL;
     int i = 0;
+
+    if (iptr != NULL) return iptr;
 
     // allocate space for the main structure
     if ((iptr = (IPAddresses *)calloc(1, sizeof(IPAddresses))) == NULL) return -1;
 
-    iptr->country = country;
+    iptr->country = strdup(country);
 
     if ((list = (uint32_t *)calloc(1, sizeof(uint32_t) * count)) == NULL) goto end;
 
@@ -2545,18 +2551,6 @@ IPAddresses *GenerateIPAddressesCountry(AS_context *ctx, char *country, int coun
     return ret;
 }
 
-
-
-
-
-typedef struct _attack_targets  {
-    struct _attack_targets *next;
-    char *country; // for instanec, US?.. GB? (gb from US wouldd target all US->EURO fiber taps)
-    int count;
-    int identifier;  // categorial identifier to find connections later for specific targets to manipulate.. like a sub identifier
-    int ts;          // last timestamp intelligence management affected, or used
-    int language;
-} AttackTarget;
 
 /*
 
@@ -2610,24 +2604,114 @@ we need some sort of control mechanism to manipulate things  in a way to gather 
 it needs to gather sites, urls, identities, email addresses, and various routing information.  It should guess, or begin duties for future attacks
 minutes, or hours before their smart paths being calculated for most damaging performances.
 
-1) generate IP addresses for a target region/country
-2) initiate traceroutes on those targets setting priority depending on prior dataset, and aggressive-ness
-3) enable/disable local packet to www (either for python callback manipulation, or directly to real attacks)
-   these www sessions can also use somme python regexp, etc to find usernames, passwords, peoples names, email addresses, etc which can populate
-   those sections
-4) if having enough raw data then it should attempt to tokenize/macro-ize the data so that the subsystem can easily replace things
-   without having to call python every time.. this will increease overall output substantially commpared to having a unique body
-   each time from python
-5) determine if enough information for attacks exist at some interval.. if found then generate the bodies, or pass to python to gete generated..
-   or modify an already queued attack structure copyingg things, and changing whats necessary
-6) determine if an attack should  be disqualified due to overuse, etc... (it can be random, or change its parameters over time depending on location,
-   virtual traceroute information,etc)
 
+
+try to find a geo distance calculator to generate IPs furthest fromm the current IP, or near a target country
 
 
 */
+
+
+
+typedef struct _attack_targets  {
+    struct _attack_targets *next;
+    char *country; // for instanec, US?.. GB? (gb from US wouldd target all US->EURO fiber taps)
+    int count;
+    int identifier;  // categorial identifier to find connections later for specific targets to manipulate.. like a sub identifier
+    int ts;          // last timestamp intelligence management affected, or used
+    int language;
+} AttackTarget;
+
+AttackTarget *TargetRandom(AS_context *ctx) {
+    AttackTarget *tptr = ctx->research_target_list;
+    int c = L_count((LINK *)tptr);
+    while (c-- && tptr != NULL) {
+        tptr = tptr->next;
+    }
+    return tptr;
+}
+
+/*
+Traceroute isnt as successful as I imagined at first on a mass scale.  The UDP version I believe is doing a little bettter.. Anyways.
+I added prioritization for attacks which require a particular path, or target to be accurate.  The others I decided would work fine by
+using fuzzy branches, or imaginary nodes.  It is the best guess at placing information, or links where they have not been proven.
+*/
+int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, TracerouteSpider *node2) {
+    int ret = 0;
+
+
+    end:;
+    return ret;
+}
+
+
 int Research_Intelligence_Management(AS_context *ctx) {
+    int ret = -1;
+    TracerouteQueue *qptr = NULL;
+    // 1) generate IP addresses for a target region/country
+    AttackTarget *tptr = TargetRandom(ctx);
+    IPAddresses *iptr = NULL;
+    int attack_count = 0;
+
+    if (tptr == NULL) goto end;
+
+    iptr = IPAddressesbyGeo(tptr->country);
+    if (iptr == NULL) goto end;
+    // --------------------------------------------------------
+    /*
+
+        
+  
+    */
+    // 2) initiate traceroutes on those targets setting priority depending on prior dataset, and aggressive-ness
+    while (iptr != NULL) {
+        qptr = TracerouteFindQueueByIP(iptr);
+        if (qptr == NULL) Traceroute_Queue(iptr->address)
+
+        ipptr = iptr->enxt;
+    }
+/*    
+        3) enable/disable local packet to www (either for python callback manipulation, or directly to real attacks)
+        these www sessions can also use somme python regexp, etc to find usernames, passwords, peoples names, email addresses, etc which can populate
+        those sections
+*/
+
+    // lets enable live packet capture of www... 
+    HTTP_Discovery_Init();
+{/*
+        4) if having enough raw data then it should attempt to tokenize/macro-ize the data so that the subsystem can easily replace things
+        without having to call python every time.. this will increease overall output substantially commpared to having a unique body
+        each time from python
+*/
+    // verify whether or not any captured www sessions were not already analyzed
+    // to find dynamic fields such as usser identification numbers, email addresses, etc
+    // which can get turned into a macro for automatic replacement and session building
+
+/*
+        5) determine if enough information for attacks exist at some interval.. if found then generate the bodies, or pass to python to gete generated..
+        or modify an already queued attack structure copyingg things, and changing whats necessary
+*/
+
+        attack_count = L_count((LINK *)ctx->attack_list);
 
 
 
+/*
+      6) determine if an attack should  be disqualified due to overuse, etc... (it can be random, or change its parameters over time depending on location,
+        virtual traceroute information,etc)
+*/
+        // disqualify old attacks to get replaced with new
+        while (aptr != NULL) {
+
+            // lets kill attacks after 2 hours
+            if ((ts - aptr->ts) < (60*60*2)) {
+                aptr->completed = 1;
+            }
+
+            aptr = aptr->next;
+        }
+
+
+    end:;
+    return ret;
 }
