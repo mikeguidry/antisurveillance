@@ -88,7 +88,6 @@ The listing returned by the scan shows open ports from the perspective of the zo
 
 Figure 4-10. IP ID header scanning and the parties involved
 
-figs/NSA_0410.gif
 hping2 was originally used in a manual fashion to perform such low-level TCP scanning, which was time consuming and tricky to undertake against an entire network of hosts. A white paper that fully discusses using the tool to perform IP ID header scanning by hand is available from http://www.kyuzz.org/antirez/papers/dumbscan.html.
 
 nmap supports such IP ID header scanning with the option:
@@ -166,12 +165,14 @@ const char *geoip_countries[] = {"00","AP","EU","AD","AE","AF","AG",
 // will have surveillance platforms monitoring their packets crossing these borders.
 char *fourteen_eyes[] = {"AU","CA","NZ","GB","US","DE","FR","NL","NO","BE","DE","IT","ES","SE",NULL};
 
+// check if a country is in the 'fourteen eyes' list.. higher probability of state surveillance during analysis
 int fourteen_check(char *country) {
     int i = 0;
     for (;i < 14; i++) if (strcmp(country, fourteen_eyes[i])==0) return 1;
     return 0;
 }
 
+// check if a country is in the 'fourteen eyes' list.. higher probability of state surveillance during analysis
 int fourteen_check_id(int country_id) {
     int i = 0;
     for (;i < 14; i++) if (strcmp(geoip_countries[country_id], fourteen_eyes[i])==0) return 1;
@@ -601,11 +602,10 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     int i = 0;
     int left = 0;
 
-
-    //printf("Traceroute Analyze Single responsse %p\n", rptr);
-
     // if the pointer was NULL.. lets just return with 0 (no error...)
     if (rptr == NULL) return ret;
+
+    //printf("Traceroute Analyze Single responsse %p\n", rptr);
 
     qptr = TracerouteQueueFindByIdentifier(ctx, rptr->identifier);
     
@@ -762,9 +762,9 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     int i = 0;
     int n = 0;
     int ttl = 0;
-    struct in_addr addr;
+    //struct in_addr addr;
 
-    addr.s_addr = target;
+    //addr.s_addr = target;
     //printf("\nTraceroute Queue %u: %s\n", target, inet_ntoa(addr));
 
     // allocate memory for this new traceroute target we wish to add into the system
@@ -799,6 +799,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     tptr->next = ctx->traceroute_queue;
     ctx->traceroute_queue = tptr;
 
+    // create the jump table to skip those 15 minutes of loading I was getting with 280k stored traceroute contexts
     tptr->next_identifier = ctx->traceroute_queue_identifier[tptr->identifier % JTABLE_SIZE];
     ctx->traceroute_queue_identifier[tptr->identifier % JTABLE_SIZE] = tptr;
 
@@ -813,90 +814,6 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     return ret;
 }
 
-
-// All of the packets are coming back as ICMP anyways.. so maybe should remove this.
-// I'll see how things go... some may not i have to check thoroughly
-int Traceroute_IncomingUDP(AS_context *ctx, PacketBuildInstructions *iptr) {
-    int ret = -1;
-    struct in_addr cnv;
-    TracerouteResponse *rptr = NULL;
-    TraceroutePacketData *pdata = NULL;
-    FILE *fd;
-    char fname[1024];
-    uint32_t identifier = 0;
-    int ttl = 0;
-    char *Asrc = NULL;
-    char *Adst = NULL;
-
-//char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src);
-/*
-    sprintf(fname, "pkt/%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
-    if ((fd = fopen(fname, "wb")) != NULL) {
-        fwrite(iptr->packet, 1,iptr->packet_size, fd);
-        fclose(fd);        
-    } */
-
-    Asrc = IP_prepare_ascii(iptr->source_ip, NULL);
-    Adst = IP_prepare_ascii(iptr->destination_ip, NULL);
-
-    //printf("SRC: %s DST: %s\n", Asrc ? Asrc : "NULL", Adst ? Adst : "NULL");
-
-    if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
-        //printf("ipv4 Getting our own packets.. probably loopback\n");
-        return 0;
-    }
-
-    if (!iptr->source_ip && CompareIPv6Addresses(&ctx->my_addr_ipv6, &iptr->source_ipv6)) {
-        //printf("ipv6 Getting our own packets.. probably loopback\n");
-        return 0;
-    }
-
-    // data isnt big enough to contain the identifier
-    if (iptr->data_size < sizeof(TraceroutePacketData)) {
-        //printf("less size\n");
-        goto end;
-    }
-
-    // the responding hops may have encapsulated the original ICMP within its own.. i'll turn the 28 into a sizeof() calculation
-    // ***
-    if (iptr->data_size > sizeof(TraceroutePacketData) && ((iptr->data_size >= sizeof(TraceroutePacketData) + 28))) {
-        pdata = (TraceroutePacketData *)(iptr->data + 28);//(sizeof(struct iphdr) + sizeof(struct icmphdr)));
-    } else {
-        pdata = (TraceroutePacketData *)iptr->data;
-    }
-
-    // the packet has the TTL, and the identifier (to find the original target information)
-    ttl = pdata->ttl;
-    identifier = pdata->identifier;
-
-    //printf("TTL: %d identifier: %X\n", ttl, identifier);
-
-    // this function is mainly to process quickly.. so we will fill another structure so that it can get processed
-    // later again with calculations directly regarding its query
-
-    // allocate a new structure for traceroute analysis functions to deal with it later
-    if ((rptr = (TracerouteResponse *)calloc(1, sizeof(TracerouteResponse))) == NULL) goto end;
-    rptr->identifier = identifier;
-    rptr->ttl = ttl;
-    
-    // copy over IP parameters
-    rptr->hop_ip = iptr->source_ip;
-    CopyIPv6Address(&rptr->hop_ipv6, &iptr->source_ipv6);
-
-    // maybe lock a mutex here (have 2... one for incoming from socket, then moving from that list here)
-    L_link_ordered_offset((LINK **)&ctx->traceroute_responses, (LINK *)rptr, offsetof(TracerouteResponse, next));
-
-    // thats about it for the other function to determine the original target, and throw it into the spider web
-    ret = 1;
-
-    end:;
-
-    if (Asrc) free(Asrc);
-    if (Adst) free(Adst);
-
-    // iptr gets freed in the calling function
-    return ret;
-}
 
 
 
@@ -1196,9 +1113,6 @@ int Traceroute_Perform(AS_context *ctx) {
     // timestamp required for various states of traceroute functionality
     int ts = time(0);
 
-    // I used a pthread to load the database...
-    //if (pthread_mutex_trylock(&ctx->traceroute_mutex) != 0) return 0;
-
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
 
@@ -1281,8 +1195,6 @@ int Traceroute_Perform(AS_context *ctx) {
 
     end:;
 
-    //pthread_mutex_unlock(&ctx->traceroute_mutex);
-
     return ret;
 }
 
@@ -1341,8 +1253,6 @@ int Spider_Save(AS_context *ctx) {
     sprintf(fname, "traceroute.dat");
     fd = fopen(fname, "wb");
 
-    //fd2 = NULL; // disabling it by settinng to NULL
-
     // dump all traceroute queues and their identifiers
     qptr = ctx->traceroute_queue;
     while (qptr != NULL) {
@@ -1351,15 +1261,13 @@ int Spider_Save(AS_context *ctx) {
         // 1 = queue
         dentry.code = 1;
 
-        dentry.target_ip = qptr->target_ip;
-        
+        dentry.target_ip = qptr->target_ip;        
         dentry.identifier = qptr->identifier;
         dentry.completed = qptr->completed;
         dentry.activity = qptr->ts_activity;
         dentry.ts = qptr->ts;
         dentry.retry = qptr->retry_count;
 
-        
         fwrite(&dentry, 1, sizeof(DataEntry), fd);
 
         qptr = qptr->next;
@@ -1377,26 +1285,13 @@ int Spider_Save(AS_context *ctx) {
         dentry.hop_ip = sptr->hop_ip;
         dentry.identifier = sptr->identifier_id;
         dentry.ts = sptr->ts;
-        
         dentry.ttl = sptr->ttl;
+
         fwrite(&dentry, 1, sizeof(DataEntry), fd);
-
-        // if the output file is open then lets write some data
         
-            //fwrite(&dentry, 1, sizeof(DataEntry), fd);
-            /*
-            // we wanna turn the target, and hop IP from long to ascii
-            conv.s_addr = sptr->hop_ip;
-            strcpy((char *)&Ahop, inet_ntoa(conv));
-            conv.s_addr = sptr->target_ip;
-            strcpy((char *)&Atarget, inet_ntoa(conv));
-            // and finally format & write it to the output file
-            fprintf(fd2, "HOP,%s,%s,%u,%d\n", Ahop, Atarget, sptr->identifier_id, sptr->ttl);
-            */
-        
-
         // this message is for debugging/development.. how many branches are in this hop (similar)
         count = L_count_offset((LINK *)sptr->branches, offsetof(TracerouteSpider, branches));
+
         //count = branch_count(sptr->branches);
         // we want only if its more than 10 to show to the sccreen because a lot are small numbers (1-10)
         if (count > 10) {
@@ -1419,18 +1314,7 @@ int Spider_Save(AS_context *ctx) {
             dentry.ts = sptr->ts;            
             dentry.ttl = sptr->ttl;
 
-            // if the file is open
-            
-                fwrite(&dentry, 1, sizeof(DataEntry), fd);
-                /*
-                // convert long ips to ascii
-                conv.s_addr = bptr->hop_ip;
-                strcpy((char *)&Ahop, inet_ntoa(conv));
-                conv.s_addr = bptr->target_ip;
-                strcpy((char *)&Atarget, inet_ntoa(conv));
-                // and format & write the data to the file
-                fprintf(fd2, "BRANCH,%s,%s,%u,%d\n", Ahop, Atarget, sptr->identifier_id, sptr->ttl); */
-        
+            fwrite(&dentry, 1, sizeof(DataEntry), fd);
 
             // move to next in branch list
             bptr = bptr->branches;
@@ -1438,8 +1322,6 @@ int Spider_Save(AS_context *ctx) {
 
         // move to next in hop list (routers which have resppoonded to traceroute queries)
         sptr = sptr->hops_list;
-
-        //printf("L2 %p\n", sptr);
     }
 
     // how many traceroute hops do we have? (unique.. dont count branches)
@@ -1495,7 +1377,7 @@ int IPv4_compare(uint32_t comp, uint32_t ipv4) {
 
 
 // lets see if we have a hop already in the spider.. then we just add this as a branch of it
-// *** verify IPv6 (change arguments.. use IP_prepare)
+// *** IPv6
 TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *hopv6) {
     TracerouteSpider *sptr = ctx->traceroute_spider_hops;
     // enumerate through spider list tryinig to find a hop match...
@@ -1549,8 +1431,10 @@ int Spider_Load(AS_context *ctx, char *filename) {
     if ((fd = fopen(fname, "rb")) == NULL) goto end;
 
     while (!feof(fd)) {
-        fread(&dentry, 1, sizeof(DataEntry), fd);
+        if (fread(&dentry, 1, sizeof(DataEntry), fd) != sizeof(DataEntry)) break;
+
         if (!dentry.target_ip) continue;
+
         if (dentry.code == 1) {
             // cannot allocate?? 
             if ((qnew = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) break;
@@ -1617,7 +1501,6 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
             snew->branches = slast->branches;
             slast->branches = snew;
-
         }
 
         // if its more than just a queue.. we wanna link it together.. (for 2/3)
@@ -1640,186 +1523,6 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
 
 
-// load data from a file.. this is for development.. so I can use the python interactive debugger, and write various C code
-// for the algorithms required to determine the best IP addresses for manipulation of the mass surveillance networks
-// This was the extremely slow version... at least this was 50% of the issues... FindQueueByIdentifier was the other
-int Spider_Load_old(AS_context *ctx, char *filename) {
-    FILE *fd = NULL, *fd2 = NULL;
-    char buf[1024];
-    char *sptr = NULL;
-    char type[16], hop[16],target[16];
-    int ttl = 0;
-    uint32_t identifier = 0;
-    int ts =0, enabled = 0, activity = 0, completed = 0, retry = 0;
-    int i = 0;
-    int n = 0;
-    TracerouteSpider *Sptr = NULL;
-    TracerouteSpider *snew = NULL;
-    TracerouteSpider *slast = NULL, *Blast = NULL;
-    TracerouteQueue *qnew = NULL;
-    char fname[32];
-    char *asnum_name = NULL;
-
-    // traceroute responses (spider)
-    sprintf(fname, "%s.txt", filename);
-    // open ascii format file
-    if ((fd = fopen(fname, "r")) == NULL) goto end;
-
-    // traceroute queue
-    sprintf(fname, "%s_queue.txt", filename);
-    // open ascii format file
-    if ((fd2 = fopen(fname, "r")) == NULL) goto end;
-
-    // read all lines
-    while (fgets(buf,1024,fd2)) {
-        i = 0;
-        // if we have \r or \n in the buffer (line) we just read then lets set it to NULL
-        if ((sptr = strchr(buf, '\r')) != NULL) *sptr = 0;
-        if ((sptr = strchr(buf, '\n')) != NULL) *sptr = 0;
-
-        // change all , (like csv) to " " spaces for sscanf()
-        n = strlen(buf);
-        while (i < n) {
-            if (buf[i] == ',') buf[i] = ' ';
-            i++;
-        }
-
-        // grab entries
-        sscanf(buf, "%s %s %"SCNu32" %d %d %d %d %d", &type, &target, &identifier,
-         &retry, &completed, &enabled, &activity, &ts);
-
-        // cannot allocate?? 
-        if ((qnew = (TracerouteQueue *)calloc(1, sizeof(TracerouteQueue))) == NULL) break;
-
-        // set parameters from data file
-        qnew->completed = completed;
-        qnew->retry_count = retry;
-        qnew->ts = ts;
-        qnew->ts_activity = activity;
-
-        // we wanna control enabled here when we look for all TTL hops
-        qnew->enabled = 0;//enabled;
-
-        qnew->target_ip = inet_addr(target);
-        qnew->identifier = identifier;
-
-        qnew->type = ((rand()%100) > 50) ? 1 : 0;
-
-        // void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr) {
-
-        // lookup on demand later.. so it loads fast...
-        // GeoIP_lookup(ctx, qnew); 
-
-        //qnew->country = GEOIP_IPtoCountryID(ctx, target);
-        //qnew->asn_num = GEOIP_IPtoASN(ctx, target);
-        
-
-        // set all TTLs in the list to their values
-        // ***
-        // turn randomizing into its own function later and set here..
-        //for (n = 0; n < MAX_TTL; n++) qnew->ttl_list[n] = n;
-        //qnew->max_ttl = MAX_TTL;
-
-        qnew->next = ctx->traceroute_queue;
-        ctx->traceroute_queue = qnew;
-
-            qnew->next_identifier = ctx->traceroute_queue_identifier[qnew->identifier % JTABLE_SIZE];
-            ctx->traceroute_queue_identifier[qnew->identifier % JTABLE_SIZE] = qnew;
-
-    }
-
-    // first we load the traceroute responses.. so we can use the list for re-enabling ones which were  in progress
-    while (fgets(buf,1024,fd)) {
-        i = 0;
-        // if we have \r or \n in the buffer (line) we just read then lets set it to NULL
-        if ((sptr = strchr(buf, '\r')) != NULL) *sptr = 0;
-        if ((sptr = strchr(buf, '\n')) != NULL) *sptr = 0;
-
-        // change all , (like csv) to " " spaces for sscanf()
-        n = strlen(buf);
-        while (i < n) {
-            if (buf[i] == ',') buf[i] = ' ';
-            i++;
-        }
-
-        // grab entries
-        sscanf(buf, "%s %s %s %"SCNu32" %d", &type, &hop, &target, &identifier, &ttl);
-
-        //printf("type: %s\nhop %s\ntarget %s\nident %X\nttl %d\n", type, hop,target, identifier, ttl);
-
-        // allocate structure for storing this entry into the traceroute spider
-        if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) == NULL) break;
-
-        // set various information we have read fromm the file into the new structure
-        snew->hop_ip = inet_addr(hop);
-        snew->target_ip = inet_addr(target);
-        snew->ttl = ttl;
-        snew->identifier_id = identifier;
-
-        // add to main linked list.. (where every entry goes)
-        // use last so its faster..
-        if (slast == NULL) {
-            L_link_ordered_offset((LINK **)&ctx->traceroute_spider, (LINK *)snew, offsetof(TracerouteSpider, next));
-            slast = snew;
-        } else {
-            slast->next = snew;
-            slast = snew;
-        }
-
-        // GeoIP_lookup(ctx, qnew); 
-
-        // link into main list
-        Traceroute_Insert(ctx, snew);
-
-        // link to original queue structure by identifier
-        Spider_IdentifyTogether(ctx, snew);
-
-        // before we fgets() again lets clear the buffer
-        // *** had a weird bug with sscanf.. im pretty sure this is useless but it began working duringn 4-5 changes..
-        // ill rewrite this entire format binary soon anyways.
-        memset(buf,0,1024);
-    }
-
-
-
-    //printf("calling Traceroute_RetryAll to deal with loaded data\n");
-    Traceroute_RetryAll(ctx);
-
-    end:;
-
-    if (fd) fclose(fd);
-    if (fd2) fclose(fd2);
-
-    return 1;
-}
-
-
-// no need to thread to load things when its instant now..
-// *** remove
-void *thread_spider_load(void *arg) {
-    AS_context *ctx = (AS_context *)arg;
-
-    //pthread_mutex_lock(&ctx->traceroute_mutex);
-
-    Spider_Load(ctx, "traceroute");
-
-    //pthread_mutex_unlock(&ctx->traceroute_mutex);
-
-    pthread_exit(NULL);
-}
-
-
-// *** remove
-int Spider_Load_threaded(AS_context *ctx, char *filename) {
-    if (pthread_create(&ctx->traceroute_thread, NULL, thread_spider_load, (void *)ctx) != 0) {
-        return Spider_Load(ctx, filename);
-    }
-    return 0;
-}
-
-
-
-
 
 //http://www.binarytides.com/get-local-ip-c-linux/
 uint32_t get_local_ipv4() {
@@ -1828,8 +1531,6 @@ uint32_t get_local_ipv4() {
     uint32_t ret = 0;
     struct sockaddr_in serv;     
     int sock = 0;
-    
-    //return inet_addr("192.168.0.100");
     
     if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) return 0;
      
@@ -1894,24 +1595,6 @@ int Traceroute_Init(AS_context *ctx) {
     FilterPrepare(flt, FILTER_PACKET_ICMP, 0);
     if (Network_AddHook(ctx, flt, &Traceroute_IncomingICMP) != 1) goto end;
 
-
-/*
-    // UDP TTL packets come back as ICMP.. so no need to add a new handler
-    // *** remove
-    // lets add UDP traceroute processing
-    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
-    FilterPrepare(flt, FILTER_PACKET_UDP, 0);
-    if (Network_AddHook(ctx, flt, &Traceroute_IncomingUDP) != 1) goto end;
-
-    // Same.. it'll reach us as  ICMP from the  routers..
-
-    // lets add TCP traceroute processing
-    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
-    FilterPrepare(flt, FILTER_PACKET_TCP, 0);
-    if (Network_AddHook(ctx, flt, &Traceroute_IncomingTCP) != 1) goto end;
-*/
-
-    
     // get our own ip addresses for packet building
     ctx->my_addr_ipv4 = get_local_ipv4();
     get_local_ipv6(&ctx->my_addr_ipv6);
@@ -1981,14 +1664,8 @@ TracerouteSpider *Traceroute_Find(AS_context *ctx, uint32_t address, struct  in6
     struct in_addr src;
 
     while (sptr != NULL) {
-
-        // for turning long IP to ascii for dbg msg
-        //src.s_addr = sptr->hop_ip;
-        //printf("FIND checking against IP: %s\n", inet_ntoa(src));
-
         // ***maybe create an address structuure which can hold IPv4, and 6 and uses an integer so we dont just check if ipv4 doesnt exist..
         if (address && sptr->hop_ip == address) {
-            //printf("Checking %u against %u", address, sptr->hop);
             break;
         }
         if (!address && CompareIPv6Addresses(addressv6, &sptr->hop_ipv6)) {
@@ -2010,6 +1687,8 @@ TracerouteSpider *Traceroute_Find(AS_context *ctx, uint32_t address, struct  in6
     return sptr;
 
 }
+
+
 
 // we call this to let the watchdog know that some incoming traceroute was successful
 void Traceroute_Watchdog_Add(AS_context *ctx) {
@@ -2740,22 +2419,6 @@ int ResearchContentGenerator(AS_context *ctx, int src_country, int dst_country, 
 
 }
 
-/*int testcallback(AS_context *ctx) {
-    int i = 0;
-    char *content_client = NULL, *content_server = NULL;
-    int content_client_size = 0;
-    int content_server_size = 0;
-    
-    i = ResearchContentGenerator(ctx, i, i, &content_client, &content_client_size, &content_server, &content_server_size);
-
-    printf("conntent_client %p content server %p size %d %d\n", content_client, content_server, content_client_size,
-    content_server_size);
-
-    return i;
-
-}*/
-
-
 
 
 // macros are needed to replace things like first names, usernames, emails, passwords, messages, etc.. in sessions
@@ -2773,31 +2436,6 @@ typedef struct _macro_variable {
     int macro_data_count;
 } MacroVariable;
 
-
-/*
-
-HTTP_SERVER_NAME
-HTTP_VERSION
-
-USERAGENT
-
-Timezone
-
-TCP options
-
-cookies, encoding type, character set allowed
-
-gzip
-
-POST variable modification (macro)
-
-need to compress the 960 mil email addreses to get size information
-
-need to try to ccompress using topp domains, etc
-
-
-
-*/
 
 /*
 
@@ -2870,24 +2508,6 @@ SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
 }
 
 
-/*
-
-imaginary/fuzzy routes
-
-callbacks for packet incomming/outgoing
-
-identities (getter/setter, OR synchronization w python/C)
-sites (sync)
-urls (sync)
-
-
-python needs access to incoming connections, or pcap parsing of full connections so it can get access to http properties
-its prob easier to handle HTTP url pulling etc in python than C.. (safer)
-
-
-
-*/
-
 // generates a list of ip addresses in a particular country..
 // then we can use these to traceroute to gather information, then fill in gaps
 // w virtual traceroutes, and create smart attacks on fiber taps etc
@@ -2923,7 +2543,11 @@ IPAddresses *GenerateIPAddressesCountry(AS_context *ctx, char *country, int coun
     if (iptr && !ret) free(iptr);
 
     return ret;
-}	
+}
+
+
+
+
 
 typedef struct _attack_targets  {
     struct _attack_targets *next;
@@ -2932,10 +2556,55 @@ typedef struct _attack_targets  {
     int identifier;  // categorial identifier to find connections later for specific targets to manipulate.. like a sub identifier
     int ts;          // last timestamp intelligence management affected, or used
     int language;
-    ]
 } AttackTarget;
 
 /*
+
+/*
+
+geoip6
+commplete ipv6 for traceroute, and newer functioonality sinnce last weekend
+
+imaginary/fuzzy routes
+
+callbacks for packet incomming/outgoing
+
+identities (getter/setter, OR synchronization w python/C)
+sites (sync)
+urls (sync)
+
+
+
+
+/*
+
+HTTP_SERVER_NAME
+HTTP_VERSION
+
+USERAGENT
+
+Timezone
+
+TCP options
+
+cookies, encoding type, character set allowed
+
+gzip
+
+POST variable modification (macro)
+
+need to compress the 960 mil email addreses to get size information
+
+need to try to ccompress using topp domains, etc
+
+
+
+
+
+python needs access to incoming connections, or pcap parsing of full connections so it can get access to http properties
+its prob easier to handle HTTP url pulling etc in python than C.. (safer)
+
+------------------------
 
 we need some sort of control mechanism to manipulate things  in a way to gather intelligence which will help overall operatioons, and attacks.
 it needs to gather sites, urls, identities, email addresses, and various routing information.  It should guess, or begin duties for future attacks
@@ -2954,7 +2623,11 @@ minutes, or hours before their smart paths being calculated for most damaging pe
 6) determine if an attack should  be disqualified due to overuse, etc... (it can be random, or change its parameters over time depending on location,
    virtual traceroute information,etc)
 
+
+
 */
 int Research_Intelligence_Management(AS_context *ctx) {
+
+
 
 }

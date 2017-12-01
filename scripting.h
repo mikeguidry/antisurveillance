@@ -31,7 +31,7 @@ AS_scripts *Scripting_New(AS_context *ctx);
 AS_scripts *Scripting_FindFunction(AS_context *, char *);
 int Scripting_ThreadPost(AS_context *ctx, AS_scripts *sptr);
 int Scripting_ThreadPre(AS_context *ctx, AS_scripts *sptr);
-
+PyObject *PyAttackDetails(AS_attacks *aptr);
 
 #define FROM_CLIENT 1
 #define FROM_SERVER 0

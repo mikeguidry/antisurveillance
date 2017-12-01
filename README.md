@@ -1,5 +1,7 @@
 # antisurveillance
 
+How do you idiots like my sauce?.. You'll get some rather interesting sauce yourself in the future.. ;) you'll see.
+
 This is what a fully automated, no need to upgrade, long term attack on mass surveillance platforms looks like.  It has everyting required to force more resources
 than actionable intelligence for each listener node.  The fun part about it is that these "smart attack paths" if performed online will possibly affect dozens of
 separate mass surveillance platforms simultaneously.  Its quite magnificiant that the same technology which allows for mass capture of the data in the first place

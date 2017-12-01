@@ -553,6 +553,30 @@ err:;
 }
 
 
+static PyObject *PyASC_AttackDetails(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"attack_id", 0};
+    int ret = 0;
+    int attack_id = 0;
+    AS_attacks *aptr = NULL;
+    PyObject *pRet = NULL;
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwd_list, &attack_id)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (self->ctx) {
+        aptr = AttackFind(self->ctx, attack_id, NULL, NULL, 0, 0, 0, 0);
+        if (aptr != NULL) {
+            pRet = PyAttackDetails(aptr);
+        }
+
+    }
+
+    return pRet;
+    
+}
+
 // start a new instruction set (removing anything previously not saved, etc)
 static PyObject *PyASC_InstructionsCreate(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {
@@ -814,6 +838,8 @@ static PyObject *PyASC_TracerouteGenerateRandomGEO(PyAS_Config* self, PyObject *
 
     return PyInt_FromLong(ret);
 }
+
+
 
 
 static PyObject *PyASC_MergeAttacks(PyAS_Config* self, PyObject *args, PyObject *kwds) {
@@ -1250,6 +1276,8 @@ static PyMethodDef PyASC_methods[] = {
 
     {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_NOARGS,    "" },
 
+
+    {"attackdetails", (PyCFunction)PyASC_AttackDetails,    METH_VARARGS|METH_KEYWORDS,    "gives details about an attack" },
     {"pcapcapturestart", (PyCFunction)PyASC_PCAPCaptureStart,    METH_VARARGS|METH_KEYWORDS,    "captures using current filter to a pcap file" },
     {"pcapcaptureend", (PyCFunction)PyASC_PCAPCaptureEnd,    METH_VARARGS|METH_KEYWORDS,    "ends a pcap capture" },
 
@@ -1458,7 +1486,7 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
     //PyEval_ReleaseThread(evars->python_thread);
 end:;
     if (pFunc != NULL) Py_XDECREF(pFunc);
-    //if (pValue != NULL) Py_XDECREF(pValue);    
+    if (pValue != NULL) Py_XDECREF(pValue);    
 
     return ret;
 }
@@ -1669,4 +1697,61 @@ int Scripting_ThreadPost(AS_context *ctx, AS_scripts *sptr) {
     }
 
     return ret;
+}
+
+
+
+
+PyObject *PyAttackDetails(AS_attacks *aptr) {
+    PyObject *pArgs = NULL;
+
+    PyObject *pSrc = NULL;
+    PyObject *pDst = NULL;
+    PyObject *pPortSrc = NULL;
+    PyObject *pPortDst = NULL;
+    PyObject *pInstructionsCount = NULL;
+    PyObject *pCurrentPacket = NULL;
+    PyObject *pPaused = NULL;
+    PyObject *pCount = NULL;
+    PyObject *pInterval = NULL;
+    PyObject *pCompleted = NULL;
+    PyObject *pFunction = NULL;
+    PyObject *pSkipAdjustments = NULL;
+    char *Src = NULL;
+    char *Dst = NULL;
+
+    Src = (char *)IP_prepare_ascii(&aptr->src, &aptr->src6);
+    Dst = (char *)IP_prepare_ascii(&aptr->dst, &aptr->dst6);
+    
+    pSrc = PyString_FromString(Src);
+    pDst = PyString_FromString(Dst);
+
+    pPortSrc = PyInt_FromLong(aptr->source_port);
+    pPortDst = PyInt_FromLong(aptr->destination_port);
+    pInstructionsCount = PyInt_FromLong(L_count((LINK *)aptr->packet_build_instructions));
+    
+    pPaused = PyInt_FromLong(aptr->paused);
+    pInterval = PyInt_FromLong(aptr->repeat_interval);
+    pCount = PyInt_FromLong(aptr->count);
+    pSkipAdjustments = PyInt_FromLong(aptr->skip_adjustments);
+    pCompleted = PyInt_FromLong(aptr->completed);
+
+
+    if ((pArgs = PyTuple_New(10)) == NULL) goto end;
+
+    //def content_generator(language,site_id,site_category,ip_src,ip_dst,ip_src_geo,ip_dst_geo,client_body,client_body_size,server_body,server_body_size):
+
+    PyTuple_SetItem(pArgs, 0, pSrc);
+    PyTuple_SetItem(pArgs, 1, pDst);
+    PyTuple_SetItem(pArgs, 2, pPortSrc);
+    PyTuple_SetItem(pArgs, 3, pPortDst);
+    PyTuple_SetItem(pArgs, 4, pInstructionsCount);
+    PyTuple_SetItem(pArgs, 5, pPaused);
+    PyTuple_SetItem(pArgs, 6, pInterval);
+    PyTuple_SetItem(pArgs, 7, pCount);
+    PyTuple_SetItem(pArgs, 8, pSkipAdjustments);
+    PyTuple_SetItem(pArgs, 9, pCompleted);
+
+    end:;
+    return pArgs;
 }

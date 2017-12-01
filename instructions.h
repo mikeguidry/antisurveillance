@@ -16,3 +16,4 @@ int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr);
 void FilterPrepare(FilterInformation *fptr, int type, uint32_t value);
 
 PacketBuildInstructions *ThreadedInstructionsFindConnection(AS_context *, PacketBuildInstructions **instructions, FilterInformation *flt, int threads, int replay_count, int interval);
+PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr);

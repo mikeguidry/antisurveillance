@@ -875,7 +875,7 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     iptr->ok = 1;
 
     // total size from IPv6 header
-    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen) - sizeof(struct ip6_hdr);
+    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen);// - sizeof(struct ip6_hdr);
     
     // get tcp header size (so we know if it has options, or not)
     tcp_header_size = (p->tcp.doff << 2);

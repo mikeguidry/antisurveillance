@@ -307,7 +307,6 @@ int prepare_socket(AS_context *ctx) {
 
 // http://yusufonlinux.blogspot.com/2010/11/data-link-access-and-zero-copy.html
 // https://austinmarton.wordpress.com/2011/09/14/sending-raw-ethernet-packets-from-a-specific-interface-in-c-on-linux/
-
 // prepare raw incoming socket.. we perform our own filtering so we want all packets
 int prepare_read_socket(AS_context *ctx) {
     int sockfd = 0;
@@ -346,49 +345,11 @@ int prepare_read_socket(AS_context *ctx) {
     
     setsockopt(sockfd, SOL_SOCKET, SO_RCVBUFFORCE, &bufsize, sizeof(bufsize));
     
-
-    // set the socket inside of the context structure
-    //ctx->read_socket = sockfd;
-    /*
-    // copy the interface we want to use into the ifr structure
-    // *** find this automatically
-    strncpy((char *) ifr.ifr_name, network, IFNAMSIZ);
-    strncpy((char *)if_mac.ifr_name, network, IFNAMSIZ);
-    strncpy((char *)if_ip.ifr_name, network, IFNAMSIZ);
-
-    // call ioctl to use this ifr structure (and network interface)
-    if (ioctl(sockfd, SIOCGIFINDEX, &ifr) != 0) goto end;
-    if (ioctl(sockfd, SIOCGIFHWADDR, &if_mac) < 0) goto end;
-    if (ioctl(sockfd, SIOCGIFADDR, &if_ip) < 0) goto end;
-
-//sll.sll_ifindex = 
-
-    // prepare sockaddr for binding to this interface
-    sll.sll_family = AF_PACKET;
-    sll.sll_ifindex = ifr.ifr_ifindex;
-    sll.sll_protocol = htons (protocol);
-    
-
-    printf("interface index %d\n", sll.sll_ifindex);
-    printf("IP: %u\n", ((struct sockaddr_in *)&if_ip.ifr_addr)->sin_addr);
-
-    // bind to it
-    if (bind(sockfd, (struct sockaddr *) &sll, sizeof(sll)) != 0) goto end;
-
-    // set the socket to reuse 
-    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &sockopt, sizeof(sockopt)) == -1) goto end;
-    
-    // bind to do the network device
-    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, network, IFNAMSIZ-1) == -1) goto end;
-*/
     // set non blocking
     //https://stackoverflow.com/questions/1543466/how-do-i-change-a-tcp-socket-to-be-non-blocking
     flags = fcntl(sockfd, F_GETFL, flags);
     flags |= O_NONBLOCK;
     flags = fcntl(sockfd, F_SETFL, flags);
-
-    // ensure the operating system knows that we will include the IP header within our data buffer
-    //if (setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) return -1;
 
     // other parts of this application require this socket
     ctx->read_socket = sockfd;
@@ -428,15 +389,15 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         goto end;
     }
 
-    //sprintf(fname, "packets/pkt_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
+    ////sprintf(fname, "packets/pkt_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
 
     packet += sizeof(struct ether_header);
     size -= sizeof(struct ether_header);
-/*
+
     if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
         fclose(fd);
-    } */
+    } 
 
     /*if (size < 40) {
         printf("small pkt?\n");
@@ -481,6 +442,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
             
             nptr->bytes_processed += size;
             
+            // if the function returned 1 then it wants the structure for use..  we are done (we dont want to free it)
             if (r) break;
         }
 
@@ -495,6 +457,8 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
     // free these structures since they are no longer required
     PacketsFree(&pptr);
+
+    // dont free.. function wanted it.
     if (r == 0) PacketBuildInstructionsFree(&iptr);
 
     return ret;
@@ -590,8 +554,6 @@ int network_fill_incoming_buffer(int read_socket, IncomingPacketQueue *nptr) {
             break;
         }
 
-        //printf("read packet\n");
-
         // set where this packet begins, and  ends
         nptr->packet_starts[nptr->cur_packet] = nptr->size;
         nptr->packet_ends[nptr->cur_packet] = (nptr->size + r);
@@ -684,6 +646,8 @@ void *thread_read_network(void *arg) {
             
             // lets unlink just in case.. so we allocate a new one
             nptr = NULL;
+        } else {
+            pthread_mutex_lock(&ctx->network_incoming_mutex);    
         }
 
         // get paused variable from network disabled

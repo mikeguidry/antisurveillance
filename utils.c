@@ -87,12 +87,10 @@ int PtrDuplicate(char *ptr, int size, char **dest, int *dest_size) {
     char *buf = NULL;
     
     if ((ptr == NULL) || (size <= 0)) {
-        printf("ERR pptr %p size %d\n", ptr, size);
         return 0;
     }
 
-    if ((buf = (char *)malloc(size )) == NULL) {
-        printf("ERR couldnt allocate!\n");
+    if ((buf = (char *)malloc(size + 1)) == NULL) {
         return -1;
     }
 
@@ -129,6 +127,15 @@ int timeval_subtract (struct timeval *result, struct timeval  *x, struct timeval
 }
 
 
+int FileWrite(char *filename, char *ptr, int size) {
+    int ret = 0;
+    int r = 0;
+    FILE *fd = fopen(filename, "wb");
+    if (fd == NULL) return -1;
+    r = fwrite(ptr, 1, size, fd);
+    fclose(fd);
+    return (r == size);
+}
 
 // put a files contents into a memory buffer
 char *FileContents(char *filename, int *size) {
@@ -151,17 +158,18 @@ char *FileContents(char *filename, int *size) {
 
 
 
-
-
-
+// copy an IPv6 address over.. simple although I wanted to SHOW IPv6 everywhere it was taking place instead of 'memcpy'
 void CopyIPv6Address(void *dst, void *src) {
     // verify both parameters arent NULL..
     if (dst && src)
         memcpy(dst, src, sizeof(struct in6_addr));
 }
 
+// compare two IPv6 addresses.. allows NULL parameters on purpose
 int CompareIPv6Addresses(struct in6_addr *first, struct in6_addr *second) {
-    if (!first && !second) return 0;
+    if (!first && !second)
+        return 0;
+
     return (memcmp(first,second,sizeof(struct in6_addr)) == 0);
 }
 
@@ -245,17 +253,22 @@ int L_count_offset(LINK *lptr, int offset) {
 
 // this prepares fabricated connections using either IPv4, or IPv6 addresses.. it detects IPv6 by the :
 int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, int *_is_ipv6) {
-     int is_ipv6 = 0;
+    int is_ipv6 = 0;
 
     if (ascii_ip == NULL) return 0;
 
     is_ipv6 = strchr(ascii_ip, ':') ? 1 : 0;
 
     if (!is_ipv6) {
-        *ipv4_dest = inet_addr(ascii_ip);
-        if (_is_ipv6 != NULL) *_is_ipv6 = 0;
+        if (ipv4_dest)
+            *ipv4_dest = inet_addr(ascii_ip);
+
+        if (_is_ipv6 != NULL)
+            *_is_ipv6 = 0;
     } else {
-        if (_is_ipv6 != NULL) *_is_ipv6 = 1;
+        if (_is_ipv6 != NULL)
+            *_is_ipv6 = 1;
+
         inet_pton(AF_INET6, ascii_ip, ipv6_dest);
     }
 
@@ -271,7 +284,7 @@ char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src) {
 
     memset(final, 0, sizeof(final));
 
-    if (ipv4_dest) {
+    if (*ipv4_dest) {
         dst.s_addr = ipv4_dest;
         strncpy(final, inet_ntoa(dst), sizeof(final));
     } else if (ipv6_src != NULL) {

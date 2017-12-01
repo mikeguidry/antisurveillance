@@ -631,7 +631,7 @@ void BH_Clear(AS_context *ctx) {
 // network ranges, etc.  It just won't be 85%  but it is 100% if the configuration is guessed... the 85% on IPv4 is due to similar
 // and the fact that we dont want to flood other networks with an attack on a particular one... I thikn traceroute, and some other features
 // will help in solving to increase chances a little bit
-
+// *** complete blackhole ipv6
 int BH_Perform(AS_context *ctx) {
     int ret = -1;
     uint32_t ip = 0;

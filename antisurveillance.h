@@ -271,7 +271,6 @@ typedef struct _antisurveillance_context {
 
     PCAPOperation *pcap_operations;
 
-    //pthread_mutex_t traceroute_mutex;
     pthread_t traceroute_thread;
 
 

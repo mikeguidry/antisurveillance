@@ -283,6 +283,9 @@ void BuildPackets(AS_attacks *aptr) {
         ptr = ptr->next;
     }
 
+    printf("build packets aptr %d completed %d\n", aptr->id, aptr->completed);
+    printf("count: %d\n", L_count((LINK *)aptr->packet_build_instructions));
+
     return;
 }
 
@@ -921,95 +924,3 @@ int PacketTCP4BuildOptions(PacketBuildInstructions *iptr) {
 
     return 1;
 }
-
-
-/*
-int test_icmp4(AS_context *ctx) {
-    AS_attacks *aptr = NULL;
-    PacketBuildInstructions *iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions));
-    int ret = 1;
-    char *data = NULL;
-    int data_size = 0;
-
-    printf("test udp4\n");
-    
-    data_size = 5;
-
-    if ((data = (char *)malloc(data_size)) == NULL) goto end;
-
-    memcpy(data, "hello", 5);
-
-    iptr->type = PACKET_TYPE_ICMP_4;
-
-
-    if (iptr == NULL) goto end;
-
-
-    iptr->source_ip = inet_addr("10.0.0.1");
-    iptr->destination_ip = inet_addr("10.0.0.4");
-
-    iptr->source_port = 31337;
-    iptr->destination_port = 1025;
-
-    iptr->data = data;
-    iptr->data_size = data_size;
-    
-    data = NULL; data_size = 0;
-
-    iptr->ttl = 64;
-
-    iptr->icmp.type = ICMP_ECHO;
-    iptr->icmp.code = 0;
-    iptr->icmp.un.echo.sequence = rand()%0xFFFFFFFF;
-    iptr->icmp.un.echo.id = rand()%0xFFFFFFFF;
-
-
-     
-    if ((aptr = (AS_attacks *)calloc(1, sizeof(AS_attacks))) == NULL) return 0;
-
-    iptr->aptr = aptr;
-
-    // identifier for the attack..in case we need to find it in queue later
-    aptr->id = 2;
-    aptr->ctx = ctx;
-
-    // src&dst information
-    aptr->src = iptr->source_ip;
-    aptr->dst = iptr->destination_ip;
-    aptr->source_port = iptr->source_port;
-    aptr->destination_port = iptr->destination_port;
-
-    // this is a full blown tcp session
-    aptr->type = ATTACK_MULTI;
-
-    // how many times will we replay this session?
-    aptr->count = 99999;
-    // how much time in seconds between each replay?
-    aptr->repeat_interval = 1;
-
-    // initialize a mutex for this structure
-    //aptr->pause_mutex = PTHREAD_MUTEX_INITIALIZER;
-    pthread_mutex_init(&aptr->pause_mutex, NULL);
-
-    aptr->packet_build_instructions = iptr;    
-    
-    // we dont wanna rebuild/change this packet...
-    aptr->skip_adjustments = 1;
-
-    // LIFO i decided it doesnt matter since the attacks are all happening simultaneously...
-    // if it becomes a problem its a small fix.  but your queues should also flush properly anyhow..
-    aptr->next = ctx->attack_list;
-    ctx->attack_list = aptr;
-
-
-    ret = 1;
-
-    end:;
-
-    printf("aptr %p data %p ret %d\n", aptr, data, ret);
-
-    PtrFree(&data);
-
-    return ret;
-}
-*/

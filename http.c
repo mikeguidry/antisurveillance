@@ -66,6 +66,7 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
     uint32_t client_seq = rand()%0xFFFFFFFF;
     uint32_t server_seq = rand()%0xFFFFFFFF;
 
+    memset(&cptr, 0, sizeof(ConnectionProperties));
     // so we can change the seqs again later if we repeat this packet (w rebuilt source ports, identifiers and now seq)
     aptr->client_base_seq = client_seq;
     aptr->server_base_seq = server_seq;
@@ -422,104 +423,9 @@ int HTTPContentModification(AS_attacks *aptr) {
 
 
 
-// Initializes the HTTP Discovery subsystem, and implements the network filter, and hook for ensuring we receive WWW packets
-int HTTPDiscover_Init(AS_context *ctx) {
-    FilterInformation *flt = NULL;
-    int ret = 0;
-
-    // allocate space for our incoming packet filter
-    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
-
-    // create a filter for port 80
-    FilterPrepare(flt, FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 80);
-
-    // append it into the network hooking subsystem
-    if (Network_AddHook(ctx, flt, &HTTPDiscover_Incoming) != 1) goto end;
-
-    // now we will begin getting raw http sessions to automate into mass surveillancce attacks :)
-
-    end:;
-    return ret;
-
-}
-
-
-
-// Look for new connections via SYN packets, and completed ones via FIN/RST packets.
-// Once both are found then it is considered a complete single HTTP session, and can be used as an attack itself.
-// It will allow constant real world traffic being integrated directly into the attack platform.
-int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
-    int ret = -1;
-    HTTPBuffer *hptr = ctx->http_buffer_list;
-
-    while (hptr != NULL) {
-        // find connecction by source ports...
-        // if it matches another (unlikely) fuck it. who cares. it wont get far.
-        if (((hptr->source_port == iptr->source_port) && (hptr->destination_port == iptr->destination_port)) ||
-        ((hptr->source_port == iptr->destination_port) && (hptr->destination_port == iptr->source_port)))
-            break;
-
-        hptr = hptr->next;
-    }
-
-    // we are not currently monitoring this http session...is it a SYN? (new connection)
-    if (hptr == NULL) {
-        // look for SYN packet (start of connection)
-        if ((iptr->flags & TCP_FLAG_SYN) && iptr->ack == 0) {
-            // it is a SYN packet.. start of a connection.. we need to begin to monitor
-            if ((hptr = (HTTPBuffer *)calloc(1, sizeof(HTTPBuffer))) == NULL) goto end;
-            
-            hptr->source_ip = iptr->source_ip;
-            hptr->destination_ip = iptr->destination_ip;
-
-            hptr->source_port = iptr->source_port;
-            hptr->destination_port = iptr->destination_port;
-
-            CopyIPv6Address(&hptr->source_ipv6, &iptr->source_ipv6);
-            CopyIPv6Address(&hptr->destination_ipv6, &iptr->destination_ipv6);
-
-            hptr->packet_list = iptr;
-
-            
-            hptr->size = iptr->packet_size;
-
-            hptr->next = ctx->http_buffer_list;
-            ctx->http_buffer_list = hptr;
-
-            // return ret 1 since we will use iptr
-            ret = 1;
-        }
-    } else {
-        // is this the  client, or  server packet?        
-        iptr->client = (iptr->source_port == hptr->source_port);
-
-        // we are monitoring.. add to buffer
-        L_link_ordered((LINK **)&hptr->packet_list, (LINK *)iptr);
-
-        // look for FIN packet (end of connection)
-        if ((iptr->flags & TCP_FLAG_FIN) || (iptr->flags & TCP_FLAG_RST)) {
-            // the connectioon should be closed... so we can assume the data is complete..
-            // mark it for the other functions to know...
-            hptr->complete = 1;
-        }
-
-        hptr->size += iptr->packet_size;
-
-        // return ret 1 since we will use iptr
-        ret  = 1;
-    }
-
-    end:;
-
-    return ret;
-}
-
-
-
-
 // This will call a python function  which is meant to generate client, and server side content
 int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_port, char *IP_dst, int *dest_port, char *Country_src, char *Country_dst, char **client_body, int *client_body_size, char **server_body, int *server_body_size) {
-    int ret = -1;
+    int ret = 0;
     PyObject *pArgs = NULL;
     PyObject *pIP_src = NULL, *pIP_dst = NULL;
     PyObject *pCountry_src = NULL, *pCountry_dst = NULL;
@@ -591,6 +497,8 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
     sptr = Scripting_FindFunction(ctx, http_discovered_session_function);
 
     if (sptr) {
+
+        printf("FOUND function!\n");
 
         Scripting_ThreadPre(ctx, sptr);
 
@@ -680,6 +588,110 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
 }
 
 
+
+
+
+
+
+// Initializes the HTTP Discovery subsystem, and implements the network filter, and hook for ensuring we receive WWW packets
+int HTTPDiscover_Init(AS_context *ctx) {
+    FilterInformation *flt = NULL;
+    int ret = 0;
+
+    // allocate space for our incoming packet filter
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
+
+    // create a filter for port 80
+    FilterPrepare(flt, FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 80);
+
+    // append it into the network hooking subsystem
+    if (Network_AddHook(ctx, flt, &HTTPDiscover_Incoming) != 1) goto end;
+
+    // now we will begin getting raw http sessions to automate into mass surveillancce attacks :)
+
+    end:;
+    return ret;
+
+}
+
+static int pcount = 0;
+
+// Look for new connections via SYN packets, and completed ones via FIN/RST packets.
+// Once both are found then it is considered a complete single HTTP session, and can be used as an attack itself.
+// It will allow constant real world traffic being integrated directly into the attack platform.
+int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
+    int ret = -1;
+    HTTPBuffer *hptr = ctx->http_buffer_list;
+    char fname[32];
+    //sprintf(fname, "packets/data_%d.dat", pcount);
+    //FileWrite(fname, iptr->data, iptr->data_size);
+
+    //sprintf(fname, "packets/raw_%d.dat", pcount++);
+    //FileWrite(fname, iptr->packet, iptr->packet_size);
+    
+    while (hptr != NULL) {
+        // find connecction by source ports...
+        // if it matches another (unlikely) fuck it. who cares. it wont get far.
+        if (((hptr->source_port == iptr->source_port) && (hptr->destination_port == iptr->destination_port)) ||
+        ((hptr->source_port == iptr->destination_port) && (hptr->destination_port == iptr->source_port)))
+            break;
+
+        hptr = hptr->next;
+    }
+
+    // we are not currently monitoring this http session...is it a SYN? (new connection)
+    if (hptr == NULL) {
+        // look for SYN packet (start of connection)
+        if ((iptr->flags & TCP_FLAG_SYN) && iptr->ack == 0) {
+            // it is a SYN packet.. start of a connection.. we need to begin to monitor
+            if ((hptr = (HTTPBuffer *)calloc(1, sizeof(HTTPBuffer))) == NULL) goto end;
+            
+            hptr->source_ip = iptr->source_ip;
+            hptr->destination_ip = iptr->destination_ip;
+
+            hptr->source_port = iptr->source_port;
+            hptr->destination_port = iptr->destination_port;
+
+            CopyIPv6Address(&hptr->source_ipv6, &iptr->source_ipv6);
+            CopyIPv6Address(&hptr->destination_ipv6, &iptr->destination_ipv6);
+
+            hptr->packet_list = iptr;
+
+            hptr->size = iptr->packet_size;
+
+            //L_link_ordered((LINK **)&ctx->http_buffer_list, (LINK *)hptr);
+            hptr->next = ctx->http_buffer_list;
+            ctx->http_buffer_list = hptr;
+
+            // return ret 1 since we will use iptr
+            ret = 1;
+        }
+    } else {
+        // is this the  client, or  server packet?        
+        iptr->client = (iptr->source_port == hptr->source_port);
+
+        // we are monitoring.. add to buffer
+        L_link_ordered((LINK **)&hptr->packet_list, (LINK *)iptr);
+
+        hptr->size += iptr->packet_size;
+
+        // look for FIN packet (end of connection)
+        if ((iptr->flags & TCP_FLAG_FIN)) {
+            // the connectioon should be closed... so we can assume the data is complete..
+            // mark it for the other functions to know...
+            hptr->complete = 1;
+        }
+
+        // return ret 1 since we will use iptr
+        ret  = 1;
+    }
+
+    end:;
+
+    return ret;
+}
+
+
     
 // This will have access to the full http connection... (using ConnectionData to filter out each side)
 int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
@@ -704,18 +716,40 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     int is_dest_ipv6 = 0;
     AS_attacks *aptr = NULL;
     PacketBuildInstructions *iptr = NULL;
+    PacketBuildInstructions *build_list = NULL;
+    ConnectionProperties cptr;
+    
 
+    // these are in headers.. and seems to be +1 fromm start..
+    // we need to get more requests for when they begin to *attempt* to filter these out..
+    // good luck with that.
+    uint32_t client_identifier = rand()%0xFFFFFFFF;
+    uint32_t server_identifier = rand()%0xFFFFFFFF;
 
+    // os emulation and general statistics required here from operating systems, etc..
+    //// find correct MTU, subtract headers.. calculate.
+    // this is the max size of each packet while sending the bodies...
+    // *** this has to calculate out the tcp/ip headers
+    // 12 is for the options.. i have to let the attack structure know if options will be built for either client or server
+    int max_packet_size_client = 1500 - (20 * 2 + 12);
+    int max_packet_size_server = 1500 - (20 * 2 + 12); 
+
+    int client_port = 1024 + (rand()%(65535-1024));
+
+    uint32_t client_seq = rand()%0xFFFFFFFF;
+    uint32_t server_seq = rand()%0xFFFFFFFF;
 
     if (hptr->size == 0) goto end;
 
+    memset(&cptr, 0, sizeof(ConnectionProperties));
+
     // get cient side of http connection..
     // cookies, URL, user agent, etc
-    client_body = ConnectionData(hptr->packet_list, FROM_CLIENT, &client_body_size);
-
+    //client_body = ConnectionData(hptr->packet_list, FROM_CLIENT, &client_body_size);
+    //FileWrite("client.dat", client_body, client_body_size);
     // get server side of http connection (http response, cookies, etc) 
-    server_body = ConnectionData(hptr->packet_list, FROM_SERVER, &server_body_size);
-    
+    //server_body = ConnectionData(hptr->packet_list, FROM_SERVER, &server_body_size);
+    //FileWrite("server.dat", server_body, server_body_size);
 
     // at this point we have both bodies... we can pass to python callback to pull out server_name, and other heqader information
     // or attempt in C.. ill try to support both.. i dont think ill get too far into it.. its not reallly required atm
@@ -729,7 +763,8 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     new_source_ip = source_ip;
     new_destination_ip = destination_ip;
 
-    i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip,&new_dest_port,  &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
+    i = 1;
+    //i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip, &new_dest_port, &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
 
     if (i == 0) goto end;
 
@@ -779,36 +814,95 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
                 iptr->destination_port = hptr->source_port;
                 iptr->source_port = hptr->destination_port;
             }
-
-
             iptr = iptr->next;
         }
-
-
     }
 
 
-    // need a way to control the replay, etc everywhere... some places use globals (like python class) and others dont.. stupid
-    // *** fix
-    if ((aptr = InstructionsToAttack(ctx, hptr->packet_list,9999999, 1)) == NULL) goto end;
+    if ((aptr = InstructionsToAttack(ctx, hptr->packet_list, 9999999, 1)) == NULL) goto end;
+    
+
+    // so we can change the seqs again later if we repeat this packet (w rebuilt source ports, identifiers and now seq)
+    aptr->client_base_seq = client_seq;
+    aptr->server_base_seq = server_seq;
+
+    //OsPick(int options, int *ttl, int *window_size)
+    //OsPick(OS_XP|OS_WIN7, &cptr.client_ttl, &cptr.max_packet_size_client);
+    //OsPick(OS_LINUX,  &cptr.server_ttl, &cptr.max_packet_size_server);
+
+    // if these are not set properly.. itll cause issues during low level packet building (TCPSend-ish api)
+
+    // lets grab ttl from the connection..
+    cptr.client_ttl = hptr->packet_list->ttl;
+    cptr.server_ttl = hptr->packet_list->next->ttl;
+
+    // double check these and get fromm connection
+    cptr.max_packet_size_client = max_packet_size_client;
+    cptr.max_packet_size_server = max_packet_size_server;
+
+    printf("source ip %s dest ip  %s\n", new_source_ip, new_destination_ip );
+    
+    IP_prepare(new_source_ip, &cptr.client_ip, &cptr.client_ipv6, &is_src_ipv6);
+    IP_prepare(new_destination_ip, &cptr.server_ip, &cptr.server_ipv6, &is_dest_ipv6);
+
+    //cptr.server_ip = hptr->destination_ip;
+    //cptr.client_ip = hptr->source_port;
+
+    
+    //CopyIPv6Address(&cptr.client_ipv6, &hptr->source_ipv6);
+    //CopyIPv6Address(&cptr.server_ipv6, &hptr->destination_ipv6);
+
+    cptr.client_port = hptr->destination_port;
+    cptr.server_port = hptr->source_port;
+
+    gettimeofday(&cptr.ts, NULL);
+    cptr.aptr = aptr;
+    cptr.server_identifier = server_identifier;
+    cptr.client_identifier = client_identifier;
+    cptr.client_seq = client_seq;
+    cptr.server_seq = server_seq;
+    // deal with it later when code is completed..
+    cptr.client_emulated_operating_system = 0;
+    cptr.server_emulated_operating_system = 0;
+
+    // open the connection...
+    if (GenerateTCPConnectionInstructions(&cptr, &build_list) != 1) { ret = -2; goto err; }
+
+    // now we must send data from client to server (http request)
+    if (GenerateTCPSendDataInstructions(&cptr, &build_list, FROM_CLIENT, client_body, client_body_size) != 1) { ret = -3; goto err; }
+
+    // now we must send data from the server to the client (web page body)
+    if (GenerateTCPSendDataInstructions(&cptr, &build_list, FROM_SERVER, server_body, server_body_size) != 1) { ret = -4; goto err; }
+
+    // now lets close the connection from client side first
+    if (GenerateTCPCloseConnectionInstructions(&cptr, &build_list, FROM_CLIENT) != 1) { ret = -5; goto err; }
+
+    // that concludes all packets
+    aptr->packet_build_instructions = build_list;
+
+    // now lets build the low level packets for writing to the network interface
+    BuildPackets(aptr);    
 
     // add to main attack list
     aptr->next = ctx->attack_list;
     ctx->attack_list = aptr;
 
-    // as of now its completed, and added
 
     ret = 1;
     end:;
-
+    err:;
     hptr->processed = 1;
 
     if (client_body != NULL) free(client_body);
     if (server_body != NULL) free(server_body);
     if (source_ip != NULL) free(source_ip);
     if (destination_ip != NULL) free(destination_ip);
-    if (new_destination_ip != NULL) free(new_destination_ip);
-    if (new_source_ip != NULL) free(new_source_ip);
+
+    if (new_destination_ip != destination_ip)
+        if (new_destination_ip != NULL) free(new_destination_ip);
+
+    if (new_source_ip != source_ip)
+        if (new_source_ip != NULL) free(new_source_ip);
 
     return ret;
 }

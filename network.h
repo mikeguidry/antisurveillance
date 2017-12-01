@@ -44,7 +44,7 @@ typedef struct _attack_outgoing_queue {
 } AttackOutgoingQueue;
 
 
-#define MAX_BUF_SIZE 1024*1024*50
+#define MAX_BUF_SIZE 1024*1024*5
 #define MAX_PACKETS 10000
 
 // linked list of incoming packets being read for processing
