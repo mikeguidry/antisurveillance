@@ -1223,7 +1223,6 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
     FilterInformation fptr;
     uint32_t got_fin_ack = 0;
     struct in6_addr got_fin_ack6;
-    //int count = 0, ccount = 0, fcount = 0;
 
 
     memset((void *)&src_ipv6, 0, sizeof(struct in6_addr));

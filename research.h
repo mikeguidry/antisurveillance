@@ -364,9 +364,10 @@ typedef struct _languages {
     int requires_unicode;
 } Languages;
 
+
 // pool for picking ip addresses..
 typedef struct _ip_addresses {
-    struct _ip_addresses;
+    struct _ip_addresses *next;
 
     // easy geo?
     int country;
@@ -378,12 +379,19 @@ typedef struct _ip_addresses {
     // real as possible is best.
     int time_restrictions;
 
-    uint32_t **v4_adddresses;
+    uint32_t *v4_adddresses;
     int v4_count;
 
-    struct in6_addr **v6_addresses;
-    int v6_count;    
+    struct in6_addr *v6_addresses;
+    int v6_count;  
+
+    // so we have easy access to all traceroutes relating to these IP addresses
+    // *** maybe dont need?
+    TracerouteQueue *ip_traces;  
 } IPAddresses;
+
+
+
 
 
 int fourteen_check_id(int country_id);
@@ -393,3 +401,4 @@ int testcallback(AS_context *ctx);
 int Spider_Load_threaded(AS_context *ctx, char *filename);
 SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url);
 SiteURL *URL_Add(SiteIdentifier *sident, char *url);
+IPAddresses *GenerateIPAddressesCountry(AS_context *ctx, char *country, int count);

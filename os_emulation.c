@@ -13,12 +13,16 @@ typedef struct _operating_system {
     int id;
     int ttl;
     int window_size;
+
     int residential;
     int commercial;
 
     int percentage_residential;
     int percentage_commercial;
 
+    char *user_agent;
+    int user_agent_size;
+    
     void *custom_data;
     int custom_size;
 } OperatingSystemParameters;

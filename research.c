@@ -1894,10 +1894,6 @@ int Traceroute_Init(AS_context *ctx) {
     FilterInformation *flt = NULL;
     int ret = -1;
 
-    flt = (FilterInformation *)calloc(1, sizeof(FilterInformation));
-
-    if (!flt) goto end;
-
     // lets prepare incoming ICMP processing for our traceroutes
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
     FilterPrepare(flt, FILTER_PACKET_ICMP, 0);
@@ -2828,7 +2824,36 @@ need to try to ccompress using topp domains, etc
 
 */
 
+/*
 
+This function is so we can find live httpp sessioons (or from pcap) and automatically macro-ize it so that portions of it gets changed.
+I'm doing my best to require  zero configuration for the entire operation of attacks.  This is one of the last portions necessary.
+
+This function needs to guess where it should tokenize for macros, or it should investigate other URLs on the same domain which it has come across.
+Obviously if it has more data, or other urls to check against then it will work more efficient, and b e that  much more difficult for anyone to filter.
+
+*/
+/*
+
+also need client body -> url variables
+to match     URL variables here (GET vs POST) so that the macros can be used on both....
+
+it should also attempt to replace any names with naming macros.. email addresses.. etc...
+for example: 
+
+
+*/
+
+int URL_macroize(AS_context *ctx, SiteIdentifier *siteptr, SiteURL *urlptr) {
+    int ret = 0;
+
+    end:;
+    return ret;
+}
+
+
+
+// Adds a URL to a specific site for future attacks using that domain... so each can look very different
 SiteURL *URL_Add(SiteIdentifier *sident, char *url) {
     SiteURL *siteptr = (SiteURL *)calloc(1, sizeof(SiteURL));
 
@@ -2881,5 +2906,47 @@ sites (sync)
 urls (sync)
 
 
+python needs access to incoming connections, or pcap parsing of full connections so it can get access to http properties
+its prob easier to handle HTTP url pulling etc in python than C.. (safer)
+
+
 
 */
+
+// generates a list of ip addresses in a particular country..
+// then we can use these to traceroute to gather information, then fill in gaps
+// w virtual traceroutes, and create smart attacks on fiber taps etc
+IPAddresses *GenerateIPAddressesCountry(AS_context *ctx, char *country, int count) {
+    IPAddresses *ret = 0;
+    IPAddresses *iptr = NULL;
+    uint32_t *list = NULL;
+    int i = 0;
+
+    // allocate space for the main structure
+    if ((iptr = (IPAddresses *)calloc(1, sizeof(IPAddresses))) == NULL) return -1;
+
+    iptr->country = country;
+
+    if ((list = (uint32_t *)calloc(1, sizeof(uint32_t) * count)) == NULL) goto end;
+
+    iptr->v4_count = count;
+    iptr->v4_adddresses = (uint32_t *)list;
+
+    while (i < count) {
+        list[i] = ResearchGenerateIPCountry(ctx, country);
+
+        i++;
+    }
+
+    ret = iptr;
+
+    iptr->next = ctx->ip_list;
+    ctx->ip_list = iptr;
+
+    end:;
+    if (list && !ret) free(list);
+    if (iptr && !ret) free(iptr);
+
+    return ret;
+}	
+

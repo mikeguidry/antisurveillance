@@ -45,6 +45,13 @@ typedef struct _pcap_operations PCAPOperation;
 struct _site_identifiers;
 typedef struct _site_identifiers SiteIdentifier;
 
+struct _ip_addresses;
+typedef struct _ip_addresses IPAddresses;
+
+
+struct _http_buffer;
+typedef struct _http_buffer HTTPBuffer; 
+
 // general attack structure...
 // should support everything from syn packets, to virtual connections
 typedef struct _as_attacks {
@@ -117,6 +124,9 @@ typedef struct _as_attacks {
 
     // we dont apply adjustments to this packet
     int skip_adjustments;
+
+    // if there is a dependency (such as a DNS query) then link to it
+    struct _as_attacks *dependency;
 } AS_attacks;
 
 
@@ -266,6 +276,13 @@ typedef struct _antisurveillance_context {
 
 
     SiteIdentifier *site_list;
+
+
+    IPAddresses *ip_list;
+
+    HTTPBuffer *http_buffer_list;
+
+
 } AS_context;
 
 

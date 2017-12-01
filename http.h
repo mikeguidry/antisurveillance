@@ -20,7 +20,31 @@ typedef struct _http_extra_attack_parameters {
     int gzip_cache_count;
 } HTTPExtraAttackParameters;
 
+#define HTTP_BUFFER 1024*1024*1
+#define HTTP_DISCOVER_TIMEOUT 10
 
+
+typedef struct _http_buffer {
+    struct _http_buffer *next;
+
+    uint32_t source_ip;
+    uint32_t destination_ip;
+    struct in6_addr source_ipv6;
+    struct in6_addr destination_ipv6;
+
+    unsigned short source_port;
+    unsigned short destination_port;
+
+    // did we see the end of the  connection?
+    int complete;
+
+    // processed.. waiting on cleanup (free, etc)
+    int processed;
+    PacketBuildInstructions *packet_list;
+
+    int size;
+    int ts;
+} HTTPBuffer;
 
 
 int HTTPContentModification(AS_attacks *);
@@ -29,4 +53,8 @@ int GZIP_Thread(AS_context *, AS_attacks *aptr, char *client_body, int client_bo
 void *thread_gzip_attack(void *arg);
 void attacks_init(AS_context *);
 int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, uint32_t server_port,  char *client_body,
-    int client_size, char *server_body, int server_size);
+int client_size, char *server_body, int server_size);
+int HTTPDiscover_Init(AS_context *ctx);
+int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
+char *ConnectionData(PacketBuildInstructions *iptr, int side, int *_size);
+int HTTPDiscover_Cleanup(AS_context *ctx);

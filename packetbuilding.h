@@ -33,7 +33,7 @@ typedef struct _pkt_info {
 // are continously different, or have other adjustments.
 typedef struct _packet_instructions {
     struct _packet_instructions *next;
-
+    
     // What IP protocol? 4/6?  What type of packet? TCP/UDP/ICMP...
     int type;
     

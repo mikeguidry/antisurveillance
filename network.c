@@ -418,6 +418,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     int ret = -1;
     FILE *fd;
     char fname[1024];
+    int r = 0;
 
     if (size == 0) goto end;
 
@@ -476,9 +477,11 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         // if the packet passes the filter then call its processing function
         if (FilterCheck(nptr->flt, iptr)) {
             // maybe verify respoonse, and break the loop inn some case
-            nptr->incoming_function(ctx, iptr);
-
+            r = nptr->incoming_function(ctx, iptr);
+            
             nptr->bytes_processed += size;
+            
+            if (r) break;
         }
 
         // move to the next network filter to see if it wants the packet
@@ -492,7 +495,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
     // free these structures since they are no longer required
     PacketsFree(&pptr);
-    PacketBuildInstructionsFree(&iptr);
+    if (r == 0) PacketBuildInstructionsFree(&iptr);
 
     return ret;
 }

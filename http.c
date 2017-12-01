@@ -275,11 +275,10 @@ void *HTTP4_Create(AS_attacks *aptr) {
 // pull all data from a single side of a connection in our attack list..
 // this will allow you to get full http request/responses...
 // I'd rather two loops here instead of using realloc()
-char *ConnectionData(AS_attacks *attack, int side, int *_size) {
+char *ConnectionData(PacketBuildInstructions *_iptr, int side, int *_size) {
     char *ret = NULL;
     int size = 0;
-    AS_attacks *aptr = attack;
-    PacketBuildInstructions *iptr = attack->packet_build_instructions;
+    PacketBuildInstructions *iptr = _iptr;
     char *sptr = NULL;
 
     // lets get the size first..
@@ -293,7 +292,7 @@ char *ConnectionData(AS_attacks *attack, int side, int *_size) {
 
     if ((sptr = ret = (char *)malloc(size)) == NULL) return NULL;
 
-    iptr = attack->packet_build_instructions;
+    iptr = _iptr;
 
     // now lets copy the data..
     while (iptr != NULL) {
@@ -409,5 +408,245 @@ int HTTPContentModification(AS_attacks *aptr) {
 
     PtrFree(&response);
 
+    return ret;
+}
+
+
+
+int HTTPDiscover_Init(AS_context *ctx) {
+    FilterInformation *flt = NULL;
+    int ret = 0;
+
+    // allocate space for our incoming packet filter
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
+
+    // create a filter for port 80
+    FilterPrepare(flt, FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 80);
+
+    // append it into the network hooking subsystem
+    if (Network_AddHook(ctx, flt, &HTTPDiscover_Incoming) != 1) goto end;
+
+    // now we will begin getting raw http sessions to automate into mass surveillancce attacks :)
+
+    printf("HTTPDiscover_Init()\n");
+
+    end:;
+    return ret;
+
+}
+
+
+
+// need to automatically find & modify http content length (even with pipelining it should be calculatable... w an array of things to search for)
+
+// max buffer for finding http connections
+// all incoming tcp/http packets will go here awaiting for connections to be found amongst the  packets..
+// to turn into sites, and urls and then ultimately attacks fromm live traffic
+// this is at 1meg because anything above is guaranteed to be a download.. more or less
+
+
+// takes a build instruction packet and buffers it....
+// has to see if we are monitoring this connection (it must have seen it from the beginning)
+// otherwise itl ignore..
+int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
+    int ret = -1;
+    HTTPBuffer *hptr = ctx->http_buffer_list;
+
+    printf("HTTPDiscover Incoming\n");
+
+    while (hptr != NULL) {
+        // find connecction by source ports...
+        // if it matches another (unlikely) fuck it. who cares. it wont get far.
+        if (((hptr->source_port == iptr->source_port) && (hptr->destination_port == iptr->destination_port)) ||
+        ((hptr->source_port == iptr->destination_port) && (hptr->destination_port == iptr->source_port))) {
+
+            printf("found monitored connection\n");
+
+            break;
+        }
+
+        hptr = hptr->next;
+    }
+
+    // we are not currently monitoring this http session...is it a SYN? (new connection)
+    if (hptr == NULL) {
+
+        printf("not found.. packet flags: %d seq: %X ack %X\n", iptr->flags, iptr->seq, iptr->ack);
+        // look for SYN packet (start of connection)
+        if ((iptr->flags & TCP_FLAG_SYN) && iptr->ack == 0) {
+            printf("found first packet.. monitoring!\n");
+            // it is a SYN packet.. start of a connection.. we need to begin to monitor
+            if ((hptr = (HTTPBuffer *)calloc(1, sizeof(HTTPBuffer))) == NULL) goto end;
+            
+            hptr->source_ip = iptr->source_ip;
+            hptr->destination_ip = iptr->destination_ip;
+
+            hptr->source_port = iptr->source_port;
+            hptr->destination_port = iptr->destination_port;
+
+            CopyIPv6Address(&hptr->source_ipv6, &iptr->source_ipv6);
+            CopyIPv6Address(&hptr->destination_ipv6, &iptr->destination_ipv6);
+
+            hptr->packet_list = iptr;
+
+            
+            hptr->size = iptr->packet_size;
+
+            hptr->next = ctx->http_buffer_list;
+            ctx->http_buffer_list = hptr;
+
+            // return ret 1 since we will use iptr
+            ret = 1;
+        }
+    } else {
+        printf("monitored: packet flags: %d seq: %X ack %X\n", iptr->flags, iptr->seq, iptr->ack);
+        // is this the  client, or  server packet?        
+        iptr->client = (iptr->source_port == hptr->source_port);
+
+        // we are monitoring.. add to buffer
+        L_link_ordered((LINK **)&hptr->packet_list, (LINK *)iptr);
+
+        // look for FIN packet (end of connection)
+        if ((iptr->flags & TCP_FLAG_FIN)) {
+            // the connectioon should be closed... so we can assume the data is complete..
+            // mark it for the other functions to know...
+            hptr->complete = 1;
+        }
+
+        hptr->size += iptr->packet_size;
+
+        printf("appended packet to already monitored connection.. size %d commplete? %d\n", hptr->size, hptr->complete);
+
+        // return ret 1 since we will use iptr
+        ret  = 1;
+    }
+
+    end:;
+
+    return ret;
+}
+
+
+    
+// This will have access to the full http connection... (using ConnectionData to filter out each side)
+int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
+    int ret = 0;
+    char *server_body = NULL;
+    int server_body_size = 0;
+    char *client_body = NULL;
+    int client_body_size = 0;
+
+    if (hptr->size == 0) goto end;
+
+    printf("HTTPDiscover AnalyzeSession\n");
+
+    // get cient side of http connection..
+    // cookies, URL, user agent, etc
+    client_body = ConnectionData(hptr->packet_list, FROM_SERVER, &client_body_size);
+
+    // get server side of http connection (http response, cookies, etc)
+    server_body = ConnectionData(hptr->packet_list, FROM_SERVER, &server_body_size);
+    
+
+    // at this point we have both bodies... we can pass to python callback to pull out server_name, and other heqader information
+    // or attempt in C.. ill try to support both.. i dont think ill get too far into it.. its not reallly required atm
+    // pulling hostname, and url from client side to at least support GET is good enough
+    // python can be used as a calllback fro grabbing post infformation
+    printf("\n\n\nHTTP DISCOVERED: client size %d server size %d\n\n\n\n", client_body_size, server_body_size);
+
+    
+    
+    end:;
+
+    hptr->processed = 1;
+
+    if (client_body != NULL) free(client_body);
+    if (server_body != NULL) free(server_body);
+
+    return ret;
+}
+
+
+
+
+
+// perform function (regular looop)..
+// this needs to check if any of our internal buffers have a full HTTP session, timed out, or used too much  buffer and needs to be discarded
+int HTTPDiscover_Perform(AS_context *ctx) {
+    int ret = 0;
+    HTTPBuffer *hptr = ctx->http_buffer_list;
+    int ts = time(0);
+
+    printf("HTTP Discover Perform\n");
+
+    // loop and analyze any completed sessions we found in live traffic
+    while (hptr != NULL) {
+        printf("hptr: %p size %d\n", hptr, hptr->size);
+        if (!hptr->processed && hptr->complete) {
+            printf("wil call to process 1\n");
+            ret += HTTPDiscover_AnalyzeSession(ctx, hptr);
+        }
+
+        if (!hptr->complete) {
+            // is it over the buffer? (1meg)
+            if (hptr->size >= HTTP_BUFFER) {
+                // mark for deletion
+                hptr->processed=1;
+            }
+
+        }
+
+        // if this  connetion has timed out  then lets mark for deletion
+        if ((ts - hptr->ts) > HTTP_DISCOVER_TIMEOUT) hptr->processed=1;
+
+        hptr = hptr->next;
+
+    }
+
+    ret += HTTPDiscover_Cleanup(ctx);
+
+    end:;
+    return ret;
+}
+
+
+
+
+// cleans up anything thats completely processed..
+int HTTPDiscover_Cleanup(AS_context *ctx) {
+    int ret = 0;
+    HTTPBuffer *hptr = ctx->http_buffer_list;
+    HTTPBuffer *hlast = NULL, *hnext = NULL;
+
+    printf("HTTP Discover Cleanup\n");
+
+    while (hptr != NULL) {
+
+        // processed means it donne
+        if (hptr->processed) {
+
+            if (hlast == NULL) {
+                ctx->http_buffer_list = hptr->next;
+            } else {
+                hlast->next = hptr->next;
+
+            }
+
+            hnext = hptr->next;
+
+            PacketBuildInstructionsFree(&hptr->packet_list);
+
+            free(hptr);
+
+            hptr = hnext;
+            continue;
+
+        }
+
+        hlast = hptr;
+        hptr = hptr->next;
+    }
+
+    end:;
     return ret;
 }

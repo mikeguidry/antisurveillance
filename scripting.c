@@ -834,7 +834,9 @@ static PyObject *PyASC_MergeAttacks(PyAS_Config* self, PyObject *args, PyObject 
         src = AttackFind(self->ctx, source_id, NULL, NULL, NULL, 0, 0, 0, 0);
 
         if (dst && src) {
-            ret = MergeAttacks(dst, src);
+            // link via dependency...
+            dst->dependency = src;
+            //ret = MergeAttacks(dst, src);
         }
     }
 
