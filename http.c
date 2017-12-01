@@ -1,8 +1,8 @@
 /*
 
-pipeline is pretty important.. ive noticed most major sites use it.  I don't think its an issue for AJAX messages being forced into
-surveillance platforms, although it would be good to have in general.
-
+This handles building http sessions from client, and server body.  It also has code which pulls http sessions directly off of the network for processing.
+It will ensure that it is always finding new sessions to use as attacks.  It will mean that it is that much more difficult to filter, and ensures
+no code updates will ever be required.
 
 */
 
@@ -452,29 +452,20 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
     HTTPBuffer *hptr = ctx->http_buffer_list;
 
-    printf("HTTPDiscover Incoming\n");
-
     while (hptr != NULL) {
         // find connecction by source ports...
         // if it matches another (unlikely) fuck it. who cares. it wont get far.
         if (((hptr->source_port == iptr->source_port) && (hptr->destination_port == iptr->destination_port)) ||
-        ((hptr->source_port == iptr->destination_port) && (hptr->destination_port == iptr->source_port))) {
-
-            printf("found monitored connection\n");
-
+        ((hptr->source_port == iptr->destination_port) && (hptr->destination_port == iptr->source_port)))
             break;
-        }
 
         hptr = hptr->next;
     }
 
     // we are not currently monitoring this http session...is it a SYN? (new connection)
     if (hptr == NULL) {
-
-        printf("not found.. packet flags: %d seq: %X ack %X\n", iptr->flags, iptr->seq, iptr->ack);
         // look for SYN packet (start of connection)
         if ((iptr->flags & TCP_FLAG_SYN) && iptr->ack == 0) {
-            printf("found first packet.. monitoring!\n");
             // it is a SYN packet.. start of a connection.. we need to begin to monitor
             if ((hptr = (HTTPBuffer *)calloc(1, sizeof(HTTPBuffer))) == NULL) goto end;
             
@@ -499,7 +490,6 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
             ret = 1;
         }
     } else {
-        printf("monitored: packet flags: %d seq: %X ack %X\n", iptr->flags, iptr->seq, iptr->ack);
         // is this the  client, or  server packet?        
         iptr->client = (iptr->source_port == hptr->source_port);
 
@@ -507,15 +497,13 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
         L_link_ordered((LINK **)&hptr->packet_list, (LINK *)iptr);
 
         // look for FIN packet (end of connection)
-        if ((iptr->flags & TCP_FLAG_FIN)) {
+        if ((iptr->flags & TCP_FLAG_FIN) || (iptr->flags & TCP_FLAG_RST)) {
             // the connectioon should be closed... so we can assume the data is complete..
             // mark it for the other functions to know...
             hptr->complete = 1;
         }
 
         hptr->size += iptr->packet_size;
-
-        printf("appended packet to already monitored connection.. size %d commplete? %d\n", hptr->size, hptr->complete);
 
         // return ret 1 since we will use iptr
         ret  = 1;
@@ -538,11 +526,9 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 
     if (hptr->size == 0) goto end;
 
-    printf("HTTPDiscover AnalyzeSession\n");
-
     // get cient side of http connection..
     // cookies, URL, user agent, etc
-    client_body = ConnectionData(hptr->packet_list, FROM_SERVER, &client_body_size);
+    client_body = ConnectionData(hptr->packet_list, FROM_CLIENT, &client_body_size);
 
     // get server side of http connection (http response, cookies, etc)
     server_body = ConnectionData(hptr->packet_list, FROM_SERVER, &server_body_size);
@@ -552,7 +538,10 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     // or attempt in C.. ill try to support both.. i dont think ill get too far into it.. its not reallly required atm
     // pulling hostname, and url from client side to at least support GET is good enough
     // python can be used as a calllback fro grabbing post infformation
-    printf("\n\n\nHTTP DISCOVERED: client size %d server size %d\n\n\n\n", client_body_size, server_body_size);
+    printf("\n\n\nHTTP SESSION DISCOVERED: client size %d server size %d\n\n\n\n", client_body_size, server_body_size);
+
+    // the packet instructions can be used directly as is.. and itll modify ACK/SEQ, IPs, and ports.....
+    // but thats filterable! ;) lets really fuck shit up.
 
     
     
@@ -577,13 +566,9 @@ int HTTPDiscover_Perform(AS_context *ctx) {
     HTTPBuffer *hptr = ctx->http_buffer_list;
     int ts = time(0);
 
-    printf("HTTP Discover Perform\n");
-
     // loop and analyze any completed sessions we found in live traffic
     while (hptr != NULL) {
-        printf("hptr: %p size %d\n", hptr, hptr->size);
         if (!hptr->processed && hptr->complete) {
-            printf("wil call to process 1\n");
             ret += HTTPDiscover_AnalyzeSession(ctx, hptr);
         }
 
@@ -618,19 +603,13 @@ int HTTPDiscover_Cleanup(AS_context *ctx) {
     HTTPBuffer *hptr = ctx->http_buffer_list;
     HTTPBuffer *hlast = NULL, *hnext = NULL;
 
-    printf("HTTP Discover Cleanup\n");
-
     while (hptr != NULL) {
-
         // processed means it donne
         if (hptr->processed) {
-
-            if (hlast == NULL) {
+            if (hlast == NULL)
                 ctx->http_buffer_list = hptr->next;
-            } else {
+            else
                 hlast->next = hptr->next;
-
-            }
 
             hnext = hptr->next;
 
@@ -639,6 +618,7 @@ int HTTPDiscover_Cleanup(AS_context *ctx) {
             free(hptr);
 
             hptr = hnext;
+
             continue;
 
         }
