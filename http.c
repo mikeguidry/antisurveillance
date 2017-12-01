@@ -26,6 +26,12 @@ no code updates will ever be required.
 #include "attacks.h"
 #include "http.h"
 #include "instructions.h"
+#include <Python.h>
+#include "scripting.h"
+
+
+char http_discovered_session_function[] = "http_session_discovered";
+
 
 // wtf? string.h didnt load this..
 // *** figure this out sooner or later...
@@ -413,6 +419,10 @@ int HTTPContentModification(AS_attacks *aptr) {
 
 
 
+
+
+
+// Initializes the HTTP Discovery subsystem, and implements the network filter, and hook for ensuring we receive WWW packets
 int HTTPDiscover_Init(AS_context *ctx) {
     FilterInformation *flt = NULL;
     int ret = 0;
@@ -428,8 +438,6 @@ int HTTPDiscover_Init(AS_context *ctx) {
 
     // now we will begin getting raw http sessions to automate into mass surveillancce attacks :)
 
-    printf("HTTPDiscover_Init()\n");
-
     end:;
     return ret;
 
@@ -437,17 +445,9 @@ int HTTPDiscover_Init(AS_context *ctx) {
 
 
 
-// need to automatically find & modify http content length (even with pipelining it should be calculatable... w an array of things to search for)
-
-// max buffer for finding http connections
-// all incoming tcp/http packets will go here awaiting for connections to be found amongst the  packets..
-// to turn into sites, and urls and then ultimately attacks fromm live traffic
-// this is at 1meg because anything above is guaranteed to be a download.. more or less
-
-
-// takes a build instruction packet and buffers it....
-// has to see if we are monitoring this connection (it must have seen it from the beginning)
-// otherwise itl ignore..
+// Look for new connections via SYN packets, and completed ones via FIN/RST packets.
+// Once both are found then it is considered a complete single HTTP session, and can be used as an attack itself.
+// It will allow constant real world traffic being integrated directly into the attack platform.
 int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
     HTTPBuffer *hptr = ctx->http_buffer_list;
@@ -515,14 +515,197 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 }
 
 
+
+
+// This will call a python function  which is meant to generate client, and server side content
+int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_port, char *IP_dst, int *dest_port, char *Country_src, char *Country_dst, char **client_body, int *client_body_size, char **server_body, int *server_body_size) {
+    int ret = -1;
+    PyObject *pArgs = NULL;
+    PyObject *pIP_src = NULL, *pIP_dst = NULL;
+    PyObject *pCountry_src = NULL, *pCountry_dst = NULL;
+    PyObject *pBodyClient = NULL, *pBodyServer = NULL;
+    PyObject *pBodyClientSize = NULL, *pBodyServerSize = NULL;
+    PyObject *pFunc = NULL, *pValue = NULL, *pTuple = NULL;
+    AS_scripts *eptr = ctx->scripts;
+    AS_scripts *sptr = ctx->scripts;
+    
+    char *new_client_body = NULL;
+    int new_client_body_size = 0;
+    char *new_server_body = NULL;
+    int new_server_body_size = 0;
+    char *ret_client_body = NULL;
+    char *ret_server_body = NULL;
+
+    int ret_code = 0;
+    char *new_src_ip = NULL;
+    char *new_dst_ip = NULL;
+    int new_source_port = 0;
+    int new_dest_port = 0;
+
+
+    pIP_src = PyString_FromString(IP_src);
+    pIP_dst = PyString_FromString(IP_dst);
+    pCountry_src = PyString_FromString(Country_src);
+    pCountry_dst = PyString_FromString(Country_dst);
+
+    // if original bodies were passed then lets use them, otherwise we use a NULL byte and size of 1
+    if (*client_body) {
+        pBodyClient = PyString_FromStringAndSize(*client_body, *client_body_size);
+        pBodyClientSize = PyInt_FromLong(*client_body_size);
+    } else {
+        pBodyClient = PyString_FromStringAndSize("", 1);
+        pBodyClientSize = PyInt_FromLong(1);
+    }
+    if (*server_body) {
+        pBodyServer = PyString_FromStringAndSize(*server_body, *server_body_size);
+        pBodyServerSize = PyInt_FromLong(*server_body_size);
+    } else {
+        pBodyServer = PyString_FromStringAndSize("", 1);
+        pBodyServerSize = PyInt_FromLong(1);
+    }
+
+
+    if ((pArgs = PyTuple_New(8)) == NULL) goto end;
+
+    //def content_generator(language,site_id,site_category,ip_src,ip_dst,ip_src_geo,ip_dst_geo,client_body,client_body_size,server_body,server_body_size):
+
+    
+    
+    
+    PyTuple_SetItem(pArgs, 0, pIP_src);
+    PyTuple_SetItem(pArgs, 1, pIP_src);
+    PyTuple_SetItem(pArgs, 2, pCountry_src);
+    PyTuple_SetItem(pArgs, 3, pCountry_dst);
+    PyTuple_SetItem(pArgs, 4, pBodyClient);
+    PyTuple_SetItem(pArgs, 5, pBodyClientSize);
+    PyTuple_SetItem(pArgs, 6, pBodyServer);
+    PyTuple_SetItem(pArgs, 7, pBodyServerSize);
+
+    // call all scripts looking for content_generator..
+    // i need a new way to do callback, and checking for their functions.. ill redo scripting context system shortly
+    // to support
+    //while (sptr != NULL) {
+
+
+    // find the script which has this function
+    sptr = Scripting_FindFunction(ctx, http_discovered_session_function);
+
+    if (sptr) {
+
+        Scripting_ThreadPre(ctx, sptr);
+
+        pFunc = PyObject_GetAttrString(sptr->pModule, http_discovered_session_function);
+
+            // now we must verify that the function is accurate
+        if (pFunc && PyCallable_Check(pFunc)) {
+            // call the python function
+
+            pValue = PyObject_CallObject(pFunc, pArgs);
+        }
+
+
+        if (pValue != NULL) {
+            // Parse python responses for this callback
+            // Tuple: (ret_code, source_ip, source port, destination ip, destination_port, client body, (automatic dont include python side)client  body size,
+            // server_body, (automatic dont include)server_body size)
+            // automatic is because ParseTuple "s#" will take a string, and create pointer, and size fromm it.. so on python its just the string/binary itself
+
+            PyArg_ParseTuple(pValue, "isisis#s#", &ret_code,&new_src_ip, &new_source_port,
+                &new_dst_ip, &new_dest_port, &new_client_body, &new_client_body_size, &new_server_body, &new_server_body_size);
+
+            ret = ret_code;
+
+            //1,2 goto end (1 = add, 2 = ignore)... 3+ (modify)
+            if (ret && ret <= 2) goto end;
+
+            // allocate memeory to hold these pointers since the returned ones are inside of python memory
+            if ((ret_client_body = (char *)malloc(new_client_body_size)) == NULL) goto end;
+            if ((ret_server_body = (char *)malloc(new_server_body_size)) == NULL) goto end;
+
+            // copy the data from internal python storage into the ones for the calling function
+            memcpy(ret_client_body, new_client_body, new_client_body_size);
+            memcpy(ret_server_body, new_server_body, new_server_body_size);
+
+            // free passed client body if they were even passed
+            if (*client_body != NULL) free(*client_body);
+            if (*client_body != NULL) free(*server_body);
+
+            *client_body = ret_client_body;
+            *client_body_size = new_client_body_size;
+            *server_body = ret_server_body;
+            *server_body_size = new_server_body_size;
+
+            // so we dont free these at the end of the function  (calling function gets their pointers above)
+            ret_client_body = NULL;
+            ret_server_body = NULL;
+
+            // copy the IPs over for calling function
+            if (new_src_ip) *IP_src = strdup(new_src_ip);
+            if (new_dst_ip) *IP_dst = strdup(new_dst_ip);
+
+            *source_port = new_source_port;
+            *dest_port = new_dest_port;
+
+
+            ret = 1;
+        }
+
+        Scripting_ThreadPost(ctx, sptr);
+    }
+
+    // cleanup
+    end:;
+    if (pValue != NULL) Py_DECREF(pValue);
+    if (pFunc != NULL) Py_DECREF(pFunc);
+
+    //if (pArgs != NULL) Py_DECREF(pArgs);
+
+    //if (pLanguage != NULL) Py_DECREF(pLanguage);
+    //if (pSiteCategory != NULL) Py_DECREF(pSiteCategory);
+    //if (pSiteID != NULL) Py_DECREF(pSiteID);
+    if (pBodyServerSize != NULL) Py_DECREF(pBodyServerSize);
+    if (pBodyClientSize != NULL) Py_DECREF(pBodyClientSize);
+    if (pBodyServer != NULL) Py_DECREF(pBodyServer);
+    if (pBodyClient != NULL) Py_DECREF(pBodyClient);
+    if (pCountry_dst != NULL) Py_DECREF(pCountry_dst);
+    if (pCountry_src != NULL) Py_DECREF(pCountry_src);
+    if (pIP_dst != NULL) Py_DECREF(pIP_dst);
+    if (pIP_src != NULL) Py_DECREF(pIP_src);
+    
+
+    if (ret_client_body != NULL) free(ret_client_body);
+    if (ret_server_body != NULL) free(ret_server_body);
+
+    return ret;
+}
+
+
     
 // This will have access to the full http connection... (using ConnectionData to filter out each side)
 int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
-    int ret = 0;
+    int ret = 0, i = 0;
     char *server_body = NULL;
     int server_body_size = 0;
     char *client_body = NULL;
     int client_body_size = 0;
+
+    char *source_ip = NULL;
+    char *new_source_ip = NULL;
+    int source_country = 0;
+    
+    char *destination_ip = NULL;
+    char *new_destination_ip = NULL;
+    int destination_country = 0;
+
+    int new_dest_port = hptr->destination_port;
+    int new_source_port = hptr->source_port;
+
+    int is_src_ipv6 = 0;
+    int is_dest_ipv6 = 0;
+    AS_attacks *aptr = NULL;
+    PacketBuildInstructions *iptr = NULL;
+
+
 
     if (hptr->size == 0) goto end;
 
@@ -530,7 +713,7 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     // cookies, URL, user agent, etc
     client_body = ConnectionData(hptr->packet_list, FROM_CLIENT, &client_body_size);
 
-    // get server side of http connection (http response, cookies, etc)
+    // get server side of http connection (http response, cookies, etc) 
     server_body = ConnectionData(hptr->packet_list, FROM_SERVER, &server_body_size);
     
 
@@ -538,19 +721,94 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     // or attempt in C.. ill try to support both.. i dont think ill get too far into it.. its not reallly required atm
     // pulling hostname, and url from client side to at least support GET is good enough
     // python can be used as a calllback fro grabbing post infformation
-    printf("\n\n\nHTTP SESSION DISCOVERED: client size %d server size %d\n\n\n\n", client_body_size, server_body_size);
+    //printf("\n\n\nHTTP SESSION DISCOVERED: client size %d server size %d\n\n\n\n", client_body_size, server_body_size);
 
-    // the packet instructions can be used directly as is.. and itll modify ACK/SEQ, IPs, and ports.....
-    // but thats filterable! ;) lets really fuck shit up.
+    source_ip = IP_prepare_ascii(&hptr->source_ip, &hptr->source_ipv6);
+    destination_ip = IP_prepare_ascii(&hptr->destination_ip, &hptr->destination_ipv6);
 
-    
-    
+    new_source_ip = source_ip;
+    new_destination_ip = destination_ip;
+
+    i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip,&new_dest_port,  &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
+
+    if (i == 0) goto end;
+
+    // what to do with this http session?
+    if (i == 1) {
+        // add as is...
+        // fall through....
+    } else if (i == 2) {
+        // ignoroe commpletely...
+        goto end;
+    } else if (i == 3) {
+        // we wanna modify parameters, and then add
+        if (new_source_ip != source_ip) {
+            free(source_ip);
+            source_ip = NULL;
+            IP_prepare(new_source_ip, &hptr->source_ip, &hptr->source_ipv6, &is_src_ipv6);
+        }
+
+        if (new_destination_ip != destination_ip) {
+            free(destination_ip);
+            destination_ip = NULL;
+            IP_prepare(new_destination_ip, &hptr->destination_ip, &hptr->destination_ipv6, &is_dest_ipv6);
+        }
+
+        hptr->source_port = new_source_port;
+        hptr->destination_port = new_dest_port;
+
+        // gotta change what we gotta change.
+        iptr = hptr->packet_list;
+        while (iptr != NULL) {
+            // is this client side?
+            if (iptr->client) {
+                iptr->source_ip = hptr->source_ip;
+                iptr->destination_ip = hptr->destination_ip;
+                CopyIPv6Address(&iptr->source_ipv6, &hptr->source_ipv6);
+                CopyIPv6Address(&iptr->destination_ipv6, &hptr->destination_ipv6);
+
+                iptr->source_port = hptr->source_port;
+                iptr->destination_port = hptr->destination_port;
+            } else {
+                // or server side?
+                iptr->destination_ip = hptr->source_ip;
+                iptr->source_ip = hptr->destination_ip;
+                CopyIPv6Address(&iptr->destination_ipv6, &hptr->source_ipv6);
+                CopyIPv6Address(&iptr->source_ipv6, &hptr->destination_ipv6);
+
+                iptr->destination_port = hptr->source_port;
+                iptr->source_port = hptr->destination_port;
+            }
+
+
+            iptr = iptr->next;
+        }
+
+
+    }
+
+
+    // need a way to control the replay, etc everywhere... some places use globals (like python class) and others dont.. stupid
+    // *** fix
+    if ((aptr = InstructionsToAttack(ctx, hptr->packet_list,9999999, 1)) == NULL) goto end;
+
+    // add to main attack list
+    aptr->next = ctx->attack_list;
+    ctx->attack_list = aptr;
+
+    // as of now its completed, and added
+
+    ret = 1;
     end:;
 
     hptr->processed = 1;
 
     if (client_body != NULL) free(client_body);
     if (server_body != NULL) free(server_body);
+    if (source_ip != NULL) free(source_ip);
+    if (destination_ip != NULL) free(destination_ip);
+    if (new_destination_ip != NULL) free(new_destination_ip);
+    if (new_source_ip != NULL) free(new_source_ip);
 
     return ret;
 }

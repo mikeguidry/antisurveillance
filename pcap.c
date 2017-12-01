@@ -1,3 +1,13 @@
+/*
+
+minimal pcap format support
+
+It allows loading packets from a PCAP to filter out HTTP sessions to include as attacks.  It allows saving to a PCAP file the packets which could be replayed
+using other rudimentary tools.  A subsystem for packet capturing can also log to a PCAP file.  It's pretty modular overall.
+
+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -471,77 +481,4 @@ int PCAP_OperationRemove(AS_context *ctx, char *filename) {
     }
 
     return ret;
-}
-
-
-
-
-// PCAP to python callbackk (w option to use or not?) or change client/server body
-int PCAPtoPyCallback(AS_context *ctx, char *filename, int dest_port, int count, int interval, FilterInformation *pcap_flt) {
-    PacketInfo *packets = NULL;
-    PacketBuildInstructions *packetinstructions = NULL;
-    PacketBuildInstructions *final_instructions = NULL;
-    FilterInformation flt;
-    AS_attacks *aptr = NULL;
-    AS_attacks *ret = NULL;
-    int total = 0;
-    int pcount = 0;
-
-    // load pcap file into packet information structures
-    if ((packets = PcapLoad(filename)) == NULL) return 0;
-    
-    // turn those packet structures into packet building instructions via analysis, etc
-    if ((packetinstructions = PacketsToInstructions(packets)) == NULL) goto end;
-
-    // prepare the filter for detination port
-    FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
-    //FilterPrepare(&flt, 0, 0); // *** just for testing
-    
-    pcount = L_count((LINK *)packetinstructions);
-    // If its more than 100k lets use multiple threads to complete it faster
-    if (pcount > MAX_SINGLE_THREADED) {
-        // for high amounts of connections.. we want to use pthreads..
-        if ((packetinstructions = ThreadedInstructionsFindConnection(ctx, &packetinstructions, &flt, 16, count, interval)) == NULL) goto end;
-    
-        total += L_count((LINK *)ctx->attack_list);
-
-        //printf("")
-        // it needs to be add ordered.. if we add it first in the list then it will cut off packets 2 -> end
-        //L_link_ordered((LINK **)&ctx->attack_list,(LINK *) aptr);
-    } else {
-        // loop and load as many of this type of connection as possible..
-        while (1) {
-            final_instructions = NULL;
-
-            // find the connection for some last minute things required for building an attack
-            // from the connection
-            if ((final_instructions = InstructionsFindConnection(&packetinstructions, pcap_flt ? pcap_flt : &flt)) == NULL) goto end;
-        
-            if (final_instructions == NULL) break;
-
-            // create the attack structure w the most recent filtered packet building parameters
-            if ((aptr = InstructionsToAttack(ctx, final_instructions, count, interval)) == NULL) goto end;
-
-            // add to the attack list being executed now
-            aptr->next = ctx->attack_list;
-            ctx->attack_list = aptr;
-
-            total++;
-        }
-    }
-
-    // if it all worked out...
-    ret = aptr;
-
-    //printf("perfecto we generated an attack directly from a packet capture..\n%d count\n", total);
-    end:;
-    //printf("\r\nTime to load full file: %d\n", time(0) - start_ts);
-    PacketsFree(&packets);
-
-    PacketBuildInstructionsFree(&packetinstructions);
-
-    if (ret == NULL)
-        PacketBuildInstructionsFree(&final_instructions);
-
-    return total;
 }

@@ -447,6 +447,8 @@ int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4) {
 }
 
 // find a traceroute queue structure by the identifier it used
+// This was taking forever (15-20 minutes) to load 250k traceroute context.  I inserted this
+// jump table, and changed the format from ASCII to binary for saving/loading.  It is less than a second now.
 int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier) {
     TracerouteQueue *qptr = ctx->traceroute_queue_identifier[identifier % JTABLE_SIZE];
     while (qptr != NULL) {
@@ -1139,7 +1141,7 @@ int Traceroute_AnalyzeResponses(AS_context *ctx) {
 }
 
 
-
+// This being put into the main loop will ensure that there are always the max number of active traceroute queues.
 int Traceroute_MaxQueue(AS_context *ctx) {
     int ret = 0;
     int tcount = 0;
@@ -1189,12 +1191,7 @@ int Traceroute_MaxQueue(AS_context *ctx) {
 // *** need to add UDP/TCP traceroute support for retry
 int Traceroute_Perform(AS_context *ctx) {
     TracerouteQueue *tptr = ctx->traceroute_queue;
-    struct icmphdr icmp;
-    PacketBuildInstructions *iptr = NULL;
-    AttackOutgoingQueue *optr = NULL;
     int i = 0, n = 0;
-    TraceroutePacketData *pdata = NULL;
-    TracerouteSpider *sptr = NULL;
     int ret = 0;
     // timestamp required for various states of traceroute functionality
     int ts = time(0);
@@ -1204,9 +1201,6 @@ int Traceroute_Perform(AS_context *ctx) {
 
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
-
-    // zero icmp header since its in the stack
-    memset(&icmp, 0, sizeof(struct icmphdr));
 
     printf("Traceroute_Perform: Queue %d [completed %d] max: %d\n", L_count((LINK *)tptr), Traceroute_Count(ctx, 1, 1), ctx->traceroute_max_active);
 
@@ -1525,8 +1519,9 @@ TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *ho
 
 
 
-// load data from a file.. this is for development.. so I can use the python interactive debugger, and write various C code
-// for the algorithms required to determine the best IP addresses for manipulation of the mass surveillance networks
+//  Loads data from a file, and does its best to ensure the structures are exactly as they were logged.  It ensures
+//  we dont have to waste extra resources for processing whenever it was dumped directly from memory in an exact order.
+//  This and a jumpp table for traceroute queue identifiers helped it load in 15-20minutes down to around 1-2seconds.
 int Spider_Load(AS_context *ctx, char *filename) {
     FILE *fd = NULL, *fd2 = NULL;
     char buf[1024];
@@ -1625,11 +1620,8 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
         }
 
-        if (dentry.code && dentry.code > 1) {
-            // link into main list
-            //Traceroute_Insert(ctx, snew);
-
-    
+        // if its more than just a queue.. we wanna link it together.. (for 2/3)
+        if (dentry.code && dentry.code > 1) {    
             Spider_IdentifyTogether(ctx, snew);
 
         }
@@ -1650,6 +1642,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
 // load data from a file.. this is for development.. so I can use the python interactive debugger, and write various C code
 // for the algorithms required to determine the best IP addresses for manipulation of the mass surveillance networks
+// This was the extremely slow version... at least this was 50% of the issues... FindQueueByIdentifier was the other
 int Spider_Load_old(AS_context *ctx, char *filename) {
     FILE *fd = NULL, *fd2 = NULL;
     char buf[1024];
@@ -1801,7 +1794,8 @@ int Spider_Load_old(AS_context *ctx, char *filename) {
 }
 
 
-
+// no need to thread to load things when its instant now..
+// *** remove
 void *thread_spider_load(void *arg) {
     AS_context *ctx = (AS_context *)arg;
 
@@ -1815,6 +1809,7 @@ void *thread_spider_load(void *arg) {
 }
 
 
+// *** remove
 int Spider_Load_threaded(AS_context *ctx, char *filename) {
     if (pthread_create(&ctx->traceroute_thread, NULL, thread_spider_load, (void *)ctx) != 0) {
         return Spider_Load(ctx, filename);
@@ -1902,12 +1897,14 @@ int Traceroute_Init(AS_context *ctx) {
 
 /*
     // UDP TTL packets come back as ICMP.. so no need to add a new handler
+    // *** remove
     // lets add UDP traceroute processing
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
     FilterPrepare(flt, FILTER_PACKET_UDP, 0);
     if (Network_AddHook(ctx, flt, &Traceroute_IncomingUDP) != 1) goto end;
-    */
-/*
+
+    // Same.. it'll reach us as  ICMP from the  routers..
+
     // lets add TCP traceroute processing
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
     FilterPrepare(flt, FILTER_PACKET_TCP, 0);
@@ -1974,6 +1971,7 @@ int Traceroute_Count(AS_context *ctx, int return_completed, int count_disabled) 
 
     return ret;
 }
+
 
 
 // find a traceroute structure by address.. and maybe check ->target as well (traceroute queue IP as well as hops)
@@ -2097,10 +2095,6 @@ int Traceroute_Watchdog(AS_context *ctx) {
     hptr->HistoricDataCalculated[hptr->HistoricCurrent].ts = ts;
     hptr->HistoricDataCalculated[hptr->HistoricCurrent].max_setting = ctx->traceroute_max_active;
 
-    //printf("count: %d ts: %d max %d\n", interval_sum, ts, ctx->traceroute_max_active);
-
-    // increase historic counter.. so we can keep track of more
-    
 
     if (hptr->HistoricCurrent == (1024*10))
         hptr->HistoricCurrent = 0;
@@ -2123,8 +2117,6 @@ int Traceroute_Watchdog(AS_context *ctx) {
                 goto end;
             }
 
-            //printf("cptr[i].count = [%d, %d]\n", i, cptr[i]->count);
-            //printf("Against %d\n", hptr->HistoricDataCalculated[hptr->HistoricCurrent].count);
 
             // lets get percentage change...
             perc_change = (float)((float)hptr->HistoricDataCalculated[hptr->HistoricCurrent].count / (float)cptr[i]->count);
@@ -2147,13 +2139,6 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
         }   
         
-        /*     if (good >= (total_historic_to_use/2)) ctx->traceroute_max_active += 300;
-        //if (good == 1) ctx->traceroute_max_active += 50;
-        else if (good > (total_historic_to_use/4)) ctx->traceroute_max_active += ((5+rand()%5) - rand()%10);
-        
-        else if (good <= (total_historic_to_use/4)) ctx->traceroute_max_active -= 50;
-        */
-
         if (ctx->traceroute_max_active < 50) ctx->traceroute_max_active = 50;
 
         if (ctx->traceroute_max_active > 10000) ctx->traceroute_max_active = 10000;
@@ -2174,6 +2159,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
     hptr->HistoricCurrent++;
     return ret;
 }
+
 
 
 // reset all queries retry counter to 0
@@ -2587,17 +2573,6 @@ int Research_BuildSmartASAttack_version_1(AS_context *ctx, int country) {
 */
 
 
-// asn number can be used as a secondary type of country code to link entries together without all information
-// such as traceroute respopnsses
-
-// Content context... for long term message/relationship fabrication
-typedef struct _content_context {
-    int size;
-    struct _content_context *next;
-
-} ContentContext;
-
-
 
 // This will call a python function  which is meant to generate client, and server side content
 int ResearchPyCallbackContentGenerator(AS_context *ctx, int language, int site_id, int site_category, char *IP_src, char *IP_dst, char *Country_src, char *Country_dst, char **client_body, int *client_body_size, char **server_body, int *server_body_size) {
@@ -2950,3 +2925,36 @@ IPAddresses *GenerateIPAddressesCountry(AS_context *ctx, char *country, int coun
     return ret;
 }	
 
+typedef struct _attack_targets  {
+    struct _attack_targets *next;
+    char *country; // for instanec, US?.. GB? (gb from US wouldd target all US->EURO fiber taps)
+    int count;
+    int identifier;  // categorial identifier to find connections later for specific targets to manipulate.. like a sub identifier
+    int ts;          // last timestamp intelligence management affected, or used
+    int language;
+    ]
+} AttackTarget;
+
+/*
+
+we need some sort of control mechanism to manipulate things  in a way to gather intelligence which will help overall operatioons, and attacks.
+it needs to gather sites, urls, identities, email addresses, and various routing information.  It should guess, or begin duties for future attacks
+minutes, or hours before their smart paths being calculated for most damaging performances.
+
+1) generate IP addresses for a target region/country
+2) initiate traceroutes on those targets setting priority depending on prior dataset, and aggressive-ness
+3) enable/disable local packet to www (either for python callback manipulation, or directly to real attacks)
+   these www sessions can also use somme python regexp, etc to find usernames, passwords, peoples names, email addresses, etc which can populate
+   those sections
+4) if having enough raw data then it should attempt to tokenize/macro-ize the data so that the subsystem can easily replace things
+   without having to call python every time.. this will increease overall output substantially commpared to having a unique body
+   each time from python
+5) determine if enough information for attacks exist at some interval.. if found then generate the bodies, or pass to python to gete generated..
+   or modify an already queued attack structure copyingg things, and changing whats necessary
+6) determine if an attack should  be disqualified due to overuse, etc... (it can be random, or change its parameters over time depending on location,
+   virtual traceroute information,etc)
+
+*/
+int Research_Intelligence_Management(AS_context *ctx) {
+
+}
