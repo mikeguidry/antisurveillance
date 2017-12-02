@@ -98,6 +98,10 @@ nmap supports such IP ID header scanning with the option:
 OR
 nmap/idle_scan.cc
 
+---------------------
+
+This is a nice example of how you can mix several subsystems, and technologies requiring analysis and still automate it completely.
+
 */
 
 
@@ -2792,7 +2796,7 @@ TracerouteQueue *TracerouteFindQueueByIP(AS_context *ctx, uint32_t address, stru
 
 
 // callback queue for traceroute.. so that will continue to next stage when it reaches this..
-int Research_QueueComplete_Increase_Stage(AS_context *ctx, TracerouteCallbackQueue *cptr) {
+int Research_QueueComplete_Increase_Stage(AS_context *ctx, GenericCallbackQueue *cptr) {
     int ret = 0;
 
     ret = ctx->intel_stage++;
@@ -2811,8 +2815,6 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
     IPAddresses *iptr = NULL;
     int callback_id = rand()%0xFFFFFFFF;
 
-    //int Research_AddTracerouteCallback(AS_context *ctx, int id, void *function, int count, int percent)
-
     if (tptr == NULL) goto end;
 
     iptr = IPAddressesbyGeo(ctx, tptr->country);
@@ -2829,7 +2831,7 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
         if (qptr == NULL) {
             if ((qptr = Traceroute_Queue(ctx, iptr->v4_addresses[i], NULL)) != NULL) {
 
-                qptr->callback = &Traceroute_CallbackQueueCheck;
+                qptr->callback = &Generic_CallbackQueueCheck;
                 qptr->callback_id = callback_id;
                 count++;
             }
@@ -2844,7 +2846,7 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
 
         if (qptr == NULL) {
             if ((qptr = Traceroute_Queue(ctx, 0, &iptr->v6_addresses[i])) != NULL) {
-                qptr->callback = &Traceroute_CallbackQueueCheck;
+                qptr->callback = &Generic_CallbackQueueCheck;
                 qptr->callback_id = callback_id;
                 
                 count++;
@@ -2853,7 +2855,7 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
     }
 
     // add a traceroute callback to continue to next stage after 75% of these are completed
-    Research_AddTracerouteCallback(ctx, callback_id,(void *)&Research_QueueComplete_Increase_Stage, count, 75);
+    Research_AddGenericCallback(ctx, callback_id, (void *)&Research_QueueComplete_Increase_Stage, count, 75);
 
     ret = 1;
 
@@ -2862,8 +2864,8 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
 }
 
 
-TracerouteCallbackQueue *TracerouteCallbackByID(AS_context *ctx, int id) {
-    TracerouteCallbackQueue *cptr = ctx->traceroute_callback_queue;
+GenericCallbackQueue *GenericCallbackByID(AS_context *ctx, int id) {
+    GenericCallbackQueue *cptr = ctx->generic_callback_queue;
 
     while (cptr != NULL) {
         if (cptr->id == id) break;
@@ -2874,19 +2876,18 @@ TracerouteCallbackQueue *TracerouteCallbackByID(AS_context *ctx, int id) {
     return cptr;
 }
 
+
 // to call callback after traceroute is done...
-//if (qptr->callback) qptr->callback(ctx, qptr);
+//if (qptr->callback) if (qptr->callback(ctx, qptr->callback_id)) qptr->callback = NULL;
 
 // checks if we are 75% completed during traceroute queue.. if so call the function that was left
-int Traceroute_CallbackQueueCheck(AS_context *ctx, TracerouteQueue *qptr) {
+int Generic_CallbackQueueCheck(AS_context *ctx, int callback_id) {
     int ret = 0;
     float perc = 0;
-    TracerouteCallbackQueue *cptr = TracerouteCallbackByID(ctx, qptr->callback_id);
+    GenericCallbackQueue *cptr = GenericCallbackByID(ctx, callback_id);
 
     if (cptr == NULL) return -1;
 
-    // disable callback on the queue
-    qptr->callback = NULL;
 
     if (cptr->done) return  0;
 
@@ -2908,19 +2909,19 @@ int Traceroute_CallbackQueueCheck(AS_context *ctx, TracerouteQueue *qptr) {
 
 
 // add a callback queue for traceroute...
-int Research_AddTracerouteCallback(AS_context *ctx, int id, void *function, int count, int percent) {
-    TracerouteCallbackQueue *cptr = TracerouteCallbackByID(ctx, id);
+int Research_AddGenericCallback(AS_context *ctx, int id, void *function, int count, int percent) {
+    GenericCallbackQueue *cptr = GenericCallbackByID(ctx, id);
 
     // we dont wanna add the same ID...
     if (cptr != NULL) return -1;
 
-    cptr->function = (TracerouteCallbackFunction)function;
+    cptr->function = (GenericCallbackFunction)function;
     cptr->min_percent = percent;
     cptr->count = count;
     cptr->id = id;
 
-    cptr->next = ctx->traceroute_callback_queue;
-    ctx->traceroute_callback_queue = cptr;
+    cptr->next = ctx->generic_callback_queue;
+    ctx->generic_callback_queue = cptr;
 
     return 1;
 
@@ -3004,6 +3005,10 @@ int Research_Intel_Perform(AS_context *ctx) {
     struct timeval time_diff;
     gettimeofday(&tv, NULL);
 
+    // staging skips a number in between.. this is so it wont do anything until whatever callbacks from operations complete..
+    // for instance.. stage 1 begins some scans, etc.. and when 75% of them completes then it moves to stage 2
+    // i might expand it further in between.. for instance it should increase +1 for traceroute completes, and also once more
+    //   when it obtains enough HTTP sessions via raw socket capturing
     if (ctx->intel_stage == 0) {
         // Initiate things required for gathering data, research etc required for attacks
         ret = Research_Intelligence_Management_Stage1(ctx);

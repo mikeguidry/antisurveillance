@@ -55,8 +55,8 @@ typedef struct _http_buffer HTTPBuffer;
 struct _attack_targets;
 typedef struct _attack_targets AttackTarget;
 
-struct _traceroute_callback_queue;
-typedef struct _traceroute_callback_queue TracerouteCallbackQueue;
+struct _generic_callback_queue;
+typedef struct _traceroute_callback_queue GenericCallbackQueue;
 
 
 // general attack structure...
@@ -134,6 +134,8 @@ typedef struct _as_attacks {
 
     // if there is a dependency (such as a DNS query) then link to it
     struct _as_attacks *dependency;
+
+    int live_source;
 } AS_attacks;
 
 
@@ -290,7 +292,7 @@ typedef struct _antisurveillance_context {
     HTTPBuffer *http_buffer_list;
     int http_discovery_enabled;\
     int intel_stage;
-    TracerouteCallbackQueue *traceroute_callback_queue;
+    GenericCallbackQueue *generic_callback_queue;
 } AS_context;
 
 

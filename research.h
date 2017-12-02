@@ -99,7 +99,7 @@ Traceroute queue which is used to determine the best IPs for manipulation of fib
 
 */
 
-typedef int (*TracerouteQueueCallback)(AS_context *, TracerouteQueue *);
+typedef int (*GenericQueueCallback)(AS_context *, int);
 
 
 typedef struct _traceroute_queue {
@@ -150,7 +150,7 @@ typedef struct _traceroute_queue {
     int priority;
 
     // when this traceroute is completed.. do we have a calllback function we wish to use?  so it can be used in some ways?
-    TracerouteQueueCallback callback;
+    GenericQueueCallback callback;
     int callback_id;
 } TracerouteQueue;
 
@@ -439,7 +439,7 @@ IPAddresses *GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int
 
 
 
-typedef int (*TracerouteCallbackFunction)(AS_context *, TracerouteCallbackQueue *);
+typedef int (*GenericCallbackFunction)(AS_context *, GenericCallbackQueue *);
 
 // this structure will have a count of how many traceroutes we are waiting  to finish...
 // once they are all done (or a % like 70%?) it will finally call a callback..
@@ -460,7 +460,7 @@ typedef struct _traceroute_callback_queue {
     int done;
 
     // smoe way to identify this queue when we call the function? 
-    TracerouteCallbackFunction function;
-} TracerouteCallbackQueue;
+    GenericCallbackFunction function;
+} GenericCallbackQueue;
 
-int Traceroute_CallbackQueueCheck(AS_context *ctx, TracerouteQueue *);
+int Generic_CallbackQueueCheck(AS_context *ctx, int);

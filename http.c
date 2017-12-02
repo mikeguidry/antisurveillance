@@ -818,6 +818,7 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
                 iptr->destination_port = hptr->source_port;
                 iptr->source_port = hptr->destination_port;
             }
+            
             iptr = iptr->next;
         }
     }
@@ -883,6 +884,10 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 
     // that concludes all packets
     aptr->packet_build_instructions = build_list;
+
+    // lets set as live source..
+    // or we need to use some kinda callbacks like traceroutee queu for 75% completion
+    aptr->live_source = 1;
 
     // now lets build the low level packets for writing to the network interface
     BuildPackets(aptr);    
