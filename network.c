@@ -427,6 +427,9 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         goto end;
     }
 
+
+
+
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
 
@@ -441,9 +444,6 @@ int process_packet(AS_context *ctx, char *packet, int size) {
             r = nptr->incoming_function(ctx, iptr);
             
             nptr->bytes_processed += size;
-            
-            // if the function returned 1 then it wants the structure for use..  we are done (we dont want to free it)
-            if (r) break;
         }
 
         // move to the next network filter to see if it wants the packet
@@ -459,7 +459,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     PacketsFree(&pptr);
 
     // dont free.. function wanted it.
-    if (r == 0) PacketBuildInstructionsFree(&iptr);
+    PacketBuildInstructionsFree(&iptr);
 
     return ret;
 }
@@ -714,7 +714,7 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
 
 
 // merge this with the other attackqueueadd.. and make 2 smaller functions for each input type..
-int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr) {
+int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, int no_block) {
     int ret = 0;
     AttackOutgoingQueue *optr = NULL;
 
@@ -734,7 +734,7 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr) {
         optr->ctx = ctx;
 
         // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-        if (OutgoingQueueAdd(ctx, optr, 1) == 0) {
+        if (OutgoingQueueAdd(ctx, optr, no_block ? 1 : 0) == 0) {
             // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
             if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
             // if we for some reason cannot pthread (prob memory).. lets do it blocking

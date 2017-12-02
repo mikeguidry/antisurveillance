@@ -974,7 +974,7 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     iptr->ok = 1;
 
     // calculate data size from udp header
-    data_size = ntohs(p->udp.len) - sizeof(struct udphdr);
+    data_size = ntohs(p->udp.len);// - sizeof(struct udphdr);
     
     if (data_size > 0) {
         if ((data = (char *)malloc(data_size)) == NULL) goto end;
@@ -1057,7 +1057,7 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     CopyIPv6Address(&iptr->destination_ipv6, &p->ip.ip6_dst);
 
     // how much data is present in this packet?
-    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen) - sizeof(struct packeticmp6);
+    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen);// - sizeof(struct packeticmp6);
 
     // set packet as OK (can disqualify from checksum)
     iptr->ok = 1;
@@ -1700,4 +1700,24 @@ void PacketBuildInstructionsFree(PacketBuildInstructions **list) {
     return;
 }
 
-    
+
+// replicate instructions structure
+PacketBuildInstructions *InstructionsDuplicate(PacketBuildInstructions *sptr) {
+    PacketBuildInstructions *iptr = NULL;
+
+    if (sptr == NULL) goto end;
+
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+
+    memcpy(iptr, sptr, sizeof(PacketBuildInstructions));
+
+    //int PtrDuplicate(char *ptr, int size, char **dest, int *dest_size) {
+    PtrDuplicate(sptr->data, sptr->data_size, &iptr->data, &iptr->data_size);
+    PtrDuplicate(sptr->options, sptr->options_size, &iptr->options, &iptr->options_size);
+    PtrDuplicate(sptr->packet, sptr->packet_size, &iptr->packet, &iptr->packet_size);
+
+    iptr->aptr = sptr->aptr;
+
+    end:;
+    return iptr;
+}

@@ -984,27 +984,28 @@ static PyObject *PyASC_TracerouteStatus2(PyAS_Config* self) {
     if (self->ctx) {
         sptr = self->ctx->traceroute_spider;
 
-        if (sptr != NULL) {
-            while (sptr != NULL) {
-                for (i = 0; i < MAX_TTL; i++) {
+        while (sptr != NULL) {
+                if (sptr->ttl)  {
                     ttl_count[sptr->ttl]++;
-                }
-                
-                sptr = sptr->next;
+                    count++;
             }
-                
-            if ((PStatusList = PyList_New(MAX_TTL)) == NULL) {
-                PyErr_Print();
-                return NULL;
-            }
-            for (i = 0; i < MAX_TTL; i++) {
-                printf("2. ttl_count[%d] = %d\n", i, ttl_count[i]);
-                
-                PyList_SET_ITEM(PStatusList, i, PyLong_FromLong(ttl_count[i]));
-            }
-
-            return PStatusList; 
+            
+            sptr = sptr->next;
         }
+            
+        if ((PStatusList = PyList_New(MAX_TTL)) == NULL) {
+            PyErr_Print();
+            return NULL;
+        }
+        printf("total %d\n", count);
+
+        for (i = 0; i < MAX_TTL; i++) {
+            printf("2. ttl_count[%d] = %d\n", i, ttl_count[i]);
+            
+            PyList_SET_ITEM(PStatusList, i, PyLong_FromLong(ttl_count[i]));
+        }
+
+        return PStatusList; 
     }
 
     Py_INCREF(Py_None);

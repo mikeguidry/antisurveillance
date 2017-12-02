@@ -38,8 +38,6 @@ If this is the damage I can do alone... what do you  think will happen in the fu
 #define TEST
 
 // Perform one iteration of each attack structure that was queued
-// ***  todo: we can thread off separate threads for different types of attacks later..
-// depending on scripting, etc
 int AS_perform(AS_context *ctx) {
     AS_attacks *aptr = ctx->attack_list;
     attack_func func;
@@ -53,7 +51,7 @@ int AS_perform(AS_context *ctx) {
     
     // enumerate through each attack in our list
     while (aptr != NULL) {
-        printf("perform: aptr %p\n", aptr);
+        //printf("perform: aptr %p\n", aptr);
         // try to lock this mutex
         if (pthread_mutex_trylock(&aptr->pause_mutex) == 0) {
             // if we need to join this thread (just in case pthread will leak otherwise)
@@ -62,22 +60,22 @@ int AS_perform(AS_context *ctx) {
                 aptr->join = 0;
             }
             
-            printf("aptr %p next %p\n", aptr, aptr->next);
+            //printf("aptr %p next %p\n", aptr, aptr->next);
             if (!aptr->paused && !aptr->completed) {
-                printf("seems ok %p\n", aptr->packet_build_instructions);
+                //printf("seems ok %p\n", aptr->packet_build_instructions);
                 r = 0;
                 // if we dont have any prepared packets.. lets run the function for this attack
                 if (aptr->packets == NULL) {
-                    printf("packes null\n");
+                    //printf("packes null\n");
                     // call the correct function for performing this attack to build packets.. it could be the first, or some adoption function decided to clear the packets
                     // to call the function again
                     func = (attack_func)aptr->function;
                     if (func != NULL) {
-                        printf("func not null\n");
+                        //printf("func not null\n");
                         // r = 1 if we created a new thread
                         r = ((*func)(aptr) == NULL) ? 0 : 1;
                     } else {
-                        printf("build packets\n");
+                        //printf("build packets\n");
                         // no custom function.. lets use build packets
                         BuildPackets(aptr);
                     }
@@ -87,10 +85,10 @@ int AS_perform(AS_context *ctx) {
                     //printf("not pause\n");
                     // If those function were successful then we would have some packets here to queue..
                     if ((aptr->current_packet != NULL) || (aptr->packets != NULL)) {
-                        printf("packet queue\n");
+                        //printf("packet queue\n");
                         PacketQueue(ctx, aptr);
                     } else {
-                        printf("completed\n");
+                        //printf("completed\n");
                         // otherwise we mark as completed to just free the structure
                         aptr->completed = 1;
                     }
@@ -190,7 +188,7 @@ AS_context *AS_ctx_new() {
     Research_Init(ctx);
 
     // initialize traceroute filter & packet analysis function
-    //Traceroute_Init(ctx);
+    Traceroute_Init(ctx);
 
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
@@ -232,7 +230,7 @@ int Subsystems_Perform(AS_context *ctx) {
     network_process_incoming_buffer(ctx);
 
     // now move any current traceroute research forward
-    //Traceroute_Perform(ctx);
+    Traceroute_Perform(ctx);
 
     // now apply any changes, or further the blackhole attacks
     BH_Perform(ctx);

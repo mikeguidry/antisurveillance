@@ -28,6 +28,7 @@ no code updates will ever be required.
 #include "instructions.h"
 #include <Python.h>
 #include "scripting.h"
+#include <http_parser.h>
 
 
 char http_discovered_session_function[] = "http_session_discovered";
@@ -471,12 +472,8 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
     }
 
 
+    // prepare tuple with data for python script callback
     if ((pArgs = PyTuple_New(8)) == NULL) goto end;
-
-    //def content_generator(language,site_id,site_category,ip_src,ip_dst,ip_src_geo,ip_dst_geo,client_body,client_body_size,server_body,server_body_size):
-
-    
-    
     
     PyTuple_SetItem(pArgs, 0, pIP_src);
     PyTuple_SetItem(pArgs, 1, pIP_src);
@@ -497,9 +494,6 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
     sptr = Scripting_FindFunction(ctx, http_discovered_session_function);
 
     if (sptr) {
-
-        printf("FOUND function!\n");
-
         Scripting_ThreadPre(ctx, sptr);
 
         pFunc = PyObject_GetAttrString(sptr->pModule, http_discovered_session_function);
@@ -623,11 +617,15 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
     HTTPBuffer *hptr = ctx->http_buffer_list;
     char fname[32];
+    PacketBuildInstructions *packet_copy = NULL;
     //sprintf(fname, "packets/data_%d.dat", pcount);
     //FileWrite(fname, iptr->data, iptr->data_size);
 
     //sprintf(fname, "packets/raw_%d.dat", pcount++);
     //FileWrite(fname, iptr->packet, iptr->packet_size);
+
+    // if its not enabled.. just exit
+    if (!ctx->http_discovery_enabled) return 0;
     
     while (hptr != NULL) {
         // find connecction by source ports...
@@ -655,8 +653,6 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
             CopyIPv6Address(&hptr->source_ipv6, &iptr->source_ipv6);
             CopyIPv6Address(&hptr->destination_ipv6, &iptr->destination_ipv6);
 
-            hptr->packet_list = iptr;
-
             hptr->size = iptr->packet_size;
 
             //L_link_ordered((LINK **)&ctx->http_buffer_list, (LINK *)hptr);
@@ -670,9 +666,6 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
         // is this the  client, or  server packet?        
         iptr->client = (iptr->source_port == hptr->source_port);
 
-        // we are monitoring.. add to buffer
-        L_link_ordered((LINK **)&hptr->packet_list, (LINK *)iptr);
-
         hptr->size += iptr->packet_size;
 
         // look for FIN packet (end of connection)
@@ -684,6 +677,17 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
         // return ret 1 since we will use iptr
         ret  = 1;
+    }
+
+
+    // we wanna duplicate the instructions so that the network subsystem can continue to send to other modules afterwards
+    if (ret == 1) {
+        if ((packet_copy = InstructionsDuplicate(iptr)) != NULL) {
+            // we copied the next (which should be  NULL but just in case something else in future  gives us iptr)
+            packet_copy->next = NULL;
+            // link to our http buffer structure
+            L_link_ordered((LINK **)&hptr->packet_list, (LINK *)packet_copy);
+        }
     }
 
     end:;
@@ -933,8 +937,8 @@ int HTTPDiscover_Perform(AS_context *ctx) {
 
         }
 
-        // if this  connetion has timed out  then lets mark for deletion
-        if ((ts - hptr->ts) > HTTP_DISCOVER_TIMEOUT) hptr->processed=1;
+        // we give a maximum of this timmeout  (currently 10 seconds) for a complete http session to buffer
+        if ((ts - hptr->ts) > HTTP_DISCOVER_TIMEOUT) hptr->processed = 1;
 
         hptr = hptr->next;
 

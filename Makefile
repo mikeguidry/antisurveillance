@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7_d -I/usr/include/x86_64-linux-gnu/python2.7_d  -fno-strict-aliasing -Wdate-time -g -O0 -fstack-protector-strong -Wformat -Werror=format-security -g -O0 -Wall -Wstrict-prototypes -I/home/mike/antisurveillance/deps/geoip-api-c/libGeoIP
+CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7_d -I/usr/include/x86_64-linux-gnu/python2.7_d  -fno-strict-aliasing -Wdate-time -g -O0 -fstack-protector-strong -Wformat -Werror=format-security -g -O0 -Wall -Wstrict-prototypes -I/home/mike/antisurveillance/deps/geoip-api-c/libGeoIP -Ideps/http-parser
 
 DEPS = antisurveillance.h
 ODIR=obj

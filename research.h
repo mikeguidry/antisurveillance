@@ -3,6 +3,31 @@ struct _traceroute_spider;
 typedef struct _traceroute_spider TracerouteSpider;
 
 
+// search queue for finding paths
+typedef struct _search_queue {
+    struct _search_queue *next;
+
+    TracerouteSpider *spider_ptr;
+    int distance;
+
+} SearchQueue;
+
+// context for queue
+typedef struct _search_context {
+    SearchQueue *queue;
+
+    int min_distance;
+    SearchQueue *min_ptr;
+
+    SearchQueue *max_ptr;
+
+    int max_distance;
+    int count;
+
+} SearchContext;
+
+
+
 
 // one single dns record (response about a hostname, prepared to stay on record)
 // it can be reused for preparing further attacks against the same sites, etc
@@ -45,7 +70,10 @@ typedef struct _lookup_queue {
     int complete;
 
     uint32_t ipv4;
-    //struct in6_addr ipv6;
+    struct in6_addr ipv6;
+
+    uint32_t *ipv4_list;
+    struct in6_addr *ipv6_list;
 
     // how many responses? (different geos, etc)
     int count;
@@ -70,6 +98,10 @@ enum {
 Traceroute queue which is used to determine the best IPs for manipulation of fiber cables
 
 */
+
+typedef int (*TracerouteQueueCallback)(AS_context *, TracerouteQueue *);
+
+
 typedef struct _traceroute_queue {
     struct _traceroute_queue *next;
     struct _traceroute_queue *next_identifier;
@@ -116,15 +148,15 @@ typedef struct _traceroute_queue {
 
     // higher priorities are checked more often, and wont have a retry max
     int priority;
+
+    // when this traceroute is completed.. do we have a calllback function we wish to use?  so it can be used in some ways?
+    TracerouteQueueCallback callback;
+    int callback_id;
 } TracerouteQueue;
 
 
-// a way to stop recursion/inf loops while searching
-typedef struct _search_context {
-    TracerouteSpider *first;
-    TracerouteSpider *second;
-    int seen;
-} SearchContext;
+
+
 
 // this linked list is for the final data w traceroute responses
 // it has to link next as a regular way to contain the data
@@ -186,8 +218,6 @@ typedef struct _traceroute_spider {
     int asn;
 
     uint32_t identifier_id;
-
-    SearchContext search_context;
 } TracerouteSpider;
 
 
@@ -231,11 +261,11 @@ int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 void get_local_ipv6(struct in6_addr *dst);
 uint32_t get_local_ipv4();
 int Traceroute_Init(AS_context *ctx);
-int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6);
+TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6);
 int Traceroute_Count(AS_context *ctx, int, int);
 int Spider_Print(AS_context *ctx);
 
-int Traceroute_Search(AS_context *, TracerouteSpider *start, TracerouteSpider *looking_for, int distance, int);
+int Traceroute_Search(AS_context *, SearchContext *, TracerouteSpider *start, TracerouteSpider *looking_for, int distance, int);
 int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second, int);
 int Spider_Load(AS_context *ctx, char *filename);
 TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int ttl);
@@ -379,11 +409,13 @@ typedef struct _ip_addresses {
     // real as possible is best.
     int time_restrictions;
 
-    uint32_t *v4_adddresses;
+    uint32_t *v4_addresses;
     int v4_count;
+    int v4_buffer_size;
 
     struct in6_addr *v6_addresses;
     int v6_count;  
+    int v6_buffer_size;
 
     // so we have easy access to all traceroutes relating to these IP addresses
     // *** maybe dont need?
@@ -401,4 +433,34 @@ int testcallback(AS_context *ctx);
 int Spider_Load_threaded(AS_context *ctx, char *filename);
 SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url);
 SiteURL *URL_Add(SiteIdentifier *sident, char *url);
-IPAddresses *GenerateIPAddressesCountry(AS_context *ctx, char *country, int count);
+
+IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int count);
+IPAddresses *GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int count);
+
+
+
+typedef int (*TracerouteCallbackFunction)(AS_context *, TracerouteCallbackQueue *);
+
+// this structure will have a count of how many traceroutes we are waiting  to finish...
+// once they are all done (or a % like 70%?) it will finally call a callback..
+// in this case it will force research management to go to the next stage for attacks..
+typedef struct _traceroute_callback_queue {
+    struct _traceroute_calllback_queue *next;
+
+    int id;
+    // we set this to how many we are awaiting to finish..
+    int count;
+
+    int completed;
+
+    // minimum percent required before we callback?
+    int min_percent;
+
+
+    int done;
+
+    // smoe way to identify this queue when we call the function? 
+    TracerouteCallbackFunction function;
+} TracerouteCallbackQueue;
+
+int Traceroute_CallbackQueueCheck(AS_context *ctx, TracerouteQueue *);

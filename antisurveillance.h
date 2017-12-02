@@ -52,6 +52,13 @@ typedef struct _ip_addresses IPAddresses;
 struct _http_buffer;
 typedef struct _http_buffer HTTPBuffer; 
 
+struct _attack_targets;
+typedef struct _attack_targets AttackTarget;
+
+struct _traceroute_callback_queue;
+typedef struct _traceroute_callback_queue TracerouteCallbackQueue;
+
+
 // general attack structure...
 // should support everything from syn packets, to virtual connections
 typedef struct _as_attacks {
@@ -278,10 +285,12 @@ typedef struct _antisurveillance_context {
 
 
     IPAddresses *ip_list;
+    AttackTarget *research_target_list;
 
     HTTPBuffer *http_buffer_list;
-
-
+    int http_discovery_enabled;\
+    int intel_stage;
+    TracerouteCallbackQueue *traceroute_callback_queue;
 } AS_context;
 
 

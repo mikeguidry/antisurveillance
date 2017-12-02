@@ -323,16 +323,51 @@ int Traceroute_RetryAll(AS_context *ctx) {
 
 
 
+SearchQueue *Context_FindQueue(AS_context *ctx, SearchContext *search_context, TracerouteSpider *sptr) {
+    SearchQueue *qptr = search_context->queue;
+
+    while (qptr != NULL) {
+        if (qptr->spider_ptr == sptr) break;
+        qptr = qptr->next;
+    }
+
+    return qptr;
+}
+
+
+int Search_Queue(AS_context *ctx, SearchContext *search_context, TracerouteSpider *sptr, int distance) {
+    SearchQueue *qptr = NULL;
+
+    if ((qptr = Context_FindQueue(ctx, search_context, sptr)) != NULL) {
+        // if distance is lower.. then lets change it.. *warning* maybe not thikning throug h every solution.. check
+        if (distance < qptr->distance) {
+            printf("QPTR Swardch context %p CHANGED distance from %d -> %d\n", qptr->spider_ptr, qptr->distance, distance);
+            qptr->distance = distance;
+        }
+    }
+
+    if ((qptr = (SearchQueue *)calloc(1, sizeof(SearchQueue))) == NULL) return -1;
+
+    qptr->spider_ptr = sptr;
+    qptr->distance = distance;
+
+    L_link_ordered((LINK **)&search_context->queue, (LINK *)qptr);
+
+    return 1;
+}
+
+
 
 
 // this can be handeled recursively because we have max TTL of 30.. its not so bad
-int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider *looking_for, int distance, int fuzzy) {
+int Traceroute_Search(AS_context *ctx, SearchContext *search_context, TracerouteSpider *start, TracerouteSpider *looking_for, int distance, int fuzzy) {
     int i = 0, n = 0;
     int ret = 0, r = 0;
     TracerouteSpider *sptr = NULL;
     TracerouteQueue *q[2];
     int d[MAX_TTL][2];
     int imaginary = 0;
+
 
     // if distance is moore than max ttl.. lets return
     if (distance >= MAX_TTL) return 0;
@@ -374,8 +409,9 @@ int Traceroute_Search(AS_context *ctx, TracerouteSpider *start, TracerouteSpider
             for (i = 0; i < MAX_TTL; i++) {
                 sptr = q[n]->responses[i];
                 if (sptr != NULL) {
+                    Search_Queue(ctx, search_context, sptr, distance + 1);
                     // recursively call using this structure
-                    r = Traceroute_Search(ctx, sptr, looking_for, distance + 1, imaginary);
+                    r = Traceroute_Search(ctx, search_context, sptr, looking_for, distance + 1, imaginary);
                 }
             }
         }
@@ -401,6 +437,7 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
     TracerouteSpider *srch_main = NULL;
     TracerouteSpider *srch_branch = NULL;
     int distance = 0;
+    SearchContext search_context;
 
     // make sure both were passed correctly
     if (!first || !second) return -1;
@@ -408,8 +445,10 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
     // if they are the same..
     if (first->hop_ip == second->hop_ip) return 1;
 
+    memset(&search_context, 0, sizeof(SearchContext));
+
     // we wanna call this function Traceroute_Search to find the distance  of the two spider parameters passed
-    distance = Traceroute_Search(ctx,first, second, 0, imaginary);
+    distance = Traceroute_Search(ctx, &search_context, first, second, 0, imaginary);
 
     // print distance to screen
     printf("distance: %d\n", distance);
@@ -501,6 +540,8 @@ void ConsolidateTTL(TracerouteQueue *qptr) {
     int ttl_list[MAX_TTL+1];
     int i = 0;
     int cur = 0;
+
+    memset(&ttl_list, 0, sizeof(int)*MAX_TTL);
 
     // loop and remove all completed ttls...
     while (i < qptr->max_ttl) {
@@ -746,7 +787,7 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
 
 
 // Queue an address for traceroute analysis/research
-int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6) {
+TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6) {
     TracerouteQueue *tptr = NULL;
     int ret = -1;
     int i = 0;
@@ -801,7 +842,7 @@ int Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6
     RandomizeTTLs(tptr);
 
     end:;
-    return ret;
+    return tptr;
 }
 
 
@@ -936,7 +977,7 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
 
         // if the packet building was successful
         if (i == 1)
-            NetworkQueueAddBest(ctx, iptr);
+            NetworkQueueAddBest(ctx, iptr, 0);
 
     }
 
@@ -1008,7 +1049,7 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
 
         // if the packet building was successful
         if (i == 1)
-            NetworkQueueAddBest(ctx, iptr);
+            NetworkQueueAddBest(ctx, iptr, 0);
     }
 
     PacketBuildInstructionsFree(&iptr);
@@ -2455,7 +2496,6 @@ int URL_macroize(AS_context *ctx, SiteIdentifier *siteptr, SiteURL *urlptr) {
 }
 
 
-
 // Adds a URL to a specific site for future attacks using that domain... so each can look very different
 SiteURL *URL_Add(SiteIdentifier *sident, char *url) {
     SiteURL *siteptr = (SiteURL *)calloc(1, sizeof(SiteURL));
@@ -2473,6 +2513,7 @@ SiteURL *URL_Add(SiteIdentifier *sident, char *url) {
     return siteptr;
 }
 
+// adds a site, and  url to that site if given.. http.c should send all headers  pulled here so the information can be reused
 SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
     int ret = 0;
     SiteIdentifier *siteptr = ctx->site_list;
@@ -2489,8 +2530,10 @@ SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
         siteptr->domain = strdup(site);
     }
 
-    if  ((uptr = URL_Add(siteptr, url)) != NULL) {
-        uptr->language = siteptr->language;
+    if (url) {
+        if  ((uptr = URL_Add(siteptr, url)) != NULL) {
+            uptr->language = siteptr->language;
+        }
     }
     
 
@@ -2498,11 +2541,11 @@ SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
 }
 
 
-
-IPAddresses *IPAddressesbyGeo(char *country) {
+// find generated, or loaded attack addresses by country
+IPAddresses *IPAddressesbyGeo(AS_context *ctx, char *country) {
     IPAddresses *iptr = ctx->ip_list;
     while (iptr != NULL) {
-        if (strcmp(iptr->)country, country)==0) {
+        if (strcmp(iptr->country, country)==0) {
             break;
         }
         iptr = iptr->next;
@@ -2511,45 +2554,128 @@ IPAddresses *IPAddressesbyGeo(char *country) {
     return iptr;
 }
 
+// obtains, and allocates if necessary an ip address structure (attack structure for a specific country)
+// *** add ways to separate countries into different regions by long/latitude distances.. automated w geoip/other db
+IPAddresses *IPAddressesPtr(AS_context *ctx, char *country) {
+    IPAddresses *iptr = IPAddressesbyGeo(ctx, country);
+
+    if (iptr == NULL) {
+        // allocate space for the main structure
+        if ((iptr = (IPAddresses *)calloc(1, sizeof(IPAddresses))) == NULL) return NULL;
+
+        iptr->next = ctx->ip_list;
+        ctx->ip_list = iptr;
+    }
+
+    return iptr;
+    
+}
+
+
+int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6) {
+    int ret = 0;
+    IPAddresses *iptr = IPAddressesPtr(ctx,country);
+    uint32_t *new_ipv4 = NULL;
+    struct in6_addr *new_ipv6 =  NULL;
+
+    if (iptr == NULL) return -1;
+
+    if (ip) {
+        // ipv4
+        if (iptr->v4_count == iptr->v4_buffer_size) {
+            // need more space (increase by 5000)
+            new_ipv4 = (uint32_t *)realloc(iptr->v4_addresses, sizeof(uint32_t) * (iptr->v4_count + 5000));
+            if (!new_ipv4) return -1;
+            iptr->v4_addresses = new_ipv4;
+            iptr->v4_buffer_size += 5000;
+        }
+
+        // add ip into the list
+        iptr->v4_addresses[iptr->v4_count++] = ip;
+    } else {
+        // ipv6
+        if (iptr->v6_count == iptr->v6_buffer_size) {
+            // need more space (increase by 5000)
+            new_ipv6 = (uint32_t *)realloc(iptr->v6_addresses, sizeof(struct in6_addr) * (iptr->v6_count + 5000));
+            if (!new_ipv6) return -1;
+            iptr->v6_addresses = new_ipv6;
+            iptr->v6_buffer_size += 5000;
+        }
+
+        // copy ipv6 addresss into the list
+        CopyIPv6Address(&iptr->v6_addresses[iptr->v6_count++], ipv6);
+    }
+
+    end:;
+    return ret;
+}
+
+
 
 // generates a list of ip addresses in a particular country..
 // then we can use these to traceroute to gather information, then fill in gaps
 // w virtual traceroutes, and create smart attacks on fiber taps etc
-IPAddresses *GenerateIPAddressesCountry(AS_context *ctx, char *country, int count) {
-    IPAddresses *ret = 0;
-    IPAddresses *iptr = IPAddressesbyGeo(country);
-    uint32_t *list = NULL;
+IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int count) {
+    int ret = 0;
     int i = 0;
-
-    if (iptr != NULL) return iptr;
-
-    // allocate space for the main structure
-    if ((iptr = (IPAddresses *)calloc(1, sizeof(IPAddresses))) == NULL) return -1;
-
-    iptr->country = strdup(country);
-
-    if ((list = (uint32_t *)calloc(1, sizeof(uint32_t) * count)) == NULL) goto end;
-
-    iptr->v4_count = count;
-    iptr->v4_adddresses = (uint32_t *)list;
+    uint32_t ip = 0;
 
     while (i < count) {
-        list[i] = ResearchGenerateIPCountry(ctx, country);
+        ip = ResearchGenerateIPCountry(ctx, country);
+
+        if (IPAddressesAddGeo(ctx, country, ip, NULL) == 1)
+            ret++;
 
         i++;
     }
-
-    ret = iptr;
-
-    iptr->next = ctx->ip_list;
-    ctx->ip_list = iptr;
-
-    end:;
-    if (list && !ret) free(list);
-    if (iptr && !ret) free(iptr);
-
+    
     return ret;
 }
+
+// generating IPv6 addresses is a little more difficult than ipv4.. traceorute will help us accomplish  somme things
+int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *address) {
+    int ret = 0;
+    int retry = 1000;
+    struct in6_addr ipv6;
+
+    // we need a limitation ono the amount of tries...
+    while (retry--) {
+
+        // ipv6.. gen
+
+        break;
+    }
+
+    // if we failed to do it in the amount of retries return no
+    if (!retry) return 0;
+
+    // copy the address
+    CopyIPv6Address(address, &ipv6);
+
+    // return success
+    return 1;
+}
+
+IPAddresses *GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int count) {
+    int ret = 0;
+    int i = 0;
+    struct in6_addr address_ipv6;
+
+    while (i < count) {
+        // if we can generate an ipv6 adadress correctly for this country
+        if (GenerateIPv6Address(ctx, country, &address_ipv6)) {
+            // then add it to the list
+            if (IPAddressesAddGeo(ctx, country, 0, &address_ipv6) == 1)
+            //if all  was OK, then count it
+                ret++;
+        }
+
+        i++;
+    }
+    
+    return ret;
+}
+
 
 
 /*
@@ -2612,7 +2738,6 @@ try to find a geo distance calculator to generate IPs furthest fromm the current
 */
 
 
-
 typedef struct _attack_targets  {
     struct _attack_targets *next;
     char *country; // for instanec, US?.. GB? (gb from US wouldd target all US->EURO fiber taps)
@@ -2625,9 +2750,11 @@ typedef struct _attack_targets  {
 AttackTarget *TargetRandom(AS_context *ctx) {
     AttackTarget *tptr = ctx->research_target_list;
     int c = L_count((LINK *)tptr);
+
     while (c-- && tptr != NULL) {
         tptr = tptr->next;
     }
+
     return tptr;
 }
 
@@ -2645,40 +2772,202 @@ int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, Tracero
 }
 
 
-int Research_Intelligence_Management(AS_context *ctx) {
-    int ret = -1;
+// *** ipv6
+TracerouteQueue *TracerouteFindQueueByIP(AS_context *ctx, uint32_t address, struct in6_addr *addressv6) {
     TracerouteQueue *qptr = NULL;
-    // 1) generate IP addresses for a target region/country
-    AttackTarget *tptr = TargetRandom(ctx);
+
+    qptr = ctx->traceroute_queue;
+    while (qptr != NULL) {
+        // ipv4
+        if (address && qptr->target_ip == address) break;
+        // ipv6
+        if (!address && CompareIPv6Addresses(&qptr->target_ipv6, addressv6)) break;
+
+        qptr = qptr->next;
+    }
+
+    return qptr;
+}
+
+
+
+// callback queue for traceroute.. so that will continue to next stage when it reaches this..
+int Research_QueueComplete_Increase_Stage(AS_context *ctx, TracerouteCallbackQueue *cptr) {
+    int ret = 0;
+
+    ret = ctx->intel_stage++;
+
+    end:;
+    return ret;
+}
+
+
+// add IP lists fromm a target to traceroute queue.. preparing a calllback when it is completed by 75%
+int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_queue) {
+    int ret = 0;
+    int i = 0;
+    int count = 0;
+    TracerouteQueue *qptr = NULL;
     IPAddresses *iptr = NULL;
-    int attack_count = 0;
+    int callback_id = rand()%0xFFFFFFFF;
+
+    //int Research_AddTracerouteCallback(AS_context *ctx, int id, void *function, int count, int percent)
 
     if (tptr == NULL) goto end;
 
-    iptr = IPAddressesbyGeo(tptr->country);
+    iptr = IPAddressesbyGeo(ctx, tptr->country);
     if (iptr == NULL) goto end;
-    // --------------------------------------------------------
-    /*
 
-        
-  
-    */
-    // 2) initiate traceroutes on those targets setting priority depending on prior dataset, and aggressive-ness
-    while (iptr != NULL) {
-        qptr = TracerouteFindQueueByIP(iptr);
-        if (qptr == NULL) Traceroute_Queue(iptr->address)
+    
 
-        ipptr = iptr->enxt;
+    // ipv4
+    for (i = 0; i < iptr->v4_count; i++) {
+        if (max_to_queue && count >= max_to_queue) break;
+
+        qptr = TracerouteFindQueueByIP(ctx, iptr->v4_addresses[i], NULL);
+
+        if (qptr == NULL) {
+            if ((qptr = Traceroute_Queue(ctx, iptr->v4_addresses[i], NULL)) != NULL) {
+
+                qptr->callback = &Traceroute_CallbackQueueCheck;
+                qptr->callback_id = callback_id;
+                count++;
+            }
+        }
     }
+
+    // ipv6
+    for (i = 0; i < iptr->v6_count; i++) {
+        if (max_to_queue && count >= max_to_queue) break;
+
+        qptr = TracerouteFindQueueByIP(ctx, NULL, &iptr->v6_addresses[i]);
+
+        if (qptr == NULL) {
+            if ((qptr = Traceroute_Queue(ctx, 0, &iptr->v6_addresses[i])) != NULL) {
+                qptr->callback = &Traceroute_CallbackQueueCheck;
+                qptr->callback_id = callback_id;
+                
+                count++;
+            }
+        }
+    }
+
+    // add a traceroute callback to continue to next stage after 75% of these are completed
+    Research_AddTracerouteCallback(ctx, callback_id,(void *)&Research_QueueComplete_Increase_Stage, count, 75);
+
+    ret = 1;
+
+    end:;
+    return ret;
+}
+
+
+TracerouteCallbackQueue *TracerouteCallbackByID(AS_context *ctx, int id) {
+    TracerouteCallbackQueue *cptr = ctx->traceroute_callback_queue;
+
+    while (cptr != NULL) {
+        if (cptr->id == id) break;
+
+        cptr = cptr->next;
+    }
+
+    return cptr;
+}
+
+// to call callback after traceroute is done...
+//if (qptr->callback) qptr->callback(ctx, qptr);
+
+// checks if we are 75% completed during traceroute queue.. if so call the function that was left
+int Traceroute_CallbackQueueCheck(AS_context *ctx, TracerouteQueue *qptr) {
+    int ret = 0;
+    float perc = 0;
+    TracerouteCallbackQueue *cptr = TracerouteCallbackByID(ctx, qptr->callback_id);
+
+    if (cptr == NULL) return -1;
+
+    // disable callback on the queue
+    qptr->callback = NULL;
+
+    if (cptr->done) return  0;
+
+    cptr->completed++;
+
+    // percent completed
+    perc = (float)((float)cptr->completed / (float)cptr->count) * (float)100;
+
+    if (perc >= cptr->min_percent) {
+        ret = cptr->function(ctx, cptr);
+
+        if (ret) cptr->done = 1;
+    }
+
+    end:;
+    return ret;
+}
+
+
+
+// add a callback queue for traceroute...
+int Research_AddTracerouteCallback(AS_context *ctx, int id, void *function, int count, int percent) {
+    TracerouteCallbackQueue *cptr = TracerouteCallbackByID(ctx, id);
+
+    // we dont wanna add the same ID...
+    if (cptr != NULL) return -1;
+
+    cptr->function = (TracerouteCallbackFunction)function;
+    cptr->min_percent = percent;
+    cptr->count = count;
+    cptr->id = id;
+
+    cptr->next = ctx->traceroute_callback_queue;
+    ctx->traceroute_callback_queue = cptr;
+
+    return 1;
+
+}
+
+//  Stage 1 .. begin gathering data required for attacks (sessions, internet paths, whatever)
+int Research_Intelligence_Management_Stage1(AS_context *ctx) {
+    int i = 0;
+    int ret = -1;
+    TracerouteQueue *qptr = NULL;
+    // 1) generate IP addresses for a target region/country
+    AttackTarget *tptr = NULL;
+    IPAddresses *iptr = NULL;
+    AS_attacks *aptr = NULL;
+    int attack_count = 0;
+
+    if ((tptr = TargetRandom(ctx)) == NULL) goto end;
+
+    // 2) initiate traceroutes on those targets setting priority depending on prior dataset, and aggressive-ness
+    Research_Traceroute_Target(ctx, tptr, 0);
+    // --------------------------------------------------------
 /*    
         3) enable/disable local packet to www (either for python callback manipulation, or directly to real attacks)
         these www sessions can also use somme python regexp, etc to find usernames, passwords, peoples names, email addresses, etc which can populate
         those sections
 */
 
-    // lets enable live packet capture of www... 
-    HTTP_Discovery_Init();
-{/*
+    // lets enable live packet capture of www... to gather sessions from live data
+    ctx->http_discovery_enabled = 1;
+
+
+        //attack_count = L_count((LINK *)ctx->attack_list);
+
+
+
+/*
+      6) determine if an attack should  be disqualified due to overuse, etc... (it can be random, or change its parameters over time depending on location,
+        virtual traceroute information,etc)
+*/
+
+    end:;
+    return ret;
+}
+
+
+/* stage 2 */
+/*
         4) if having enough raw data then it should attempt to tokenize/macro-ize the data so that the subsystem can easily replace things
         without having to call python every time.. this will increease overall output substantially commpared to having a unique body
         each time from python
@@ -2691,26 +2980,54 @@ int Research_Intelligence_Management(AS_context *ctx) {
         5) determine if enough information for attacks exist at some interval.. if found then generate the bodies, or pass to python to gete generated..
         or modify an already queued attack structure copyingg things, and changing whats necessary
 */
+ 
+int Research_Intelligence_Management_Stage2(AS_context *ctx) {
+    int ret = 0;
 
-        attack_count = L_count((LINK *)ctx->attack_list);
+    end:;
+    return ret;
+}
+
+int Research_Intelligence_Management_Stage3(AS_context *ctx) {
+    int ret = 0;
+
+    end:;
+    return ret;
+}
 
 
+// The staging increases as it gets used here.. then it awaits for othe thiings (for instance for 1, traceroute queue completetion call back) to move on
+int Research_Intel_Perform(AS_context *ctx) {
+    int ret = 0;
+    AS_attacks *aptr = NULL;
+    struct timeval tv;
+    struct timeval time_diff;
+    gettimeofday(&tv, NULL);
 
-/*
-      6) determine if an attack should  be disqualified due to overuse, etc... (it can be random, or change its parameters over time depending on location,
-        virtual traceroute information,etc)
-*/
-        // disqualify old attacks to get replaced with new
-        while (aptr != NULL) {
+    if (ctx->intel_stage == 0) {
+        // Initiate things required for gathering data, research etc required for attacks
+        ret = Research_Intelligence_Management_Stage1(ctx);
+        ctx->intel_stage++; // set to 1.. 
+    } else if (ctx->intel_stage == 2) {
+        ret = Research_Intelligence_Management_Stage2(ctx);
+        ctx->intel_stage++; // set to 3...
+    } else if (ctx->intel_stage == 4) {
+        ret = Research_Intelligence_Management_Stage3(ctx);
+        ctx->intel_stage++; // set to 5...
+    }// else if (ctx->intel_stage == 6) {}
 
-            // lets kill attacks after 2 hours
-            if ((ts - aptr->ts) < (60*60*2)) {
-                aptr->completed = 1;
-            }
+    // lets perform this at evvery stage
+    aptr = ctx->attack_list;
+    // disqualify old attacks to get replaced with new
+    while (aptr != NULL) {
+        timeval_subtract(&time_diff, &aptr->ts, &tv);
 
-            aptr = aptr->next;
-        }
+        // lets kill attacks after 2 hours
+        if (time_diff.tv_sec >= (60*60*2))
+            aptr->completed = 1;
 
+        aptr = aptr->next;
+    }
 
     end:;
     return ret;
