@@ -527,11 +527,11 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
 
             // allocate memeory to hold these pointers since the returned ones are inside of python memory
             if ((ret_client_body = (char *)malloc(new_client_body_size)) == NULL) {
-                printf("err2\n");
+                //printf("err2\n");
                 goto end;
             }
             if ((ret_server_body = (char *)malloc(new_server_body_size)) == NULL) {
-                printf("err3\n");
+                //printf("err3\n");
                 goto end;
             }
 
@@ -561,7 +561,7 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
 
 
             //ret = 1;
-            printf("good\n");
+            //printf("good\n");
         }
 
         
@@ -780,9 +780,9 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     new_source_ip = source_ip;
     new_destination_ip = destination_ip;
 
-    i = 1;
-    //i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip, &new_dest_port, &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
-    printf("i: %d\n", i);
+    //i = 1;
+    i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip, &new_dest_port, &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
+    //printf("i: %d\n", i);
 
     if (i == 0) goto end;
 
@@ -923,11 +923,10 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     if (source_ip != NULL) free(source_ip);
     if (destination_ip != NULL) free(destination_ip);
 
-    if (new_destination_ip != destination_ip)
-        if (new_destination_ip != NULL) free(new_destination_ip);
 
-    if (new_source_ip != source_ip)
-        if (new_source_ip != NULL) free(new_source_ip);
+    // crash.. double check logic
+    //if (new_destination_ip != destination_ip) if (new_destination_ip != NULL) free(new_destination_ip);
+    //if (new_source_ip != source_ip) if (new_source_ip != NULL) free(new_source_ip);
 
     return ret;
 }
