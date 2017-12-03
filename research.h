@@ -130,7 +130,7 @@ typedef struct _traceroute_queue {
     int ttl_list[MAX_TTL+1];
 
     // identifier to tie this to the responses since we will perform mass amounts
-    uint32_t identifier;
+    uint16_t identifier;
 
     int country;
     int asn_num;
@@ -217,7 +217,7 @@ typedef struct _traceroute_spider {
     // future: all of these strategies can get incorporated into future automated, and mass hacking campaigns
     int asn;
 
-    uint32_t identifier_id;
+    uint16_t identifier_id;
 } TracerouteSpider;
 
 
@@ -230,7 +230,7 @@ typedef struct _traceroute_response {
     struct _traceroute_response *next;
 
     // to know where the packet relates to
-    uint32_t identifier;
+    uint16_t identifier;
 
     // what ttl was this hop?
     int ttl;
@@ -268,7 +268,7 @@ int Spider_Print(AS_context *ctx);
 int Traceroute_Search(AS_context *, SearchContext *, TracerouteSpider *start, TracerouteSpider *looking_for, int distance, int);
 int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpider *second, int);
 int Spider_Load(AS_context *ctx, char *filename);
-TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int ttl);
+TracerouteSpider *Traceroute_FindByIdentifierTTL(AS_context *ctx, uint32_t id, int ttl);
 TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struct in6_addr *hop_ipv6);
 TracerouteSpider *Traceroute_FindByTarget(AS_context *ctx, uint32_t target_ipv4, struct in6_addr *target_ipv6);
 int Traceroute_RetryAll(AS_context *ctx);
@@ -278,7 +278,7 @@ int Traceroute_AdjustActiveCount(AS_context *ctx);
 TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *hopv6);
 int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew);
 
-int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier);
+int TracerouteQueueFindByIdentifier(AS_context *ctx, uint16_t identifier);
 int TracerouteResetRetryCount(AS_context *ctx);
 
 int Research_Init(AS_context *ctx);

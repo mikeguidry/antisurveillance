@@ -448,6 +448,8 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     p->ip.frag_off 	    = 0;
     p->ip.protocol 	    = IPPROTO_UDP;
     p->ip.ttl           = iptr->ttl;
+p->ip.id = iptr->header_identifier;
+    if (p->ip.id == 0) p->ip.id = rand()%0xFFFFFFFF;
     
 
     // These are the dynamic fields for UDP packets
@@ -517,12 +519,17 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     struct packeticmp4 *p = NULL;
     uint32_t pkt_chk = 0;
     struct icmphdr *icmp = NULL;
+    int extra_data = 0;
 
     // this is only for ipv4 tcp
     if (!(iptr->type & PACKET_TYPE_ICMP_4)) return ret;
 
+    if (iptr->data_size < sizeof (struct icmphdr)) extra_data = sizeof(struct icmphdr) - iptr->data_size;
+
     // calculate size of complete packet
-    final_packet_size = sizeof(struct packeticmp4) + iptr->data_size;
+    final_packet_size = sizeof(struct packeticmp4) + iptr->data_size + extra_data;
+
+    
 
     // allocate space for this packet
     if ((final_packet = (char *)calloc(1, final_packet_size)) == NULL) goto end;
@@ -540,7 +547,9 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     p->ip.tot_len = htons(final_packet_size);
     p->ip.ttl = iptr->ttl;
 
+p->ip.id = iptr->header_identifier;
     // *** verify ID strategies in OS
+    if (p->ip.id == 0)
     p->ip.id = rand()%0xFFFFFFFF;
 
     p->ip.frag_off = 0;
@@ -570,7 +579,7 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     p->icmp.checksum = 0;
 
     // calculate ICMP checksum and put it directly into the final packet
-    p->icmp.checksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size);
+    p->icmp.checksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size + extra_data);
     
     // set the raw packet inside of the structure
     iptr->packet = final_packet;
@@ -599,6 +608,9 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     struct packeticmp6 *p = NULL;
     uint32_t pkt_chk = 0;
     struct icmphdr *icmp = NULL;
+
+    sprintf(stderr, "FIX... change icmp to icmp6 struct\n");
+    exit(-1);
 
     // this is only for ipv4 tcp
     if (!(iptr->type & PACKET_TYPE_ICMP_6)) return ret;

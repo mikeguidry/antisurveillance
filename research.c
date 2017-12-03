@@ -114,6 +114,7 @@ This is a nice example of how you can mix several subsystems, and technologies r
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
+#include <netinet/icmp6.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <stddef.h> /* For offsetof */
@@ -221,7 +222,7 @@ TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struc
 
 
 // find a spider structure by its identifier (query identification ID fromm traceroute packets)
-TracerouteSpider *Traceroute_FindByIdentifier(AS_context *ctx, uint32_t id, int ttl) {
+TracerouteSpider *Traceroute_FindByIdentifierTTL(AS_context *ctx, uint32_t id, int ttl) {
     TracerouteQueue *qptr = TracerouteQueueFindByIdentifier(ctx, id);
 
     if (qptr == NULL) return NULL;
@@ -249,13 +250,14 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
     }
 
     // loop for all TTLs and check if we have a packet from it
-    for (i = ctx->traceroute_min_ttl; i < MAX_TTL; i++) {
+    for (i = 0; i < MAX_TTL; i++) {
         //sptr = Traceroute_FindByIdentifier(ctx, qptr->identifier, i);
         sptr = qptr->responses[i];
 
         // if we reached the target... its completed
         // *** add ipv6
-        if (sptr && sptr->target_ip == qptr->target_ip) {
+        if (sptr && sptr->hop_ip && qptr->target_ip && sptr->hop_ip == qptr->target_ip) {
+            //printf("ip same ttl %d\n", i);
             break;
         }
 
@@ -265,12 +267,14 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
                 // we put it back into the list..
                 qptr->ttl_list[cur_ttl++] = i;
             }
+            //printf("!!!! missing ttl %d\n", i);
             missing++;
         }
         // if the source IP matches the target.. then it is completed
     }
 
     if (missing) {
+        //printf("has misssing\n");
         // set queue structure to start over, and have a max ttl of how many we have left
         qptr->current_ttl = 0;
         qptr->max_ttl = cur_ttl;
@@ -283,7 +287,7 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
         qptr->completed = 0;
 
         //printf("Enabling incomplete traceroute %u [%d total]\n", qptr->target_ip, cur_ttl);
-    }
+    } //printf("doesnt have missing\n");
 
 
     ret = 1;
@@ -327,11 +331,14 @@ int Traceroute_RetryAll(AS_context *ctx) {
 
 
 
+
+
 SearchQueue *Context_FindQueue(AS_context *ctx, SearchContext *search_context, TracerouteSpider *sptr) {
     SearchQueue *qptr = search_context->queue;
 
     while (qptr != NULL) {
         if (qptr->spider_ptr == sptr) break;
+
         qptr = qptr->next;
     }
 
@@ -339,13 +346,13 @@ SearchQueue *Context_FindQueue(AS_context *ctx, SearchContext *search_context, T
 }
 
 
-int Search_Queue(AS_context *ctx, SearchContext *search_context, TracerouteSpider *sptr, int distance) {
+int Search_QueueAdd(AS_context *ctx, SearchContext *search_context, TracerouteSpider *sptr, int distance) {
     SearchQueue *qptr = NULL;
 
     if ((qptr = Context_FindQueue(ctx, search_context, sptr)) != NULL) {
         // if distance is lower.. then lets change it.. *warning* maybe not thikning throug h every solution.. check
         if (distance < qptr->distance) {
-            printf("QPTR Swardch context %p CHANGED distance from %d -> %d\n", qptr->spider_ptr, qptr->distance, distance);
+            printf("QPTR Seardch context %p CHANGED distance from %d -> %d\n", qptr->spider_ptr, qptr->distance, distance);
             qptr->distance = distance;
         }
     }
@@ -357,9 +364,50 @@ int Search_Queue(AS_context *ctx, SearchContext *search_context, TracerouteSpide
 
     L_link_ordered((LINK **)&search_context->queue, (LINK *)qptr);
 
+    search_context->count++;
+
+    printf("Added search directory to queue .. count %d\n", search_context->count);
+
     return 1;
 }
 
+SearchQueue *Search_QueuePop(AS_context *ctx, SearchContext *search_context, int *distance) {
+    SearchQueue *qptr = search_context->queue;
+
+    printf("count: %d\n", L_count((LINK *)qptr));
+
+    if (qptr) {
+        *distance = qptr->distance;
+        search_context->queue = qptr->next;
+
+        search_context->count--;
+    }
+
+    return qptr;
+}
+
+// pops and verifies against 1 stack entry
+int Search_QueueCheck(AS_context *ctx, SearchContext *sctx, TracerouteSpider *needle, int cur_distance) {
+    SearchQueue *qptr = NULL;
+    int distance = 0;
+    TracerouteSpider *sptr = NULL;
+
+
+    printf("count: %d %d\n", L_count((LINK *)sctx->queue), sctx->count);
+
+    // pop a single item which was queued for checking against
+    if ((qptr = Search_QueuePop(ctx, sctx, &distance)) == NULL) return 0;
+
+    if (qptr->distance > cur_distance) return 0;
+    sptr = qptr->spider_ptr;
+
+    if (!needle->hop_ip && sptr->hop_ip == needle->hop_ip)
+        return qptr->distance;
+
+    if (!needle->hop_ip && CompareIPv6Addresses(&needle->hop_ipv6, &sptr->hop_ipv6)) return qptr->distance;
+
+    return 0;
+}
 
 
 
@@ -374,10 +422,16 @@ int Traceroute_Search(AS_context *ctx, SearchContext *search_context, Traceroute
 
 
     // if distance is moore than max ttl.. lets return
-    if (distance >= MAX_TTL) return 0;
+    if (distance >= MAX_TTL) {
+        printf("we reached max ttl.. quitting\n");
+        return 0;
+    }
 
     // if pointers are NULL for some reason
-    if (!start || !looking_for) return 0;
+    if (!start || !looking_for) {
+        printf("null ptr\n");
+        return 0;
+    }
 
     // dbg msg
     printf("Traceroute_Search: start %p [%u] looking for %p [%u] distance: %d imaginary %d\n",  start, start->hop_ip, looking_for, looking_for->hop_ip, distance, imaginary);
@@ -389,20 +443,28 @@ int Traceroute_Search(AS_context *ctx, SearchContext *search_context, Traceroute
     }
 
     // get both original queue structures
-    if ((q[0] = TracerouteQueueFindByIdentifier(ctx, start->identifier_id)) == NULL) goto end;
-    if ((q[1] = TracerouteQueueFindByIdentifier(ctx, looking_for->identifier_id)) == NULL) goto end;
+    if ((q[0] = TracerouteQueueFindByIdentifier(ctx, start->identifier_id)) == NULL) {
+        printf("Queue find  by identifier q[0] start->id %X not found\n", start->identifier_id);
+        goto end;
+    }
+    if ((q[1] = TracerouteQueueFindByIdentifier(ctx, looking_for->identifier_id)) == NULL) {
+        printf("Queue find  by identifier q[1] needle->id %X not found\n", looking_for->identifier_id);
+        goto end;
+    }
 
 
     // first we check q[0] looking for the target IP from looking_for (thus why we set n=0.. )
     for (i = n = 0; i < MAX_TTL; i++) {
         sptr = q[n]->responses[i];
-        if (sptr->hop_ip == looking_for->hop_ip) {
+        if (sptr != NULL) {
+            if (sptr->hop_ip == looking_for->hop_ip) {
 
-            r = sptr->ttl - looking_for->ttl;
-            if (r < 0) r = abs(r);
-            return r;
+                r = sptr->ttl - looking_for->ttl;
+                if (r < 0) r = abs(r);
+                return r;
 
-            break;
+                break;
+            }
         }
     }
 
@@ -412,10 +474,12 @@ int Traceroute_Search(AS_context *ctx, SearchContext *search_context, Traceroute
         for (n = 0; n < 2; n++) {
             for (i = 0; i < MAX_TTL; i++) {
                 sptr = q[n]->responses[i];
+                printf("n: %d i: %d sptr: %p\n", n, i, sptr);
                 if (sptr != NULL) {
-                    Search_Queue(ctx, search_context, sptr, distance + 1);
+                    printf("Adding to queue\n");
+                    Search_QueueAdd(ctx, search_context, sptr, distance + 1);
                     // recursively call using this structure
-                    r = Traceroute_Search(ctx, search_context, sptr, looking_for, distance + 1, imaginary);
+                    //r = Traceroute_Search(ctx, search_context, sptr, looking_for, distance + 1, imaginary);
                 }
             }
         }
@@ -442,6 +506,7 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
     TracerouteSpider *srch_branch = NULL;
     int distance = 0;
     SearchContext search_context;
+    int r = 0;
 
     // make sure both were passed correctly
     if (!first || !second) return -1;
@@ -451,9 +516,23 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
 
     memset(&search_context, 0, sizeof(SearchContext));
 
+    printf("Traceroute Compare first %p second %p [%X %X]\n", first, second, first->identifier_id, second->identifier_id);
+
     // we wanna call this function Traceroute_Search to find the distance  of the two spider parameters passed
     distance = Traceroute_Search(ctx, &search_context, first, second, 0, imaginary);
 
+    // now lets go through the queue..
+    printf("count: %d\n", search_context.count);
+    while (search_context.count) {
+        r = Search_QueueCheck(ctx, &search_context, second, distance);
+
+        printf("r: %d\n", r);
+
+        // we dont wanna break here since we should pop everything no matter what
+        // to free the space
+        if (r && r < distance) distance = r;
+
+    }
     // print distance to screen
     printf("distance: %d\n", distance);
 
@@ -464,6 +543,7 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
 
     return ret;
 }
+
 
 
 
@@ -483,8 +563,9 @@ int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4) {
 // find a traceroute queue structure by the identifier it used
 // This was taking forever (15-20 minutes) to load 250k traceroute context.  I inserted this
 // jump table, and changed the format from ASCII to binary for saving/loading.  It is less than a second now.
-int TracerouteQueueFindByIdentifier(AS_context *ctx, uint32_t identifier) {
+int TracerouteQueueFindByIdentifier(AS_context *ctx, uint16_t identifier) {
     TracerouteQueue *qptr = ctx->traceroute_queue_identifier[identifier % JTABLE_SIZE];
+
     while (qptr != NULL) {
 
         if (qptr->identifier == identifier) break;
@@ -503,11 +584,15 @@ int Spider_IdentifyTogether(AS_context *ctx, TracerouteSpider *sptr) {
     int a, b;
     TracerouteQueue *qptr = TracerouteQueueFindByIdentifier(ctx, sptr->identifier_id);
 
-    if (qptr == NULL) return -1;
+    if (qptr == NULL) {
+        return -1;
+    }
 
     // lets give the original queue a direct pointer to every TTL responses regarding its lookup
     // its much easier than having it in a linked list.. especially for later analysis
     qptr->responses[sptr->ttl] = sptr;
+    sptr->queue = qptr;
+    //printf("qptr %p responses for ttl %d to %p [resp %p]\n", qptr, sptr->ttl, sptr, qptr->responses[sptr->ttl]);
 
     ret = 1;    
 
@@ -519,6 +604,8 @@ int Spider_IdentifyTogether(AS_context *ctx, TracerouteSpider *sptr) {
 void RandomizeTTLs(TracerouteQueue *tptr) {
     int i = 0, n = 0, ttl = 0;
 
+    //return;
+    
     // only randomize if more than 5
     if (tptr->max_ttl <= 5) return;
 
@@ -609,7 +696,7 @@ int Traceroute_AdjustActiveCount(AS_context *ctx) {
         for (r = 0; r < disabled; r++) {
             if (random_count[r] == i) {
                 qptr->enabled = 1;
-                qptr->type = (rand()%100) > 50 ? 1 : 0;
+                qptr->type = TRACEROUTE_UDP;//(rand()%100) > 50 ? 1 : 0;
                 ret++;
             }
         }
@@ -639,6 +726,8 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
 
     // if the pointer was NULL.. lets just return with 0 (no error...)
     if (rptr == NULL) return ret;
+
+    if (rptr->ttl > MAX_TTL) return ret;
 
     //printf("Traceroute Analyze Single responsse %p\n", rptr);
 
@@ -799,6 +888,9 @@ TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_a
     int ttl = 0;
     //struct in_addr addr;
 
+    if ((tptr = TracerouteQueueFindByIP(ctx, target)) != NULL) return tptr;
+    
+
     //addr.s_addr = target;
     //printf("\nTraceroute Queue %u: %s\n", target, inet_ntoa(addr));
 
@@ -815,8 +907,12 @@ TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_a
     // we start at ttl 1.. itll inncrement to that when processing
     tptr->current_ttl = 0;
 
-    // create a random identifier to find this packet when it comes from many hops
-    tptr->identifier = rand()%0xFFFFFFFF;
+    while(1) {
+        // create a random identifier to find this packet when it comes from many hops
+        tptr->identifier = rand()%0xFFFFFFFF;
+        // lets be sure the identifier doesnt already exist..
+        if (TracerouteQueueFindByIdentifier(ctx, tptr->identifier) == NULL) break;
+    }
 
     // later we wish to allow this to be set by scripting, or this function
     // for example: if we wish to find close routes later to share... we can set to max = 5-6
@@ -827,7 +923,7 @@ TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_a
     tptr->ts = time(0);
 
     // set for traceroute ICMP
-    tptr->type = TRACEROUTE_ICMP;
+    tptr->type = TRACEROUTE_UDP;//(rand()%100) > 50 ? 1 : 0;
 
     // add to traceroute queue...
     //L_link_ordered_offset((LINK **)&ctx->traceroute_queue, (LINK *)tptr, offsetof(TracerouteQueue, next));
@@ -858,36 +954,61 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
     TracerouteResponse *rptr = NULL;
     TraceroutePacketData *pdata = NULL;
+    char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_";
+    struct udphdr *udph = NULL;
+
 
     // when we extract the identifier from the packet.. put it here..
-    uint32_t identifier = 0;
+    uint16_t identifier = 0;
     // ttl has to be extracted as well (possibly from the identifier)
     int ttl = 0;
 
     if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
-        //printf("ipv4 Getting our own packets.. probably loopback\n");
+        printf("ipv4 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     if (!iptr->source_ip && CompareIPv6Addresses(&ctx->my_addr_ipv6, &iptr->source_ipv6)) {
-        //printf("ipv6 Getting our own packets.. probably loopback\n");
+        printf("ipv6 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     // data isnt big enough to contain the identifier
-    if (iptr->data_size < sizeof(TraceroutePacketData)) goto end;
+    //if (iptr->data_size < sizeof(TraceroutePacketData)) {
+        if (iptr->data_size >= 20) {
+            printf("\n\n---\nidentifier %u\n", iptr->header_identifier);
+            printf("data too small\n");
 
-    // the responding hops may have encapsulated the original ICMP within its own.. i'll turn the 28 into a sizeof() calculation
-    // ***
-    if (iptr->data_size > sizeof(TraceroutePacketData) && ((iptr->data_size >= sizeof(TraceroutePacketData) + 28)))
-        pdata = (TraceroutePacketData *)(iptr->data + 28);//(sizeof(struct iphdr) + sizeof(struct icmphdr)));
-    else
-        pdata = (TraceroutePacketData *)iptr->data;
 
-    // the packet has the TTL, and the identifier (to find the original target information)
-    ttl = pdata->ttl;
-    identifier = pdata->identifier;
+            udph = ((char *)(iptr->data) + 20);
+        if (ntohs(udph->dest) >= 1024) {
+            printf("ports %u %u\n", ntohs(udph->source), ntohs(udph->dest));
+            identifier = ntohs(udph->source);
+            ttl = ntohs(udph->dest) - 1024;
+            }
+            printf("\n--\n");
+        
+        } else {
+            goto end;
+        }
+        
+    //}
+    if (!ttl && !identifier) {
+        printf("Getting ttl/ident from included data\n");
+        // the responding hops may have encapsulated the original ICMP within its own.. i'll turn the 28 into a sizeof() calculation
+        // ***
+        if (iptr->data_size > sizeof(TraceroutePacketData) && ((iptr->data_size >= (sizeof(data) + sizeof(TraceroutePacketData) + 28))))
+            pdata = (TraceroutePacketData *)((char *)(iptr->data) + 28 + sizeof(data));//(sizeof(struct iphdr) + sizeof(struct icmphdr)));
+        else
+            pdata = (TraceroutePacketData *)((char *)(iptr->data) + sizeof(data));
 
+        // the packet has the TTL, and the identifier (to find the original target information)
+        ttl = pdata->ttl;
+        identifier = pdata->identifier;
+        printf("got from data\n");
+    }
+
+    printf("incoming icmp ttl %d identifier %u\n", ttl, identifier);
     // this function is mainly to process quickly.. so we will fill another structure so that it can get processed
     // later again with calculations directly regarding its query
 
@@ -928,6 +1049,7 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
     int i = 0, ret = 0;
     PacketBuildInstructions *iptr = NULL;
     TraceroutePacketData *pdata = NULL;
+    char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_";
    
    //printf("traceroute send udp\n");
     
@@ -951,14 +1073,14 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
 
         // ports to use (we can  randomize later on diff tries besides 53)
         // This will look like a DNS response coming back to the client
-        iptr->source_port = 53;
-        iptr->destination_port = 1024 + (rand()%(65535-1024));
+        iptr->source_port = tptr->identifier;//1024 + (rand()%(65535-1024));
+        iptr->destination_port = 1024 + iptr->ttl;//1024 + (rand()%(65535-1024));
     
         // set size to the traceroute packet data structure's size...
-        iptr->data_size = sizeof(TraceroutePacketData);
+        iptr->data_size = sizeof(data) + sizeof(TraceroutePacketData);
 
         if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
-            pdata = (TraceroutePacketData *)iptr->data;
+            pdata = (TraceroutePacketData *)((char  *)(iptr->data)+sizeof(data));
 
             // prepare dns response packet...
             
@@ -970,7 +1092,14 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
             pdata->identifier = tptr->identifier;
             pdata->ttl = iptr->ttl;
 
+
+            memcpy(iptr->data, &data, sizeof(data));
+
+            iptr->header_identifier = tptr->identifier;
+
         }
+
+        printf("sending traceroute identifier %u ttl %d\n", tptr->identifier, iptr->ttl);
 
         // lets build a packet from the instructions we just designed for either ipv4, or ipv6
         // for either ipv4, or ipv6
@@ -1001,12 +1130,12 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
     TraceroutePacketData *pdata = NULL;
     int i = 0;
     AttackOutgoingQueue *optr = NULL;
+    struct icmp6_hdr icmp6;
     
-    // prepare the ICMP header for the traceroute
-    icmp.type = ICMP_ECHO;
-    icmp.code = 0;
-    icmp.un.echo.sequence = tptr->identifier;
-    icmp.un.echo.id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
+    memset(&icmp, 0, sizeof(struct icmphdr));
+    memset(&icmp6, 0, sizeof(struct icmphdr));
+
+    
 
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
@@ -1014,12 +1143,23 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
         iptr->ttl = tptr->ttl_list[tptr->current_ttl];
 
         // determine if this is an IPv4/6 so it uses the correct packet building function
+        // prepare the ICMP header for the traceroute
         if (tptr->target_ip != 0) {
             iptr->type = PACKET_TYPE_ICMP_4;
             iptr->destination_ip = tptr->target_ip;
             iptr->source_ip = ctx->my_addr_ipv4;
+
+            icmp.type = ICMP_ECHO;
+            icmp.un.echo.sequence = tptr->identifier;
+            icmp.un.echo.id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
+
         } else {
             iptr->type = PACKET_TYPE_ICMP_6;
+
+            icmp6.icmp6_type = ICMP6_ECHO_REQUEST;
+            icmp6.icmp6_id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
+            icmp6.icmp6_seq = tptr->identifier;
+            
             // destination is the target
             CopyIPv6Address(&iptr->destination_ipv6, &tptr->target_ipv6);
             // source is our ip address
@@ -1028,6 +1168,7 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
 
         // copy ICMP parameters into this instruction packet as a complete structure
         memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
+        memcpy(&iptr->icmp6, &icmp6, sizeof(struct icmp6_hdr));
 
         // set size to the traceroute packet data structure's size...
         iptr->data_size = sizeof(TraceroutePacketData);
@@ -1195,9 +1336,10 @@ int Traceroute_Perform(AS_context *ctx) {
 
                 // if the current TTL isnt disqualified already
                 if (tptr->ttl_list[tptr->current_ttl] != 0) {
-                    if (tptr->type == TRACEROUTE_ICMP)
-                        Traceroute_SendICMP(ctx, tptr);
-                    else if (tptr->type == TRACEROUTE_UDP)
+                    //if (tptr->type == TRACEROUTE_ICMP)
+                      //  Traceroute_SendICMP(ctx, tptr);
+                    //else if (tptr->type == TRACEROUTE_UDP)
+                    //for (i = 0; i < 3; i++)
                         Traceroute_SendUDP(ctx, tptr);
                     /*    else if (tptr->type == TRACEROUTE_TCP)
                         Traceroute_SendTCP(ctx, tptr);*/
@@ -1214,11 +1356,12 @@ int Traceroute_Perform(AS_context *ctx) {
     // if our queue is lower than the max.. then enable some others
     Traceroute_MaxQueue(ctx);
 
+        Spider_Save(ctx);
+
     // *** we will log to the disk every 20 calls (for dev/debugging)
     // moved to every 40 because the randomly disabling and enabling should be more than MAX_TTL at least
     if ((ccount++ % 40)==0) {
         // save data to disk... need to redo this for incremental
-        Spider_Save(ctx);
 
         // lets randomly enable or disable queues.... 20% of the time we reach this..
         if ((rand()%100) < 20)
@@ -1258,7 +1401,7 @@ typedef struct _data_entry {
     unsigned char code;
     uint32_t target_ip;
     uint32_t hop_ip;
-    uint32_t identifier;
+    uint16_t identifier;
     unsigned char completed;
     unsigned char enabled;
     int ts;
@@ -1424,7 +1567,7 @@ TracerouteSpider *Spider_Find(AS_context *ctx, uint32_t hop, struct in6_addr *ho
         if (hop && sptr->hop_ip == hop) {
                 break;
         } else {
-            //if (!hop && CompareIPv6Addresses(&sptr->hopv6, hopv6))  break;
+            if (!hop && CompareIPv6Addresses(&sptr->hop_ipv6, hopv6))  break;
         }
 
         sptr = sptr->hops_list;
@@ -1445,7 +1588,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
     char *sptr = NULL;
     char type[16], hop[16],target[16];
     int ttl = 0;
-    uint32_t identifier = 0;
+    uint16_t identifier = 0;
     int ts =0, enabled = 0, activity = 0, completed = 0, retry = 0;
     int i = 0;
     int n = 0;
@@ -1484,7 +1627,11 @@ int Spider_Load(AS_context *ctx, char *filename) {
             qnew->enabled = dentry.enabled;
             qnew->target_ip = dentry.target_ip;
             qnew->identifier = dentry.identifier;
-            qnew->type = ((rand()%100) > 50) ? 1 : 0;
+
+
+            qnew->type = TRACEROUTE_UDP;//((rand()%100) > 50) ? 1 : 0;
+
+            qnew->max_ttl = MAX_TTL;
 
             // add to queue list
             qnew->next = ctx->traceroute_queue;
@@ -1505,6 +1652,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
             snew->ttl = dentry.ttl;
             snew->identifier_id = dentry.identifier;
             snew->ts = dentry.ts;
+
 
             if (!slast) {
                 ctx->traceroute_spider = snew;
@@ -1540,6 +1688,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
         // if its more than just a queue.. we wanna link it together.. (for 2/3)
         if (dentry.code && dentry.code > 1) {    
+            //printf("ident together.. id %X\n", snew->identifier_id);
             Spider_IdentifyTogether(ctx, snew);
 
         }
@@ -1644,7 +1793,7 @@ int Traceroute_Init(AS_context *ctx) {
     ctx->traceroute_min_ttl = 0;
 
     // how many active at all times? we set it here so we can addjust it in watchdog later...
-    ctx->traceroute_max_active = 2000;
+    ctx->traceroute_max_active = 10;
 
     ret = 1;
 
@@ -1767,6 +1916,8 @@ int Traceroute_Watchdog(AS_context *ctx) {
     
     float perc_change = 0;
     int historic_avg_increase = 0;
+
+    return 0;
 
     if (ctx->traceroute_max_active > 10000) return 0;
 

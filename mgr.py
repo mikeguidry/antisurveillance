@@ -234,10 +234,12 @@ def init():
     script_enable(a)
 
     #a.traceroutequeue(target="8.8.8.8")
-    #cnt = a.traceroutecount(disabled=0)
+    cnt = a.traceroutecount(disabled=0)
     #print("count %d") % cnt
-    #if (cnt == 0):
-    #    top_sites_research(a)
+    if (cnt == 0):
+        top_sites_research(a)
+        cnt = a.traceroutecount(disabled=0)
+        print("count %d") % cnt
 
     #a.filtercreate()
     #a.pcapcapturestart(filename="all.pcap")

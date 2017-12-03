@@ -276,7 +276,7 @@ void *thread_network_flush(void *arg) {
 int prepare_socket(AS_context *ctx) {
     int rawsocket = 0;
     int one = 1;
-    int bufsize = 1024*1024*1;
+    int bufsize = 1024*1024*50;
 
     
 
@@ -319,7 +319,7 @@ int prepare_read_socket(AS_context *ctx) {
     struct ifreq if_mac;
     struct ifreq if_ip;
     int one = 1;
-    int bufsize = 1024*1024*1   ;
+    int bufsize = 1024*1024*10;
 
     // set ifr structure to 0
     memset (&ifr, 0, sizeof (struct ifreq));
@@ -419,8 +419,8 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
     // analyze that packet, and turn it into a instructions structure
     if ((iptr = PacketsToInstructions(pptr)) == NULL) {
-        /*printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
-            if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
+        printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
+        /*    if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
         fclose(fd); } */
 
@@ -432,10 +432,6 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
-
-        //printf("SRC IP: %u protocol %d\n", iptr->source_ip, iptr->flags);
-        //printf("DST: %u\n", iptr->destination_ip);
-
         //printf("%s:%d -> %s:%d\n", Asrc_ip, iptr->source_port, Adst_ip, iptr->destination_port);
 
         // if the packet passes the filter then call its processing function

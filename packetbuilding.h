@@ -1,4 +1,5 @@
 #include <netinet/ip6.h>
+#include <netinet/icmp6.h>
 
 #pragma pack(push,1)
 // PacketInfo is the first structure packets get prepared into being read either from the wire, or from a PCAP.
@@ -98,6 +99,7 @@ typedef struct _packet_instructions {
 
     // information required to generate ICMP packets
     struct icmphdr icmp;
+    struct icmp6_hdr icmp6;
     
 } PacketBuildInstructions;
 

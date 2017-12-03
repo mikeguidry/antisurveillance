@@ -576,16 +576,21 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
-    //printf("Process ICMP4\n");
+    printf("Process ICMP4\n");
 
     // data coming from network.. so sanity checks required
-    if (pptr->size < sizeof(struct packeticmp4)) goto end;
+    if (pptr->size < sizeof(struct packeticmp4)) {
+        printf("size small\n");
+        goto end;
+    }
 
     // allocate space for an instruction structure which analysis of this packet will create
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
     iptr->type = PACKET_TYPE_ICMP_4 | PACKET_TYPE_IPV4;
+
+    iptr->header_identifier = p->ip.id;
 
     // get IP addreses out of the packet
     iptr->source_ip = p->ip.saddr;
@@ -620,7 +625,10 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     our_chk = (unsigned short)in_cksum((unsigned short *)&p->icmp, sizeof(struct icmphdr) + iptr->data_size);
 
     // did the check equal what we expected?
-    if (pkt_chk != our_chk) iptr->ok = 0;
+    if (pkt_chk != our_chk) {
+        printf("check sum fail\n");
+        iptr->ok = 0;
+    }
 
     // set back the original checksum we used to verify against
     p->icmp.checksum = pkt_chk;
@@ -1170,12 +1178,15 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                 // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
                 // rather than L_link_ordered()
                 // not as pretty although it was required whenever incoming packet counts go into the millions..
+                printf("procesed packet\n");
                 if (llast == NULL)
-                    list = llast = iptr;
+                    ret = llast = iptr;
                 else {
                     llast->next = iptr;
                     llast = iptr;
                 }
+            } else {
+                printf("couldnt find process\n");
             }
 
         // move on to the next element in the list of packets
@@ -1183,7 +1194,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
     }
 
     // Things are completed.. lets return the list
-    ret = list;
+    //ret = list;
 
     /*
     iptr = list;
@@ -1197,7 +1208,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
     // if something got us here without ret, and some list.. remove it
     if (ret == NULL && list != NULL) {
-        PacketBuildInstructionsFree(&list);
+      //  PacketBuildInstructionsFree(&list);
     }
 
     // this gets freed on calling function.. since a pointer to the pointer (to mark as freed) wasnt passed

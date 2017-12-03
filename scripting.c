@@ -807,6 +807,7 @@ static PyObject *PyASC_TracerouteDistance(PyAS_Config* self, PyObject *args, PyO
         Ssecond = Traceroute_Find(self->ctx, second_ipv4, &second_ipv6, check_targets);
 
         if (Sfirst && Ssecond) {
+            printf("IDs: %X %X\n", Sfirst->identifier_id, Ssecond->identifier_id);
             ret = Traceroute_Compare(self->ctx, Sfirst, Ssecond, imaginary);
             printf("Distance between %s -> %s: %d\n", first_address, second_address, ret);
         }
@@ -887,11 +888,42 @@ static PyObject *PyASC_ScriptDisable(PyAS_Config* self){
 }
 
 // enable flushing the network queue to the live wire
-static PyObject *PyASC_SpiderLoad(PyAS_Config* self){
-    //if (self->ctx) self->ctx->script_enable = 0;
+static PyObject *PyASC_SpiderLoad(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"filename",0};
+    char fname[] = "traceroute";
+    char *filename = (char *)&fname;
+    int ret = 0;
+    
 
-    if (self->ctx)
-        Spider_Load(self->ctx, "traceroute.txt");
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", kwd_list, &filename)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (self->ctx) {
+        Spider_Load(self->ctx, filename);
+    }
+
+    Py_INCREF(Py_None);
+    return Py_None; 
+}
+
+// enable flushing the network queue to the live wire
+static PyObject *PyASC_SpiderSave(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"filename",0};
+    char fname[] = "traceroute";
+    char *filename = (char *)&fname;
+    int ret = 0;
+    
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", kwd_list, &filename)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (self->ctx) {
+        Spider_Save (self->ctx);//, filename);
+    }
 
     Py_INCREF(Py_None);
     return Py_None; 
@@ -1073,6 +1105,39 @@ static PyObject *PyASC_TracerouteSetMax(PyAS_Config* self, PyObject *args, PyObj
 
     return PyInt_FromLong(ret);
 }
+
+static PyObject *PyASC_TracerouteRandom(PyAS_Config* self, PyObject *args, PyObject *kwds) {
+    static char *kwd_list[] = {"completed", 0};
+    int completed = 0;
+    char IP[50];
+    TracerouteQueue *qptr = NULL;
+    int i = 0, count = 0;
+    char *_IP = NULL;
+    PyObject *ret = NULL;
+
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i", kwd_list, &completed)) {
+        PyErr_Print();
+        return NULL;
+    }
+
+    if (self->ctx) {
+        count = L_count((LINK *)self->ctx->traceroute_queue);
+        i = rand()%count;
+        qptr = self->ctx->traceroute_queue;
+        while (i--) { qptr = qptr->next; }
+        _IP = IP_prepare_ascii(qptr->target_ip, NULL);
+        if (_IP) {
+            ret = PyString_FromString(_IP);
+            free(_IP);
+            return ret;
+        }
+    }
+
+    Py_INCREF(Py_None);
+    return Py_None; 
+}
+
 
 static PyObject *PyASC_PCAPCaptureStart(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"filename","skip_filter", 0};
@@ -1269,13 +1334,16 @@ static PyMethodDef PyASC_methods[] = {
 
     {"tracerouteresetretrycount", (PyCFunction)PyASC_TracerouteResetRetryCount, METH_NOARGS, "reset all retry counts" },
 
-    {"traceroutestatus", (PyCFunction)PyASC_TracerouteStatus,    METH_NOARGS,    "" },
+    {"traceroutestatus", (  PyCFunction)PyASC_TracerouteStatus,    METH_NOARGS,    "" },
+
+    {"tracerouterandom", (  PyCFunction)PyASC_TracerouteRandom,    METH_VARARGS|METH_KEYWORDS,    "" },
 
     {"tracerouteaddrandomipgeo", (PyCFunction)PyASC_TracerouteGenerateRandomGEO,     METH_VARARGS|METH_KEYWORDS,    "" },
 
     {"traceroutestatus2", (PyCFunction)PyASC_TracerouteStatus2,    METH_NOARGS,    "" },
 
-    {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_NOARGS,    "" },
+    {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_VARARGS|METH_KEYWORDS,    "" },
+    {"spidersave", (PyCFunction)PyASC_SpiderSave,    METH_VARARGS|METH_KEYWORDS,    "" },
 
 
     {"attackdetails", (PyCFunction)PyASC_AttackDetails,    METH_VARARGS|METH_KEYWORDS,    "gives details about an attack" },

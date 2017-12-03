@@ -277,14 +277,14 @@ int IP_prepare(char *ascii_ip, uint32_t *ipv4_dest, struct in6_addr *ipv6_dest, 
 
 
 // this prepares fabricated connections using either IPv4, or IPv6 addresses.. it detects IPv6 by the :
-char *IP_prepare_ascii(uint32_t *ipv4_dest, struct in6_addr *ipv6_src) {
+char *IP_prepare_ascii(uint32_t ipv4_dest, struct in6_addr *ipv6_src) {
     char final[50]; // its 45-46.. or 16.. whatever
     struct in_addr dst;
     char *buf = NULL;
 
     memset(final, 0, sizeof(final));
 
-    if (*ipv4_dest) {
+    if (ipv4_dest) {
         dst.s_addr = ipv4_dest;
         strncpy(final, inet_ntoa(dst), sizeof(final));
     } else if (ipv6_src != NULL) {
