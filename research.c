@@ -474,9 +474,9 @@ int Traceroute_Search(AS_context *ctx, SearchContext *search_context, Traceroute
         for (n = 0; n < 2; n++) {
             for (i = 0; i < MAX_TTL; i++) {
                 sptr = q[n]->responses[i];
-                printf("n: %d i: %d sptr: %p\n", n, i, sptr);
+                //printf("n: %d i: %d sptr: %p\n", n, i, sptr);
                 if (sptr != NULL) {
-                    printf("Adding to queue\n");
+                    //printf("Adding to queue\n");
                     Search_QueueAdd(ctx, search_context, sptr, distance + 1);
                     // recursively call using this structure
                     //r = Traceroute_Search(ctx, search_context, sptr, looking_for, distance + 1, imaginary);
@@ -976,25 +976,25 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     // data isnt big enough to contain the identifier
     //if (iptr->data_size < sizeof(TraceroutePacketData)) {
         if (iptr->data_size >= 20) {
-            printf("\n\n---\nidentifier %u\n", iptr->header_identifier);
-            printf("data too small\n");
+            //printf("\n\n---\nidentifier %u\n", iptr->header_identifier);
+            //printf("data too small\n");
 
 
             udph = ((char *)(iptr->data) + 20);
         if (ntohs(udph->dest) >= 1024) {
-            printf("ports %u %u\n", ntohs(udph->source), ntohs(udph->dest));
+            //printf("ports %u %u\n", ntohs(udph->source), ntohs(udph->dest));
             identifier = ntohs(udph->source);
             ttl = ntohs(udph->dest) - 1024;
             }
-            printf("\n--\n");
+            //printf("\n--\n");
         
         } else {
             goto end;
         }
         
     //}
-    if (!ttl && !identifier) {
-        printf("Getting ttl/ident from included data\n");
+    if (1==0 && !ttl && !identifier) {
+        //printf("Getting ttl/ident from included data\n");
         // the responding hops may have encapsulated the original ICMP within its own.. i'll turn the 28 into a sizeof() calculation
         // ***
         if (iptr->data_size > sizeof(TraceroutePacketData) && ((iptr->data_size >= (sizeof(data) + sizeof(TraceroutePacketData) + 28))))
@@ -1005,10 +1005,10 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
         // the packet has the TTL, and the identifier (to find the original target information)
         ttl = pdata->ttl;
         identifier = pdata->identifier;
-        printf("got from data\n");
+        //printf("got from data\n");
     }
 
-    printf("incoming icmp ttl %d identifier %u\n", ttl, identifier);
+    //printf("incoming icmp ttl %d identifier %u\n", ttl, identifier);
     // this function is mainly to process quickly.. so we will fill another structure so that it can get processed
     // later again with calculations directly regarding its query
 
@@ -1099,7 +1099,7 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
 
         }
 
-        printf("sending traceroute identifier %u ttl %d\n", tptr->identifier, iptr->ttl);
+        //printf("sending traceroute identifier %u ttl %d\n", tptr->identifier, iptr->ttl);
 
         // lets build a packet from the instructions we just designed for either ipv4, or ipv6
         // for either ipv4, or ipv6
@@ -1339,7 +1339,7 @@ int Traceroute_Perform(AS_context *ctx) {
                     //if (tptr->type == TRACEROUTE_ICMP)
                       //  Traceroute_SendICMP(ctx, tptr);
                     //else if (tptr->type == TRACEROUTE_UDP)
-                    //for (i = 0; i < 3; i++)
+                    for (i = 0; i < 3; i++)
                         Traceroute_SendUDP(ctx, tptr);
                     /*    else if (tptr->type == TRACEROUTE_TCP)
                         Traceroute_SendTCP(ctx, tptr);*/
@@ -1793,7 +1793,7 @@ int Traceroute_Init(AS_context *ctx) {
     ctx->traceroute_min_ttl = 0;
 
     // how many active at all times? we set it here so we can addjust it in watchdog later...
-    ctx->traceroute_max_active = 10;
+    ctx->traceroute_max_active = 50;
 
     ret = 1;
 
@@ -1917,7 +1917,6 @@ int Traceroute_Watchdog(AS_context *ctx) {
     float perc_change = 0;
     int historic_avg_increase = 0;
 
-    return 0;
 
     if (ctx->traceroute_max_active > 10000) return 0;
 
@@ -1997,16 +1996,16 @@ int Traceroute_Watchdog(AS_context *ctx) {
 
 
         if (up > down) {
-            ctx->traceroute_max_active += 300;
+            ctx->traceroute_max_active += 100;
         } else
         if (up < down) {
-            ctx->traceroute_max_active -= 50;
+            ctx->traceroute_max_active -= 20;
 
         }   
         
-        if (ctx->traceroute_max_active < 50) ctx->traceroute_max_active = 50;
+        if (ctx->traceroute_max_active < 10) ctx->traceroute_max_active = 10;
 
-        if (ctx->traceroute_max_active > 10000) ctx->traceroute_max_active = 10000;
+        if (ctx->traceroute_max_active > 500) ctx->traceroute_max_active = 500;
 
 
         ctx->watchdog_ts = ts;

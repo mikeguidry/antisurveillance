@@ -333,13 +333,13 @@ int GenerateTCPSendDataInstructions(ConnectionProperties *cptr, PacketBuildInstr
         remote_seq = &cptr->client_seq;
     }
 
+    //printf("data size: %d\n", data_size);
 
     // now the sending side must loop until it sends all daata
     while (data_size > 0) {
         packet_size = min(data_size, from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server);
 
         //if (packet_size > 53) packet_size -=
-
         // if something wasn't handled properly.. (when i turned off OSPick().. i had to search for hours to find this =/)
         if (packet_size < 0) return -1;
 
@@ -576,11 +576,11 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
-    printf("Process ICMP4\n");
+    //printf("Process ICMP4\n");
 
     // data coming from network.. so sanity checks required
     if (pptr->size < sizeof(struct packeticmp4)) {
-        printf("size small\n");
+        //printf("size small\n");
         goto end;
     }
 
@@ -590,7 +590,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     // ensure the type is set
     iptr->type = PACKET_TYPE_ICMP_4 | PACKET_TYPE_IPV4;
 
-    iptr->header_identifier = p->ip.id;
+    iptr->header_identifier = ntohs(p->ip.id);
 
     // get IP addreses out of the packet
     iptr->source_ip = p->ip.saddr;
@@ -626,7 +626,6 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
 
     // did the check equal what we expected?
     if (pkt_chk != our_chk) {
-        printf("check sum fail\n");
         iptr->ok = 0;
     }
 
@@ -1071,7 +1070,7 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     iptr->ok = 1;
 
     // use packet checksum from the packet
-    pkt_chk = p->icmp.checksum;
+    pkt_chk = p->icmp.icmp6_cksum;
 
     // copy data from the original packet
     if (data_size) {
@@ -1083,7 +1082,7 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     }
 
     // set to 0 in packet so we can  calculate correctly..
-    p->icmp.checksum = 0;
+    p->icmp.icmp6_cksum = 0;
 
     // ICMP checksum.. it can happen inline without copying to a new buffer.. no pseudo header
     our_chk = (unsigned short)in_cksum((unsigned short *)&p->icmp, sizeof(struct icmphdr) + iptr->data_size);
@@ -1092,7 +1091,7 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     if (pkt_chk != our_chk) iptr->ok = 0;
 
     // set back the original checksum we used to verify against
-    p->icmp.checksum = pkt_chk;
+    p->icmp.icmp6_cksum = pkt_chk;
 
     // move original packet to this new structure
     iptr->packet = pptr->buf;
@@ -1178,16 +1177,13 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                 // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
                 // rather than L_link_ordered()
                 // not as pretty although it was required whenever incoming packet counts go into the millions..
-                printf("procesed packet\n");
                 if (llast == NULL)
                     ret = llast = iptr;
                 else {
                     llast->next = iptr;
                     llast = iptr;
                 }
-            } else {
-                printf("couldnt find process\n");
-            }
+            } 
 
         // move on to the next element in the list of packets
         pptr = pptr->next;

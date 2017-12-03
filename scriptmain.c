@@ -71,6 +71,9 @@ int main(int argc, char *argv[]) {
     // call the init() function in the script
     PythonLoadScript(sctx, script, "init", NULL);
 
+    ctx->http_discovery_enabled = 1;
+    ctx->http_discovery_max = 50;
+
     while (ctx->script_enable) {
             // call AS_perform() once to iterate all attacks
             AS_perform(ctx);

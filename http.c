@@ -69,28 +69,31 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
 
     memset(&cptr, 0, sizeof(ConnectionProperties));
     // so we can change the seqs again later if we repeat this packet (w rebuilt source ports, identifiers and now seq)
-    aptr->client_base_seq = client_seq;
-    aptr->server_base_seq = server_seq;
 
     //OsPick(int options, int *ttl, int *window_size)
     //OsPick(OS_XP|OS_WIN7, &cptr.client_ttl, &cptr.max_packet_size_client);
     //OsPick(OS_LINUX,  &cptr.server_ttl, &cptr.max_packet_size_server);
 
     // if these are not set properly.. itll cause issues during low level packet building (TCPSend-ish api)
-    cptr.client_ttl = 64;
-    cptr.server_ttl = 53;
     cptr.max_packet_size_client = max_packet_size_client;
     cptr.max_packet_size_server = max_packet_size_server;
 
 
-    cptr.server_ip = server_ip;
     cptr.server_port = server_port;
-    cptr.client_ip = client_ip;
     cptr.client_port = client_port;
-    gettimeofday(&cptr.ts, NULL);
-    cptr.aptr = aptr;
     cptr.server_identifier = server_identifier;
     cptr.client_identifier = client_identifier;
+    aptr->server_base_seq = server_seq;
+    aptr->client_base_seq = client_seq;
+
+    cptr.client_ttl = 64;
+    cptr.server_ttl = 53;
+
+    cptr.server_ip = server_ip;    
+    cptr.client_ip = client_ip;
+
+    gettimeofday(&cptr.ts, NULL);
+    cptr.aptr = aptr;
     cptr.client_seq = client_seq;
     cptr.server_seq = server_seq;
     // deal with it later when code is completed..
@@ -473,8 +476,10 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
 
 
     // prepare tuple with data for python script callback
-    if ((pArgs = PyTuple_New(8)) == NULL) goto end;
-    
+    if ((pArgs = PyTuple_New(8)) == NULL) {
+        printf("error\n");
+        goto end;
+    }
     PyTuple_SetItem(pArgs, 0, pIP_src);
     PyTuple_SetItem(pArgs, 1, pIP_src);
     PyTuple_SetItem(pArgs, 2, pCountry_src);
@@ -521,8 +526,14 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
             if (ret && ret <= 2) goto end;
 
             // allocate memeory to hold these pointers since the returned ones are inside of python memory
-            if ((ret_client_body = (char *)malloc(new_client_body_size)) == NULL) goto end;
-            if ((ret_server_body = (char *)malloc(new_server_body_size)) == NULL) goto end;
+            if ((ret_client_body = (char *)malloc(new_client_body_size)) == NULL) {
+                printf("err2\n");
+                goto end;
+            }
+            if ((ret_server_body = (char *)malloc(new_server_body_size)) == NULL) {
+                printf("err3\n");
+                goto end;
+            }
 
             // copy the data from internal python storage into the ones for the calling function
             memcpy(ret_client_body, new_client_body, new_client_body_size);
@@ -549,14 +560,16 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
             *dest_port = new_dest_port;
 
 
-            ret = 1;
+            //ret = 1;
+            printf("good\n");
         }
 
-        Scripting_ThreadPost(ctx, sptr);
+        
     }
 
     // cleanup
     end:;
+    if (sptr) Scripting_ThreadPost(ctx, sptr);
     if (pValue != NULL) Py_DECREF(pValue);
     if (pFunc != NULL) Py_DECREF(pFunc);
 
@@ -749,10 +762,10 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 
     // get cient side of http connection..
     // cookies, URL, user agent, etc
-    //client_body = ConnectionData(hptr->packet_list, FROM_CLIENT, &client_body_size);
+    client_body = ConnectionData(hptr->packet_list, FROM_CLIENT, &client_body_size);
     //FileWrite("client.dat", client_body, client_body_size);
     // get server side of http connection (http response, cookies, etc) 
-    //server_body = ConnectionData(hptr->packet_list, FROM_SERVER, &server_body_size);
+    server_body = ConnectionData(hptr->packet_list, FROM_SERVER, &server_body_size);
     //FileWrite("server.dat", server_body, server_body_size);
 
     // at this point we have both bodies... we can pass to python callback to pull out server_name, and other heqader information
@@ -769,6 +782,7 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 
     i = 1;
     //i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip, &new_dest_port, &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
+    printf("i: %d\n", i);
 
     if (i == 0) goto end;
 
@@ -824,7 +838,7 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     }
 
 
-    if ((aptr = InstructionsToAttack(ctx, hptr->packet_list, 9999999, 1)) == NULL) goto end;
+    if ((aptr = InstructionsToAttack(ctx, NULL, 9999999, 1)) == NULL) goto end;
     
 
     // so we can change the seqs again later if we repeat this packet (w rebuilt source ports, identifiers and now seq)
@@ -845,8 +859,6 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     cptr.max_packet_size_client = max_packet_size_client;
     cptr.max_packet_size_server = max_packet_size_server;
 
-    printf("source ip %s dest ip  %s\n", new_source_ip, new_destination_ip );
-    
     IP_prepare(new_source_ip, &cptr.client_ip, &cptr.client_ipv6, &is_src_ipv6);
     IP_prepare(new_destination_ip, &cptr.server_ip, &cptr.server_ipv6, &is_dest_ipv6);
 
@@ -888,7 +900,10 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     // lets set as live source..
     // or we need to use some kinda callbacks like traceroutee queu for 75% completion
     aptr->live_source = 1;
-
+    aptr->type = ATTACK_SESSION;
+    aptr->paused = 0;
+    aptr->count = 99999999;
+    aptr->repeat_interval = 1;
     // now lets build the low level packets for writing to the network interface
     BuildPackets(aptr);    
 
@@ -898,6 +913,7 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 
 
     ret = 1;
+    
     end:;
     err:;
     hptr->processed = 1;
@@ -930,7 +946,8 @@ int HTTPDiscover_Perform(AS_context *ctx) {
     // loop and analyze any completed sessions we found in live traffic
     while (hptr != NULL) {
         if (!hptr->processed && hptr->complete) {
-            ret += HTTPDiscover_AnalyzeSession(ctx, hptr);
+            if (L_count((LINK *)ctx->attack_list) < ctx->http_discovery_max)
+                ret += HTTPDiscover_AnalyzeSession(ctx, hptr);
         }
 
         if (!hptr->complete) {

@@ -954,56 +954,10 @@ static PyObject *PyASC_TracerouteRetry(PyAS_Config* self){
     return Py_None; 
 }
 
+
+
 // show status of current traceroute queue
 static PyObject *PyASC_TracerouteStatus(PyAS_Config* self) {
-    int i = 0;
-    PyObject *PAttackList = NULL;
-    long ttl_count[MAX_TTL];
-    TracerouteQueue *qptr = NULL;
-    int count  = 0;
-    int n = 0;
-
-    memset(ttl_count, 0, sizeof(long)*MAX_TTL);
-
-    if (self->ctx) {
-        qptr = self->ctx->traceroute_queue;
-
-        if (qptr != NULL) {
-            // remove unused TTL fromm evveryone
-            ConsolidateTTL(qptr);
-
-            while (qptr != NULL) {
-                for (i = 0; i < qptr->max_ttl; i++) {
-                    n = qptr->ttl_list[i];
-
-                    ttl_count[n]++;
-                }
-                
-                qptr = qptr->next;
-            }
-                
-            PAttackList = PyList_New(MAX_TTL);
-            if (PAttackList == NULL) {
-                PyErr_Print();
-                return NULL;
-            }
-            for (i = 0; i < MAX_TTL; i++) {
-                printf("ttl_count[%d] = %d\n", i, ttl_count[i]);
-                
-                PyList_SET_ITEM(PAttackList, i, PyLong_FromLong(ttl_count[i]));
-            }
-
-            return PAttackList; 
-        }
-    }
-
-    Py_INCREF(Py_None);
-    return Py_None; 
-}
-
-
-// show status of current traceroute queue
-static PyObject *PyASC_TracerouteStatus2(PyAS_Config* self) {
     int i = 0;
     PyObject *PStatusList = NULL;
     long ttl_count[MAX_TTL];
@@ -1334,13 +1288,12 @@ static PyMethodDef PyASC_methods[] = {
 
     {"tracerouteresetretrycount", (PyCFunction)PyASC_TracerouteResetRetryCount, METH_NOARGS, "reset all retry counts" },
 
-    {"traceroutestatus", (  PyCFunction)PyASC_TracerouteStatus,    METH_NOARGS,    "" },
 
     {"tracerouterandom", (  PyCFunction)PyASC_TracerouteRandom,    METH_VARARGS|METH_KEYWORDS,    "" },
 
     {"tracerouteaddrandomipgeo", (PyCFunction)PyASC_TracerouteGenerateRandomGEO,     METH_VARARGS|METH_KEYWORDS,    "" },
 
-    {"traceroutestatus2", (PyCFunction)PyASC_TracerouteStatus2,    METH_NOARGS,    "" },
+    {"traceroutestatus", (PyCFunction)PyASC_TracerouteStatus,    METH_NOARGS,    "" },
 
     {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_VARARGS|METH_KEYWORDS,    "" },
     {"spidersave", (PyCFunction)PyASC_SpiderSave,    METH_VARARGS|METH_KEYWORDS,    "" },
@@ -1719,6 +1672,9 @@ AS_scripts *Scripting_FindFunction(AS_context *ctx, char *func_name) {
         }
 
         eptr = eptr->next;
+    }
+    if (eptr) {
+        Scripting_ThreadPost(ctx, eptr);
     }
 
     return eptr;

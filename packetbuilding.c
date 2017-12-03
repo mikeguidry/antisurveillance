@@ -217,6 +217,9 @@ void BuildPackets(AS_attacks *aptr) {
         { 0, NULL }
     };
 
+    //printf("1 build packets aptr %d completed %d\n", aptr->id, aptr->completed);
+    //printf("1 count: %d\n", L_count((LINK *)aptr->packet_build_instructions));
+
     if (ptr == NULL) {
         aptr->completed = 1;
         return;
@@ -283,8 +286,10 @@ void BuildPackets(AS_attacks *aptr) {
         ptr = ptr->next;
     }
 
-    printf("build packets aptr %d completed %d\n", aptr->id, aptr->completed);
-    printf("count: %d\n", L_count((LINK *)aptr->packet_build_instructions));
+    if (aptr->packets && aptr->completed) aptr->completed = 0;
+
+    //printf("2 build packets aptr %d completed %d\n", aptr->id, aptr->completed);
+    //printf("2 count: %d\n", L_count((LINK *)aptr->packet_build_instructions));
 
     return;
 }
@@ -448,7 +453,8 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
     p->ip.frag_off 	    = 0;
     p->ip.protocol 	    = IPPROTO_UDP;
     p->ip.ttl           = iptr->ttl;
-p->ip.id = iptr->header_identifier;
+
+    p->ip.id = htons(iptr->header_identifier);
     if (p->ip.id == 0) p->ip.id = rand()%0xFFFFFFFF;
     
 
@@ -547,10 +553,11 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     p->ip.tot_len = htons(final_packet_size);
     p->ip.ttl = iptr->ttl;
 
-p->ip.id = iptr->header_identifier;
+    p->ip.id = htons(iptr->header_identifier);
+
     // *** verify ID strategies in OS
     if (p->ip.id == 0)
-    p->ip.id = rand()%0xFFFFFFFF;
+        p->ip.id = rand()%0xFFFFFFFF;
 
     p->ip.frag_off = 0;
     p->ip.protocol = IPPROTO_ICMP;
@@ -607,7 +614,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     int final_packet_size = 0;
     struct packeticmp6 *p = NULL;
     uint32_t pkt_chk = 0;
-    struct icmphdr *icmp = NULL;
+    struct icmp6_hdr *icmp = NULL;
 
     sprintf(stderr, "FIX... change icmp to icmp6 struct\n");
     exit(-1);
@@ -640,7 +647,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     // prepare ICMP header
     // copy over ICMP parameters from its own structure..
     // I didn't want to support all different ICMP scenarios in PacketBuildInstructions structures
-    memcpy((void *)&p->icmp, &iptr->icmp, sizeof(struct icmphdr));
+    memcpy((void *)&p->icmp, &iptr->icmp6, sizeof(struct icmp6_hdr));
     /*
     p->icmp.type = ICMP_ECHO;
     p->icmp.code = 0;
@@ -654,10 +661,10 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
 
     // this should be zero in the build instructions structure.. but just for future reference
     // it should be 0 before we checksum it..
-    p->icmp.checksum = 0;
+    p->icmp.icmp6_cksum= 0;
 
     // calculate ICMP checksum and put it directly into the final packet
-    p->icmp.checksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size);
+    p->icmp.icmp6_cksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size);
     
     // set the raw packet inside of the structure
     iptr->packet = final_packet;
@@ -778,8 +785,6 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
 
-    
-
     if (PacketTCP4BuildOptions(iptr) != 1) return -1;
 
     // this is only for ipv4 tcp
@@ -795,8 +800,6 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 
     // ensure the final packet was allocated correctly
     if (final_packet == NULL) return ret;
-    
-    
 
     // prepare IPv6 header
     p->ip.ip6_ctlun.ip6_un2_vfc = 6 << 4;

@@ -42,6 +42,7 @@ int AS_perform(AS_context *ctx) {
     AS_attacks *aptr = ctx->attack_list;
     attack_func func;
     int r = 0;  
+    int i = 0;
 
     // the script shouldnt worry about this unless its running on different threads.. only GZIP, and loading fromm large pcaps
     // are currently using different threads
@@ -86,7 +87,7 @@ int AS_perform(AS_context *ctx) {
                     // If those function were successful then we would have some packets here to queue..
                     if ((aptr->current_packet != NULL) || (aptr->packets != NULL)) {
                         //printf("packet queue\n");
-                        PacketQueue(ctx, aptr);
+                        for (i = 0; i < 30; i++) PacketQueue(ctx, aptr);
                     } else {
                         //printf("completed\n");
                         // otherwise we mark as completed to just free the structure

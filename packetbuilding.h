@@ -180,7 +180,7 @@ struct packetudp6 {
 
 struct packeticmp6 {
     struct ip6_hdr ip;
-    struct icmphdr icmp;
+    struct icmp6_hdr icmp;
 };
 
 

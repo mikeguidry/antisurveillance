@@ -177,6 +177,9 @@ def script_perform():
     #cnt = a.traceroutecount()
     #print("Traceroute queue count is %d") % cnt
     sleep(1)
+    cnt = a.networkcount()
+    if (cnt > 0):
+        a.pcapsave("py_output.pcap")
 
     
 
@@ -201,7 +204,7 @@ def init():
     #turn networking off so that we will dump all packets, and they wont get wrote to the live internet
     #a.networkoff()
     #build an HTTP session
-    #build_http(a)
+    build_http(a)
 
     #build http session using the raw way (meant for other protocols as well)
     #this can work for POP/SMTP/etc

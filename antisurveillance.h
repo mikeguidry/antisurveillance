@@ -290,9 +290,11 @@ typedef struct _antisurveillance_context {
     AttackTarget *research_target_list;
 
     HTTPBuffer *http_buffer_list;
-    int http_discovery_enabled;\
+    int http_discovery_enabled;
     int intel_stage;
     GenericCallbackQueue *generic_callback_queue;
+
+    int http_discovery_max;
 } AS_context;
 
 
