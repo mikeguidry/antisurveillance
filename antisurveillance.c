@@ -108,8 +108,7 @@ int AS_perform(AS_context *ctx) {
     AS_remove_completed(ctx);
 
     // flush network packets queued to wire
-    if (!ctx->network_write_threaded)
-        FlushAttackOutgoingQueueToNetwork(ctx);
+    //if (!ctx->network_write_threaded) FlushAttackOutgoingQueueToNetwork(ctx,);
 
     // traceroute, blackhole, scripting?, timers?
     Subsystems_Perform(ctx);

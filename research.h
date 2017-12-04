@@ -178,6 +178,8 @@ typedef struct _traceroute_spider {
     // all same hops end up linked to the first one in the list
     struct _traceroute_spider *hops_list;
 
+    struct _traceroute_spider *jump;
+
     struct _traceroute_spider *main_fuzzy_list;
     struct _traceroute_spider *queue_fuzzy_list;
 

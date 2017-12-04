@@ -205,7 +205,7 @@ TracerouteSpider *Traceroute_FindByTarget(AS_context *ctx, uint32_t target_ipv4,
 
 // find a spider structure by its hop (router) address
 TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struct in6_addr *hop_ipv6) {
-    TracerouteSpider *sptr = ctx->traceroute_spider;
+    TracerouteSpider *sptr = ctx->traceroute_spider_jump[hop_ipv4 % JTABLE_SIZE];
 
     while (sptr != NULL) {
         if (hop_ipv4 && hop_ipv4 == sptr->hop_ip)
@@ -214,7 +214,7 @@ TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struc
         if (!hop_ipv4 && CompareIPv6Addresses(&sptr->hop_ipv6, hop_ipv6))
             break;
 
-        sptr = sptr->next;
+        sptr = sptr->jump;
     }
 
     return sptr;
@@ -867,6 +867,13 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
         }
     }
 
+    sptr->jump = ctx->traceroute_spider_jump[sptr->hop_ip % JTABLE_SIZE];
+    ctx->traceroute_spider_jump[sptr->hop_ip % JTABLE_SIZE] = sptr;
+
+    // every 1000 entries.. lets fill some gaps with other queue data
+    if (ctx->new_traceroute_entries++ >= 1000)
+        Traceroute_FillAll(ctx);
+
     ret = 1;
 
     // lets setup jump table if its less than the one for this...
@@ -1355,12 +1362,13 @@ int Traceroute_Perform(AS_context *ctx) {
     // if our queue is lower than the max.. then enable some others
     Traceroute_MaxQueue(ctx);
 
-        Spider_Save(ctx);
+        
 
     // *** we will log to the disk every 20 calls (for dev/debugging)
     // moved to every 40 because the randomly disabling and enabling should be more than MAX_TTL at least
     if ((ccount++ % 40)==0) {
         // save data to disk... need to redo this for incremental
+        Spider_Save(ctx);
 
         // lets randomly enable or disable queues.... 20% of the time we reach this..
         if ((rand()%100) < 20)
@@ -1369,6 +1377,9 @@ int Traceroute_Perform(AS_context *ctx) {
 
     // do we adjust max active?
     Traceroute_Watchdog(ctx);
+
+    // fill all missing... do this sometimes.
+    //if ((rand()%100) > 90) 
 
     end:;
 
@@ -1429,6 +1440,9 @@ int Spider_Save(AS_context *ctx) {
     // open file for writing traceroute queues...
     sprintf(fname, "traceroute.dat");
     fd = fopen(fname, "wb");
+
+
+    //Traceroute_FillAll(ctx);
 
     // dump all traceroute queues and their identifiers
     qptr = ctx->traceroute_queue;
@@ -1668,6 +1682,9 @@ int Spider_Load(AS_context *ctx, char *filename) {
                 hop_last->hops_list = snew;
                 hop_last = snew;
             }
+
+            snew->jump = ctx->traceroute_spider_jump[snew->hop_ip % JTABLE_SIZE];
+            ctx->traceroute_spider_jump[snew->hop_ip % JTABLE_SIZE] = snew;
 
         } else if (dentry.code == 3) {
             // allocate structure for storing this entry into the traceroute spider
@@ -3324,7 +3341,9 @@ int Traceroute_TryFill(AS_context *ctx, TracerouteQueue *qptr) {
 
 
 
-
+// loops and verifies every queue against others that have the same hops.. so it can fill some of its own gaps
+// most routes like 1-5 or 6 are the same.. thats the concept behind this..
+// its one of 2-3 strategies to use less analysis to get information required for an attack
 int Traceroute_FillAll(AS_context *ctx) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
     int ret = 0;

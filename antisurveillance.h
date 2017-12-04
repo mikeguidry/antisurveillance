@@ -266,6 +266,9 @@ typedef struct _antisurveillance_context {
     TracerouteQueue *traceroute_queue_identifier[JTABLE_SIZE];
     // internal database built from the traceroutes, and analysis
     TracerouteSpider *traceroute_spider;
+
+    TracerouteSpider *traceroute_spider_jump[JTABLE_SIZE];
+
     //void *jump_table[256*256*256];
     TracerouteSpider *traceroute_spider_hops;
     // responses coming from the network to get analyzed & put into the spiderweb
@@ -303,6 +306,8 @@ typedef struct _antisurveillance_context {
     int http_discovery_max;
 
     HTTPObservedVariables *observed;
+
+    int new_traceroute_entries;
 } AS_context;
 
 
