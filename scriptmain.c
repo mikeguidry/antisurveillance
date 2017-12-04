@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
 
     // call the init() function in the script
     PythonLoadScript(sctx, script, "init", NULL);
-
+/*
     ctx->http_discovery_enabled = 1;
     ctx->http_discovery_max = 50;
 
@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
 
     }
     
-    exit(0); 
+    exit(0);  */
     //GenerateIPv6Address(ctx, (char *) "US", NULL);
     while (ctx->script_enable) {
             // call AS_perform() once to iterate all attacks

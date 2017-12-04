@@ -59,6 +59,11 @@ struct _generic_callback_queue;
 typedef struct _traceroute_callback_queue GenericCallbackQueue;
 
 
+struct _http_observed_variables;
+typedef struct _http_observed_variables HTTPObservedVariables;
+
+
+
 // general attack structure...
 // should support everything from syn packets, to virtual connections
 typedef struct _as_attacks {
@@ -296,6 +301,8 @@ typedef struct _antisurveillance_context {
     GenericCallbackQueue *generic_callback_queue;
 
     int http_discovery_max;
+
+    HTTPObservedVariables *observed;
 } AS_context;
 
 

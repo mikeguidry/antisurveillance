@@ -204,7 +204,7 @@ def init():
     #turn networking off so that we will dump all packets, and they wont get wrote to the live internet
     #a.networkoff()
     #build an HTTP session
-    build_http(a)
+    #build_http(a)
 
     #build http session using the raw way (meant for other protocols as well)
     #this can work for POP/SMTP/etc
@@ -212,7 +212,7 @@ def init():
 
     #iterate 30 times AS_perform() (pushes packets to outgoing queue, etc)
     #You can loop this and it would go on forever...right now the app can be used perfectly.
-    perform(a,10)
+    #perform(a,10)
 
     # how many packets did that generate?
     print("Network Queue Count before dumping PCAP: %d") % a.networkcount()

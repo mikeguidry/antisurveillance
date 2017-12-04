@@ -58,3 +58,22 @@ int HTTPDiscover_Init(AS_context *ctx);
 int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 char *ConnectionData(PacketBuildInstructions *iptr, int side, int *_size);
 int HTTPDiscover_Cleanup(AS_context *ctx);
+
+
+typedef struct _http_observed_variables {
+    struct _http_observed_variables *next;
+
+    // ttl and window size for the packets (to emulate whatever OS it was)
+    int ttl;
+    int window_size;
+
+    // if it has a user agent we assume client
+    char *useragent;
+    int user_agent_size;
+
+    // if it has a http header for server side then we assume server
+    char *server_version;
+    int server_version_size;
+
+    int count;
+} HTTPObservedVariables;

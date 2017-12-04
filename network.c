@@ -44,9 +44,9 @@ protection to be developed, and this can become the 'third party server' for hun
 // we arent always sure the queues will flush.. so.. we should allow checking, and ensuring some packets can stay in queue
 // itd be nice to get them out as quickly as possible since AS_perform() or other commands handle timings
 // timings needs to be moved from seconds to milliseconds (for advanced protocol emulation)
-int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
+int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr) {
     int count = 0;
-    AttackOutgoingQueue *optr = ctx->network_queue, *onext = NULL;
+    AttackOutgoingQueue *onext = NULL;
     struct sockaddr_in rawsin;
     struct ether_header *ethhdr = NULL;
 
@@ -118,11 +118,9 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx) {
             free(optr);
 
             // fix up the linked lists
-            if (ctx->network_queue == optr)
-                ctx->network_queue = onext;
+//            if (ctx->network_queue == optr) ctx->network_queue = onext;
 
-            if (ctx->network_queue_last == optr)
-                ctx->network_queue_last = NULL;
+            //if (ctx->network_queue_last == optr) ctx->network_queue_last = NULL;
 
             //printf("pushed packet\n");
 
@@ -242,6 +240,8 @@ void *thread_network_flush(void *arg) {
     int i = 0;
     struct sched_param params;
     pthread_t this_thread = pthread_self();
+    AttackOutgoingQueue *optr = NULL;
+
 
     params.sched_priority = sched_get_priority_max(SCHED_FIFO);
     pthread_setschedparam(this_thread, SCHED_FIFO, &params);
@@ -250,10 +250,13 @@ void *thread_network_flush(void *arg) {
     while (1) {
         pthread_mutex_lock(&ctx->network_queue_mutex);
 
-        // how many packets are successful?
-        count = FlushAttackOutgoingQueueToNetwork(ctx);
-        
+        optr = ctx->network_queue;
+        ctx->network_queue_last = ctx->network_queue = NULL;
+
         pthread_mutex_unlock(&ctx->network_queue_mutex);
+        
+        // how many packets are successful?
+        count = FlushAttackOutgoingQueueToNetwork(ctx, optr);
 
         //if (count)printf("Network Thread Outgoing count flushed: %d\n", count);
         // if none.. then lets sleep..  
@@ -262,12 +265,13 @@ void *thread_network_flush(void *arg) {
             sleep(1);
         } else {
             
-            i = (1000000 / 4) - (i * 25000);
+            //i = (1000000 / 4) - (i * 25000);
             
+            
+            //i /= 4;
+            i = 50000;
             //printf("usleep %d\n", i);
-            i /= 4;
-            if (i > 0 && (i <= 1000000))
-                usleep(i);
+            if (i > 0 && (i <= 1000000))usleep(i);
         }
     }
 }
@@ -419,7 +423,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
     // analyze that packet, and turn it into a instructions structure
     if ((iptr = PacketsToInstructions(pptr)) == NULL) {
-        printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
+        //printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
         /*    if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
         fclose(fd); } */
@@ -657,11 +661,12 @@ void *thread_read_network(void *arg) {
             usleep(100000);
         } else {
             
-            sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
-            sleep_interval /= 2;
-            if (sleep_interval > 0)
+            //sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
+            //sleep_interval /= 2;
+            //if (sleep_interval > 0)
                 // timing change w aggressive-ness
-                usleep(sleep_interval);
+              //  usleep(sleep_interval);
+              usleep(10000);
             
         }
     }

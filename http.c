@@ -706,6 +706,51 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     return ret;
 }
 
+// observed is so we can pull things like user agents out of the raw packets on the wire
+// so that nobody has to keep things updated.. itll always transform itself with the current browwsers as long as
+// someone on the network uses it.. you can even just replay packets, and itll gather the data
+// this is for OS emulation
+HTTPObservedVariables *ObservedAdd(AS_context *ctx) {
+    HTTPObservedVariables *optr = NULL;
+
+    if ((optr = (HTTPObservedVariables *)calloc(1, sizeof(HTTPObservedVariables))) == NULL) return NULL;
+
+
+    optr->next = ctx->observed;
+    ctx->observed = optr;
+
+    return optr;
+}
+
+HTTPObservedVariables *ObserveGet(AS_context *ctx, int server) {
+    HTTPObservedVariables *optr = NULL;
+    int count = L_count((LINK *)optr);
+    int r = 0;
+
+    optr = ctx->observed;
+    while (optr != NULL) {
+        if (server && optr->server_version != NULL) count++;
+        if (!server && optr->useragent != NULL) count++;
+        
+        optr = optr->next;
+    }
+
+    r = rand()%count;
+    count = 0;
+
+    optr = ctx->observed;
+    while (optr != NULL) {
+        if (server && optr->server_version != NULL) count++;
+        if (!server && optr->useragent != NULL) count++;
+        
+        if (count == r) break;
+
+        optr = optr->next;
+    }
+
+    return optr;
+}
+
 
     
 // This will have access to the full http connection... (using ConnectionData to filter out each side)

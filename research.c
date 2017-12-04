@@ -267,7 +267,6 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
                 // we put it back into the list..
                 qptr->ttl_list[cur_ttl++] = i;
             }
-            //printf("!!!! missing ttl %d\n", i);
             missing++;
         }
         // if the source IP matches the target.. then it is completed
@@ -1314,7 +1313,7 @@ int Traceroute_Perform(AS_context *ctx) {
 
         if (!tptr->completed && tptr->enabled) {
             // lets increase the TTL by this number (every 1 second right now)
-            if ((ts - tptr->ts_activity) > 1) {
+            if ((ts - tptr->ts_activity) > 1 || 1==1) {
                 tptr->ts_activity = time(0);
 
                 // increase TTL in case this one is rate limiting ICMP, firewalled, or whatever.. move to the next
@@ -1682,12 +1681,17 @@ int Spider_Load(AS_context *ctx, char *filename) {
             snew->identifier_id = dentry.identifier;
             snew->ttl = dentry.ttl;
 
-            snew->branches = slast->branches;
-            slast->branches = snew;
+            if (slast != NULL) {
+                snew->branches = slast->branches;
+                slast->branches = snew;
+            } else {
+                printf("slast NULL?\n");
+                exit(0);
+            }
         }
 
         // if its more than just a queue.. we wanna link it together.. (for 2/3)
-        if (dentry.code && dentry.code > 1) {    
+        if (snew && dentry.code && dentry.code > 1) {    
             //printf("ident together.. id %X\n", snew->identifier_id);
             Spider_IdentifyTogether(ctx, snew);
 
@@ -2005,7 +2009,7 @@ int Traceroute_Watchdog(AS_context *ctx) {
         
         if (ctx->traceroute_max_active < 10) ctx->traceroute_max_active = 10;
 
-        if (ctx->traceroute_max_active > 500) ctx->traceroute_max_active = 500;
+        if (ctx->traceroute_max_active > 10000) ctx->traceroute_max_active = 10000;
 
 
         ctx->watchdog_ts = ts;
@@ -3006,7 +3010,6 @@ int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, Tracero
 }
 
 
-// !!! ipv6
 TracerouteQueue *TracerouteFindQueueByIP(AS_context *ctx, uint32_t address, struct in6_addr *addressv6) {
     TracerouteQueue *qptr = NULL;
 
@@ -3255,19 +3258,83 @@ int Research_Intel_Perform(AS_context *ctx) {
         ctx->intel_stage++; // set to 5...
     }// else if (ctx->intel_stage == 6) {}
 
-    // lets perform this at evvery stage
-    aptr = ctx->attack_list;
-    // disqualify old attacks to get replaced with new
-    while (aptr != NULL) {
-        timeval_subtract(&time_diff, &aptr->ts, &tv);
+    if (ctx->http_discovery_enabled) {
+        // lets perform this at evvery stage
+        aptr = ctx->attack_list;
+        // disqualify old attacks to get replaced with new
+        while (aptr != NULL) {
+            timeval_subtract(&time_diff, &aptr->ts, &tv);
 
-        // lets kill attacks after 2 hours
-        if (time_diff.tv_sec >= (60*60*2))
-            aptr->completed = 1;
+            // lets kill attacks after 2 hours..IF discovery is on!
+            if (aptr->live_source && time_diff.tv_sec >= (60*60*2))
+                aptr->completed = 1;
 
-        aptr = aptr->next;
+            aptr = aptr->next;
+        }
     }
 
     end:;
+    return ret;
+}
+
+
+
+int Research_SyslogSend(AS_context *ctx, uint32_t ip, struct in6_addr ipv6, char *data, int size) {
+    int ret = -1;
+
+    end:;
+    return ret;
+}
+
+
+// traceroute fill...
+// If hop 6 is equal to another queues hop 6.. and its missing 2-4 or 1-5... then we can automatically
+// fill because we are sure it is going through a diff hop
+// obviously there are a cocuple sccenarios here that are important such as multi homed etc...
+// im not sure how far ill go into those strategies, or whether its even important
+// that is unless someone wanted to coordinate an attack and knew there were several multihomed 
+// surveillance  nodes that they wanted to reach.. i highly doubt anyone who knows that mucch
+// about the networks they wish to attack cannot just perform it themselves
+// the simplest way to do this is to find another traceroute or several which has the same hop
+// at the same TTL, and anything below that TTL can be assumed would be OK to fill
+int Traceroute_TryFill(AS_context *ctx, TracerouteQueue *qptr) {
+    int i = 0, n = 0, before = 0;
+    TracerouteSpider *sptr = NULL;
+
+    // check for each TTL
+    for (i = 0; i < MAX_TTL; i++) {
+        // if the response is NULL.. count it
+        if (qptr->responses[i] == NULL)
+            before++;
+        else
+        // if BEFORE this response we had some empty(NULL) AND this one exist..
+            if (before && qptr->responses[i])
+                // then lets find other queues which use the same hop (router) because anything below this TTL on their queue response is equal
+                if ((sptr = Traceroute_FindByHop(ctx, qptr->responses[i]->hop_ip, NULL)) != NULL && (sptr->queue != qptr)   )
+                    // loop for all missing TTLs in our queue
+                    for (n = i; n > 0; n--)
+                        // and if the other queue we found has them,
+                        if (sptr->queue->responses[n] && qptr->responses[n] == NULL)
+                            // then lets copy them over...
+                            qptr->responses[n] = sptr->queue->responses[n];
+    }
+
+    return 0;
+}
+
+
+
+
+int Traceroute_FillAll(AS_context *ctx) {
+    TracerouteQueue *qptr = ctx->traceroute_queue;
+    int ret = 0;
+
+    while (qptr != NULL) {
+
+        ret += Traceroute_TryFill(ctx, qptr);
+
+        qptr = qptr->next;
+    }
+
     return ret;
 }

@@ -81,7 +81,7 @@ void *thread_network_flush(void *arg);
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr);
 void *AS_queue_threaded(void *arg);
 int OutgoingQueueAdd(AS_context *,AttackOutgoingQueue *optr, int only_try);
-int FlushAttackOutgoingQueueToNetwork(AS_context *);
+int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr);
 void ClearPackets(AS_context *ctx);
 int process_packet(AS_context *ctx, char *packet, int size);
 void *thread_read_network(void *arg);
