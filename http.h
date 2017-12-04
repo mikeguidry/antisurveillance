@@ -52,7 +52,7 @@ void *HTTP4_Create(AS_attacks *aptr);
 int GZIP_Thread(AS_context *, AS_attacks *aptr, char *client_body, int client_body_size, char *server_body, int server_body_size);
 void *thread_gzip_attack(void *arg);
 void attacks_init(AS_context *);
-int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, uint32_t server_port,  char *client_body,
+int BuildHTTP4Session(AS_context *, AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, uint32_t server_port,  char *client_body,
 int client_size, char *server_body, int server_size);
 int HTTPDiscover_Init(AS_context *ctx);
 int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
@@ -77,3 +77,8 @@ typedef struct _http_observed_variables {
 
     int count;
 } HTTPObservedVariables;
+
+
+HTTPObservedVariables *ObserveAdd(AS_context *ctx, int ttl, int window_size);
+HTTPObservedVariables *ObserveCheck(AS_context *ctx, int ttl, int window_size);
+HTTPObservedVariables *ObserveGet(AS_context *ctx, int server);
