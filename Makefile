@@ -8,7 +8,7 @@ LIBS=-lz -lpthread -ggdb -lpython2.7_d -lpthread -ldl  -lutil -lm   -L/usr/lib -
 
 
 
-_OBJ = os_emulation.o packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o  identities.o macro.o
+_OBJ = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o  identities.o macro.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
