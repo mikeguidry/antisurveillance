@@ -954,7 +954,7 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
     TracerouteResponse *rptr = NULL;
     TraceroutePacketData *pdata = NULL;
-    char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_";
+    char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
     struct udphdr *udph = NULL;
 
 
@@ -1049,7 +1049,7 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
     int i = 0, ret = 0;
     PacketBuildInstructions *iptr = NULL;
     TraceroutePacketData *pdata = NULL;
-    char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_";
+    char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
    
    //printf("traceroute send udp\n");
     
@@ -2789,6 +2789,9 @@ IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int
 }
 
 // generating IPv6 addresses is a little more difficult than ipv4.. traceorute will help us accomplish  somme things
+// other subsystems need to automatically append IPv6 addreses to a specfici list to help...
+// we want all possible addresses.. then we can rev dns them, as well as grab AAAA from domains/etc (even domains found in wild without
+// taking their sessions)
 int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *address) {
     int ret = 0;
     int retry = 100000;
@@ -2810,7 +2813,7 @@ char ipv6_prefix_3[] = {"2001:1838:f000","2001:1ac0:0","2001:4b98:abcb","2001:50
 int total_blocks = 8;
 
 int r = rand()%2;
-*/
+
 char *doners[] = {
 "\x20\x01",
 "\x24\x00",
@@ -2875,7 +2878,7 @@ char *doners[] = {
         }
         
     }
-
+*/
     // if we failed to do it in the amount of retries return no
     if (!retry) return 0;
 

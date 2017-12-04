@@ -883,7 +883,7 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     if (iptr->data_size) {
         //md5hash(iptr->data, iptr->data_size);
         memcpy(final_packet + sizeof(struct packettcp6) + iptr->options_size, iptr->data, iptr->data_size);
-    }
+    }   
     
 
     // put the final packet into the build instruction structure as completed..
@@ -938,4 +938,82 @@ int PacketTCP4BuildOptions(PacketBuildInstructions *iptr) {
     iptr->options = current_options;
 
     return 1;
+}
+
+
+
+
+// moved into its own function so i can finish supporting UDP, and TCP traceroutes
+int SendICMP(AS_context *ctx, uint32_t src_ip, uint32_t dst_ip, struct in6_addr *src_ipv6, struct in6_addr *dst_ipv6, int code, uint32_t seq, uint32_t id) {
+    int i = 0, ret = 0;
+    PacketBuildInstructions *iptr = NULL;
+    struct icmphdr icmp;
+    struct icmp6_hdr icmp6;
+    AttackOutgoingQueue *optr = NULL;
+
+    // from ubuntu apt-get source traceroute (well that builds it using &0x3f.. whatever.. static is fine)
+    char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
+    
+    // zero ICMP
+    memset(&icmp, 0, sizeof(struct icmphdr));
+    memset(&icmp6, 0, sizeof(struct icmphdr));
+
+
+    // create instruction packet for the ICMP(4/6) packet building functions
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+        // this is the current TTL for this target
+        iptr->ttl = 64;
+        //iptr->ttl = tptr->ttl_list[tptr->current_ttl];
+
+        // determine if this is an IPv4/6 so it uses the correct packet building function
+        // prepare the ICMP header for the traceroute
+        if (dst_ip != 0) {
+            iptr->type = PACKET_TYPE_ICMP_4;
+            iptr->destination_ip = dst_ip;
+            iptr->source_ip = src_ip;
+
+            icmp.type = code;
+            icmp.un.echo.sequence = seq;
+            icmp.un.echo.id = id;
+
+        } else {
+            iptr->type = PACKET_TYPE_ICMP_6;
+
+            icmp6.icmp6_type = code;
+            icmp6.icmp6_id = id;
+            icmp6.icmp6_seq = seq;
+            
+            // destination is the target
+            CopyIPv6Address(&iptr->destination_ipv6, &dst_ipv6);
+            // source is our ip address
+            CopyIPv6Address(&iptr->source_ipv6, &src_ipv6);
+        }
+
+        // copy ICMP parameters into this instruction packet as a complete structure
+        //memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
+        //memcpy(&iptr->icmp6, &icmp6, sizeof(struct icmp6_hdr));
+
+        // set size to the traceroute packet data structure's size...
+        iptr->data_size = sizeof(data);
+
+        if (iptr->data_size && (iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
+            memcpy(iptr->data, data, sizeof(data));
+        }
+
+        // lets build a packet from the instructions we just designed for either ipv4, or ipv6
+        // for either ipv4, or ipv6
+        if (iptr->type & PACKET_TYPE_ICMP_6)
+            i = BuildSingleICMP6Packet(iptr);
+        else if (iptr->type & PACKET_TYPE_ICMP_4)
+            i = BuildSingleICMP4Packet(iptr);
+
+        // if the packet building was successful
+        if (i == 1)
+            NetworkQueueAddBest(ctx, iptr, 0);
+    }
+
+    PacketBuildInstructionsFree(&iptr);
+   
+    end:;
+    return ret;
 }
