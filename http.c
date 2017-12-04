@@ -57,7 +57,7 @@ int BuildHTTP4Session(AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, 
     // os emulation and general statistics required here from operating systems, etc..
     //// find correct MTU, subtract headers.. calculate.
     // this is the max size of each packet while sending the bodies...
-    // *** this has to calculate out the tcp/ip headers
+    // !!! this has to calculate out the tcp/ip headers
     // 12 is for the options.. i have to let the attack structure know if options will be built for either client or server
     int max_packet_size_client = 1500 - (20 * 2 + 12);
     int max_packet_size_server = 1500 - (20 * 2 + 12); 
@@ -476,10 +476,8 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
 
 
     // prepare tuple with data for python script callback
-    if ((pArgs = PyTuple_New(8)) == NULL) {
-        printf("error\n");
-        goto end;
-    }
+    if ((pArgs = PyTuple_New(8)) == NULL) goto end;
+
     PyTuple_SetItem(pArgs, 0, pIP_src);
     PyTuple_SetItem(pArgs, 1, pIP_src);
     PyTuple_SetItem(pArgs, 2, pCountry_src);

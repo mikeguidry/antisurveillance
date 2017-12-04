@@ -277,6 +277,7 @@ typedef struct _antisurveillance_context {
 
     GeoIP *geoip_handle;
     GeoIP *geoip_asn_handle;
+    GeoIP *geoipv6_handle;
 
     PCAPOperation *pcap_operations;
 

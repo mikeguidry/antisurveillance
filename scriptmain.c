@@ -31,6 +31,10 @@ the issues that allow these attacks.
 #include "utils.h"
 #include "scripting.h"
 
+int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *address);
+
+extern const char *geoip_countries[];
+
 //https://stackoverflow.com/questions/17766550/ctrl-c-interrupt-event-handling-in-linux
 volatile sig_atomic_t flag = 0;
 void ctrlc_exit(int sig){ // can be called asynchronously
@@ -45,6 +49,7 @@ int main(int argc, char *argv[]) {
     // default script is "mgr.py"
     char *script = "mgr";
     AS_scripts *sctx = NULL;    
+    int z = 0;
 
     // allow ctrl-c to stop script (if can you loop forever)
     signal(SIGINT, ctrlc_exit); 
@@ -74,6 +79,15 @@ int main(int argc, char *argv[]) {
     ctx->http_discovery_enabled = 1;
     ctx->http_discovery_max = 50;
 
+    while (geoip_countries[z]) {
+        printf("Country: %s\n", geoip_countries[z]);
+        GenerateIPv6Address(ctx, (char *)geoip_countries[z], NULL);
+        z++;
+
+    }
+    
+    exit(0); 
+    //GenerateIPv6Address(ctx, (char *) "US", NULL);
     while (ctx->script_enable) {
             // call AS_perform() once to iterate all attacks
             AS_perform(ctx);

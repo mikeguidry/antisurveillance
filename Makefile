@@ -13,7 +13,7 @@ OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
 $(ODIR)/%.o: %.c $(DEPS) scriptmain.o cmdline.o
-	$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) -static -c -o $@ $< $(CFLAGS)
 
 pyanti: $(OBJ) obj/scriptmain.o 
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)

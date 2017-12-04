@@ -58,7 +58,7 @@ enum {
 
 
 // to do add counting logic, and percentage choices
-// *** this code is terrible.. rewrite completely
+// !!! this code is terrible.. rewrite completely
 void OsPick(int options, int *ttl, int *window_size) {
     int i = 0;
     int *list = NULL;

@@ -2053,6 +2053,8 @@ int Research_Init(AS_context *ctx) {
     
     ctx->geoip_asn_handle = GeoIP_open("GeoIPASNum.dat", GEOIP_ASNUM_EDITION_V6 | GEOIP_SILENCE);
 
+    ctx->geoipv6_handle = GeoIP_open("GeoIPv6.dat", GEOIP_STANDARD | GEOIP_SILENCE);
+
     ret = 1;
 
     return ret;
@@ -2789,20 +2791,95 @@ IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int
 // generating IPv6 addresses is a little more difficult than ipv4.. traceorute will help us accomplish  somme things
 int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *address) {
     int ret = 0;
-    int retry = 1000;
+    int retry = 100000;
     struct in6_addr ipv6;
+    char *geo = NULL;
+    int i = 0;
+    char *sptr = (char *)&ipv6;
+    char *IP = NULL;
+    char google[] = "2607:f8b0:4000:811::200e";
+    int is_ipv6 = 0;
+/*
+    32,33,34,35,36,37,38
+char ipv6_prefix_1[] = {"2001","2400","2401","2600","2604",
+"2605","2607","2610","2620","2a00",
+"2a01","2a02","2a03",NULL };
+
+char ipv6_prefix_3[] = {"2001:1838:f000","2001:1ac0:0","2001:4b98:abcb","2001:500:2","2001:500:200","2001:500:2d","2001:500:7967","2001:500:856e","2001:500:89","2001:500:90","2001:500:94","2001:500:a8","2001:500:d937","2001:501:b1f9","2001:502:1ca1","2001:502:7094","2001:502:ad09","2001:502:cbe4","2001:502:f3ff","2001:503:231d","2001:503:83eb","2001:503:a83e","2001:503:ba3e","2001:503:d414","2001:610:1","2001:610:3","2001:630:0","2001:678:12","2001:67c:1010","2001:67c:28cc","2001:dcd:1","2001:dcd:2","2001:dcd:3","2001:dcd:4","2400:cb00:2049","2401:fd80:400","2401:fd80:404","2600:1401:1","2600:1401:2","2600:1406:32","2600:1480:800","2600:1480:b000","2600:1800:10","2600:1800:15","2600:1800:5","2600:1801:11","2600:1801:13","2600:1801:6","2600:1802:12","2600:1802:14","2600:1802:7","2600:2000:1000","2600:2000:1001","2600:9000:5300","2600:9000:5301","2600:9000:5302","2600:9000:5303","2600:9000:5304","2600:9000:5305","2600:9000:5306","2600:9000:5307","2604:3400:abca","2604:3400:abcc","2605:f700:c0","2607:f388:","2607:f6d0:0","2610:28:3090","2610:8:6800","2610:8:7800","2610:a1:1015","2610:a1:1016","2610:a1:1017","2610:a1:1019","2620:0:28a0","2620:0:2e60","2620:0:30","2620:0:32","2620:0:34","2620:0:37","2620:0:862","2620:115:c00f","2620:171:802","2620:49:3","2620:74:19","2a00:1620:c0","2a00:bdc0:ff","2a00:d40:1","2a01:618:400","2a02:2720:2","2a02:6b0:6","2a02:6b8:0","2a02:e00:ffec","2a03:1980:d0ff","2a03:2880:fffe", NULL };
+
+int total_blocks = 8;
+
+int r = rand()%2;
+*/
+char *doners[] = {
+"\x20\x01",
+"\x24\x00",
+"\x24\x01",
+"\x26\x00",
+"\x26\x05",
+
+ NULL   
+};
+    IP_prepare((char *)&google, NULL, &ipv6, &is_ipv6);
 
     // we need a limitation ono the amount of tries...
     while (retry--) {
 
-        // ipv6.. gen
+        // we need to seed with some initial ipv6 addresses....
+        // we can put several in alist, and mark 00 on parts  we DONT want to use
+        // the rest can be randomly pulled fromm whichever part  f the array
+        int doner = rand()%100;
 
-        break;
+        for (i = 0; i < sizeof(struct in6_addr); i++) {
+            if (doner[i] != 0) {
+
+            }
+        }
+
+        sptr[0] = 32;//(rand()%6) + 32;
+        sptr[1] = (rand()%20);
+
+        for (i = 4; i < sizeof(struct in6_addr); i++) {
+            if (sptr[i] == 0) {
+                if (i >= 8) {                
+                    // most IPs ive noticed thus  far are below 200 .. so lets try those first
+                    //this isnt an absolute concept.. im going to obtain more IPs, ,and perform some entropy
+                    // cals and use those here as well... its a *little* more difficult than ipv4 but not impossible :)
+                    sptr[i]=(rand()%100 < 20) ? rand()%255 : rand()%190;
+                } else {
+                    sptr[i] = rand()%255;
+                }
+            }
+        }
+
+
+
+        if (ctx->geoipv6_handle) {
+            geo = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, ipv6);
+            if (geo != NULL) {
+                
+                // found geo we want
+                if (strcmp(geo, country)==0) {
+                    printf("1: %02x\n", (unsigned char)sptr[0]);
+                    IP = (char *)IP_prepare_ascii(0, &ipv6);
+                    if (IP != NULL) {
+                        printf("geo : %s [retry %d]\n", geo, retry);
+                        printf("IPv6: %s %X\n", IP, ctx->geoipv6_handle);
+                        free(IP);
+
+                    }
+                    return 1;
+                    break;
+                }
+            }
+        }
+        
     }
 
     // if we failed to do it in the amount of retries return no
     if (!retry) return 0;
 
+if (address != NULL)
     // copy the address
     CopyIPv6Address(address, &ipv6);
 
@@ -2926,7 +3003,7 @@ int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, Tracero
 }
 
 
-// *** ipv6
+// !!! ipv6
 TracerouteQueue *TracerouteFindQueueByIP(AS_context *ctx, uint32_t address, struct in6_addr *addressv6) {
     TracerouteQueue *qptr = NULL;
 
@@ -3135,6 +3212,10 @@ int Research_Intelligence_Management_Stage1(AS_context *ctx) {
 int Research_Intelligence_Management_Stage2(AS_context *ctx) {
     int ret = 0;
 
+    // we should have some entropy calculations from sessions BEFORE release so that it can automatically determine better sessions to use
+    // from HTTP discovery... the 2hour timeout can also get modified depending on how quickly those sessions were even loaded
+
+    // we also need to replay somme TLS sessions.. (its time to start manipulation of attacks to attack NSA decryption engines)
     end:;
     return ret;
 }
