@@ -1,1 +1,1 @@
-void PacketAdjustments(AS_attacks *aptr);
+void PacketAdjustments(AS_context *, AS_attacks *aptr);

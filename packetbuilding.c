@@ -69,7 +69,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
 
-    if (PacketTCP4BuildOptions(iptr) != 1) return -1;
+    if (PacketTCPBuildOptions(iptr) != 1) return -1;
 
     // this is only for ipv4 tcp
     if (!(iptr->type & PACKET_TYPE_TCP_4)) return ret;
@@ -394,7 +394,7 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
             aptr->current_packet = NULL;
 
             // we have some adjustments to make (source port, identifiers, etc)
-            PacketAdjustments(aptr);
+            PacketAdjustments(ctx, aptr);
 
             // we must refresh this pointer after that..
             pkt = aptr->packets;
@@ -785,7 +785,7 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
 
-    if (PacketTCP4BuildOptions(iptr) != 1) return -1;
+    if (PacketTCPBuildOptions(iptr) != 1) return -1;
 
     // this is only for ipv4 tcp
     if (!(iptr->type & PACKET_TYPE_TCP_6)) return ret;
@@ -901,7 +901,7 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 // Incomplete but within 1 day it should emulate Linux, Windows, and Mac...
 // we need access to the attack structure due to the timestampp generator having a response portion from the opposide sides packets
 // !!! finish building tcp options data for the header
-int PacketTCP4BuildOptions(PacketBuildInstructions *iptr) {
+int PacketTCPBuildOptions(PacketBuildInstructions *iptr) {
     // later we nede to access parameters in aptr to build correctly (os emulation)
     AS_attacks *aptr = iptr->aptr;
     // need to see what kind of packet by the flags....

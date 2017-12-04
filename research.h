@@ -467,3 +467,4 @@ typedef struct _traceroute_callback_queue {
 
 int Generic_CallbackQueueCheck(AS_context *ctx, int);
 int Traceroute_FillAll(AS_context *ctx);
+int IPGather_Init(AS_context *ctx);

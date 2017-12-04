@@ -76,6 +76,12 @@ typedef struct _http_observed_variables {
     int server_version_size;
 
     int count;
+
+    char *tcp_options;
+    int tcp_options_size;
+
+    // once we parse the options once.. lets keep the timestampp offset so we can easily replace it next iteration
+    int tcp_timestamp_offset;
 } HTTPObservedVariables;
 
 

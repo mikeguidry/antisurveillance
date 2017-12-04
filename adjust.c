@@ -26,8 +26,11 @@ http.c because it will likely rely on other functions.
 // it depends on how your attacks are targeted.
 // Adjustments needs to be modular in a way to easily support IPv4/6 and ICMP/UDP/TCP on both stacks.
 
-// !!! add ipv6 support after IPv6 generator is done (waiting for traceroute research)
-void PacketAdjustments(AS_attacks *aptr) {
+#define IPV6_STATS_DEC_2017 22 // 22%
+//https://www.akamai.com/us/en/about/our-thinking/state-of-the-internet-report/state-of-the-internet-ipv6-adoption-visualization.jsp
+// soon lookup each country/ip gen
+void PacketAdjustments(AS_context *ctx, AS_attacks *aptr) {
+    int use_ipv6 = 0;
     // our new source port must be above 1024 and below 65536 (generally acceptable on all OS) <1024 is privileged
     int client_port = (1024 + rand()%(65535 - 1024));
     // the identifier portion of the packets..
@@ -41,10 +44,23 @@ void PacketAdjustments(AS_attacks *aptr) {
     // it picks new  IPs randomly right now.. it needs a context for the current configuration for picking them (w historic information)
     uint32_t src_ip = rand()%0xFFFFFFFF;
     uint32_t dst_ip = rand()%0xFFFFFFFF;
+    struct in6_addr src_ipv6;
+    struct in6_addr dst_ipv6;
 
     // used to change the SEQ.. it calculates the difference between the old, and new so that the rest is compatible
     uint32_t client_seq_diff = 0;
     uint32_t server_seq_diff = 0;
+
+
+    if ((rand()%100) < IPV6_STATS_DEC_2017) {
+        // lets use ipv6 for 20% of the time
+        use_ipv6 = 1;
+        //GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *address)
+        GenerateIPv6Address(ctx, NULL, &src_ipv6);
+        GenerateIPv6Address(ctx, NULL, &dst_ipv6);
+    }
+
+
 
     // if this attack doesn't wanna get adjusted...
     if (aptr->skip_adjustments) {
@@ -57,9 +73,17 @@ void PacketAdjustments(AS_attacks *aptr) {
     while (buildptr != NULL) {
         // we can determine which side of the connection by this variable we had set during analysis
         if (buildptr->client) {
-            // set our new IP addresses for this packet
-            buildptr->source_ip = src_ip;
-            buildptr->destination_ip = dst_ip;
+            if (!use_ipv6) {
+                // set our new IP addresses for this packet
+                buildptr->source_ip = src_ip;
+                buildptr->destination_ip = dst_ip;
+            } else {
+                buildptr->source_ip = buildptr->destination_ip = 0;
+                CopyIPv6Address(&buildptr->source_ipv6, &src_ipv6);
+                CopyIPv6Address(&buildptr->destination_ipv6, &dst_ipv6);
+            }
+
+                
 
             // Source port from client side to server is changed here
             buildptr->source_port = client_port;
@@ -79,9 +103,15 @@ void PacketAdjustments(AS_attacks *aptr) {
             aptr->destination_port = buildptr->destination_port;
             aptr->source_port = buildptr->source_port;
         } else  {
-            // set it using opposite information for a packet from the server side
-            buildptr->source_ip = dst_ip;
-            buildptr->destination_ip = src_ip;
+            if (!use_ipv6) {
+                // set it using opposite information for a packet from the server side
+                buildptr->source_ip = dst_ip;
+                buildptr->destination_ip = src_ip;
+            } else {
+                buildptr->source_ip = buildptr->destination_ip = 0;
+                CopyIPv6Address(&buildptr->source_ipv6, &dst_ipv6);
+                CopyIPv6Address(&buildptr->destination_ipv6, &src_ipv6);
+            }
             
             // Source port from server to client is changed here
             buildptr->destination_port = client_port;

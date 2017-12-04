@@ -1650,7 +1650,7 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
 
 
     // lets initialize our adjustments so its different from the input
-    PacketAdjustments(aptr);
+    PacketAdjustments(ctx, aptr);
 
     // unpause...
     aptr->paused = 0;

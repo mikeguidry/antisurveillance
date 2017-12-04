@@ -712,12 +712,14 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     return ret;
 }
 
+
+
+
+
 // observed is so we can pull things like user agents out of the raw packets on the wire
 // so that nobody has to keep things updated.. itll always transform itself with the current browwsers as long as
 // someone on the network uses it.. you can even just replay packets, and itll gather the data
 // this is for OS emulation
-
-
 HTTPObservedVariables *ObserveGet(AS_context *ctx, int server) {
     HTTPObservedVariables *optr = NULL;
     int count = L_count((LINK *)optr);
@@ -746,6 +748,19 @@ HTTPObservedVariables *ObserveGet(AS_context *ctx, int server) {
 
     return optr;
 }
+
+
+
+
+/*
+I like this  'capture' system for os emulation.. and i keep going over writing tcp options.. and i think the best way is to capture options
+and just replace the timestamp portion of it.. and randommly choose which captured option to use
+i belieeve this should work best most scenarios.. it means we have to parse the options.. but it seems easy enough
+
+itd be smart to keep user agents, and server headers connected w options
+
+
+*/
 
 HTTPObservedVariables *ObserveCheck(AS_context *ctx, int ttl, int window_size) {
     HTTPObservedVariables *optr = NULL;

@@ -871,8 +871,10 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
     ctx->traceroute_spider_jump[sptr->hop_ip % JTABLE_SIZE] = sptr;
 
     // every 1000 entries.. lets fill some gaps with other queue data
-    if (ctx->new_traceroute_entries++ >= 1000)
+    if (ctx->new_traceroute_entries++ >= 1000) {
         Traceroute_FillAll(ctx);
+        ctx->new_traceroute_entries = 0;
+    }
 
     ret = 1;
 
@@ -962,43 +964,36 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     TraceroutePacketData *pdata = NULL;
     char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
     struct udphdr *udph = NULL;
-
-
     // when we extract the identifier from the packet.. put it here..
     uint16_t identifier = 0;
     // ttl has to be extracted as well (possibly from the identifier)
     int ttl = 0;
 
     if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
-        printf("ipv4 Getting our own packets.. probably loopback\n");
+        //printf("ipv4 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     if (!iptr->source_ip && CompareIPv6Addresses(&ctx->my_addr_ipv6, &iptr->source_ipv6)) {
-        printf("ipv6 Getting our own packets.. probably loopback\n");
+        //printf("ipv6 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     // data isnt big enough to contain the identifier
-    //if (iptr->data_size < sizeof(TraceroutePacketData)) {
-        if (iptr->data_size >= 20) {
-            //printf("\n\n---\nidentifier %u\n", iptr->header_identifier);
-            //printf("data too small\n");
-
-
-            udph = ((char *)(iptr->data) + 20);
+    if (iptr->data_size >= (20 + sizeof(struct udphdr))) {
+        // udp header in packet
+        udph = ((char *)(iptr->data) + 20);
         if (ntohs(udph->dest) >= 1024) {
-            //printf("ports %u %u\n", ntohs(udph->source), ntohs(udph->dest));
+            // we assume its correct if its >1024... in reality if someone screws with this by spoofing..
+            // whats it really going to accomplish?.. not much.
             identifier = ntohs(udph->source);
             ttl = ntohs(udph->dest) - 1024;
-            }
-            //printf("\n--\n");
-        
-        } else {
-            goto end;
         }
-        
-    //}
+    } else {
+        goto end;
+    }
+    
+    /*
     if (1==0 && !ttl && !identifier) {
         //printf("Getting ttl/ident from included data\n");
         // the responding hops may have encapsulated the original ICMP within its own.. i'll turn the 28 into a sizeof() calculation
@@ -1013,7 +1008,7 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
         identifier = pdata->identifier;
         //printf("got from data\n");
     }
-
+    */
     //printf("incoming icmp ttl %d identifier %u\n", ttl, identifier);
     // this function is mainly to process quickly.. so we will fill another structure so that it can get processed
     // later again with calculations directly regarding its query
@@ -1022,6 +1017,7 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     if ((rptr = (TracerouteResponse *)calloc(1, sizeof(TracerouteResponse))) == NULL) goto end;
     rptr->identifier = identifier;
     rptr->ttl = ttl;
+    //rptr->ts = time(0);
     
     // copy over IP parameters
     rptr->hop_ip = iptr->source_ip;
@@ -1306,10 +1302,20 @@ int Traceroute_Perform(AS_context *ctx) {
         if (tptr->current_ttl >= tptr->max_ttl) {
             tptr->completed = 1;
 
+            ConsolidateTTL(tptr);
+
+            // perform traceroute completion callback if it exists
+            if (!tptr->max_ttl) {
+                if (tptr->callback != NULL) {
+                    tptr->callback(ctx, tptr->callback_id);
+                    tptr->callback = NULL;
+                }
+            }
+
             // if its completed.. and its priority.. lets consolidate the missing TTL hops so itll continue
             // this is so we can immediately find more information required for an attack
             if (tptr->priority && tptr->priority < 100) {
-                ConsolidateTTL(tptr);
+                
                 // if any are left.. keep it enabled.
                 if (tptr->max_ttl) {
                     tptr->completed = 0;
@@ -1683,8 +1689,6 @@ int Spider_Load(AS_context *ctx, char *filename) {
                 hop_last = snew;
             }
 
-            snew->jump = ctx->traceroute_spider_jump[snew->hop_ip % JTABLE_SIZE];
-            ctx->traceroute_spider_jump[snew->hop_ip % JTABLE_SIZE] = snew;
 
         } else if (dentry.code == 3) {
             // allocate structure for storing this entry into the traceroute spider
@@ -1711,6 +1715,9 @@ int Spider_Load(AS_context *ctx, char *filename) {
         if (snew && dentry.code && dentry.code > 1) {    
             //printf("ident together.. id %X\n", snew->identifier_id);
             Spider_IdentifyTogether(ctx, snew);
+
+            snew->jump = ctx->traceroute_spider_jump[snew->hop_ip % JTABLE_SIZE];
+            ctx->traceroute_spider_jump[snew->hop_ip % JTABLE_SIZE] = snew;
 
         }
     }
@@ -2216,13 +2223,21 @@ int GEOIP_IPtoASN(AS_context *ctx, uint32_t addr) {
 // perform geoip lookup on either type of structure that we moved here to increase loading speed
 void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr) {
     if (qptr != NULL) {
-        qptr->country = GEOIP_IPtoCountryID(ctx, qptr->target_ip);
-        qptr->asn_num = GEOIP_IPtoASN(ctx, qptr->target_ip);
+        if (qptr->target_ip) {
+            qptr->country = GEOIP_IPtoCountryID(ctx, qptr->target_ip);
+            qptr->asn_num = GEOIP_IPtoASN(ctx, qptr->target_ip);
+        } else {
+// !!! ipv6
+        }
     }
 
     if (sptr != NULL) {
-        sptr->country = GEOIP_IPtoCountryID(ctx, sptr->target_ip);
-        sptr->asn_num = GEOIP_IPtoASN(ctx, sptr->target_ip);   
+        if (sptr->target_ip) {
+            sptr->country = GEOIP_IPtoCountryID(ctx, sptr->target_ip);
+            sptr->asn_num = GEOIP_IPtoASN(ctx, sptr->target_ip);   
+        } else {
+// !!! ipv6
+        }
     }
 }
 
@@ -2754,11 +2769,18 @@ int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_ad
     IPAddresses *iptr = IPAddressesPtr(ctx,country);
     uint32_t *new_ipv4 = NULL;
     struct in6_addr *new_ipv6 =  NULL;
+    int i = 0;
 
     if (iptr == NULL) return -1;
 
     if (ip) {
         // ipv4
+
+        // first lets verify the IP address doesnt already exist... these are specific lists for attacks
+        // either fromm research or live packets
+        for (i = 0; i < iptr->v4_count; i++)
+            if (iptr->v4_addresses[i] == ip) return 0;
+
         if (iptr->v4_count == iptr->v4_buffer_size) {
             // need more space (increase by 5000)
             new_ipv4 = (uint32_t *)realloc(iptr->v4_addresses, sizeof(uint32_t) * (iptr->v4_count + 5000));
@@ -2770,6 +2792,10 @@ int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_ad
         // add ip into the list
         iptr->v4_addresses[iptr->v4_count++] = ip;
     } else {
+
+        for (i = 0; i < iptr->v6_count; i++)
+            if (CompareIPv6Addresses(&iptr->v6_addresses[i], ipv6)) return 0;
+
         // ipv6
         if (iptr->v6_count == iptr->v6_buffer_size) {
             // need more space (increase by 5000)
@@ -2813,6 +2839,7 @@ IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int
 // other subsystems need to automatically append IPv6 addreses to a specfici list to help...
 // we want all possible addresses.. then we can rev dns them, as well as grab AAAA from domains/etc (even domains found in wild without
 // taking their sessions)
+/// !!! several thingss are waiting on ipv6 generation. and its a necessity for first releas
 int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *address) {
     int ret = 0;
     int retry = 100000;
@@ -2823,6 +2850,17 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
     char *IP = NULL;
     char google[] = "2607:f8b0:4000:811::200e";
     int is_ipv6 = 0;
+    struct _ipv6_doners {
+        int size;
+        char *address;
+    } ipv6_doners[] = {
+      { 2, "\x20\x01" },
+      { 2, "\x24\x00" },
+      { 2, "\x24\x01" },
+      { 2, "\x26\x00" },
+      { 2, "\x26\x05" },
+      { 0, NULL}  
+    };
 /*
     32,33,34,35,36,37,38
 char ipv6_prefix_1[] = {"2001","2400","2401","2600","2604",
@@ -3028,9 +3066,8 @@ int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, Tracero
 
 
 TracerouteQueue *TracerouteFindQueueByIP(AS_context *ctx, uint32_t address, struct in6_addr *addressv6) {
-    TracerouteQueue *qptr = NULL;
+    TracerouteQueue *qptr = ctx->traceroute_queue;
 
-    qptr = ctx->traceroute_queue;
     while (qptr != NULL) {
         // ipv4
         if (address && qptr->target_ip == address) break;
@@ -3127,6 +3164,7 @@ GenericCallbackQueue *GenericCallbackByID(AS_context *ctx, int id) {
 }
 
 
+
 // to call callback after traceroute is done...
 //if (qptr->callback) if (qptr->callback(ctx, qptr->callback_id)) qptr->callback = NULL;
 
@@ -3193,24 +3231,24 @@ int Research_Intelligence_Management_Stage1(AS_context *ctx) {
     // 2) initiate traceroutes on those targets setting priority depending on prior dataset, and aggressive-ness
     Research_Traceroute_Target(ctx, tptr, 0);
     // --------------------------------------------------------
-/*    
+    /*    
         3) enable/disable local packet to www (either for python callback manipulation, or directly to real attacks)
         these www sessions can also use somme python regexp, etc to find usernames, passwords, peoples names, email addresses, etc which can populate
         those sections
-*/
+    */
 
     // lets enable live packet capture of www... to gather sessions from live data
     ctx->http_discovery_enabled = 1;
 
 
-        //attack_count = L_count((LINK *)ctx->attack_list);
+    //attack_count = L_count((LINK *)ctx->attack_list);
 
 
 
-/*
+    /*
       6) determine if an attack should  be disqualified due to overuse, etc... (it can be random, or change its parameters over time depending on location,
         virtual traceroute information,etc)
-*/
+    */
 
     end:;
     return ret;
@@ -3315,25 +3353,30 @@ int Research_SyslogSend(AS_context *ctx, uint32_t ip, struct in6_addr ipv6, char
 // the simplest way to do this is to find another traceroute or several which has the same hop
 // at the same TTL, and anything below that TTL can be assumed would be OK to fill
 int Traceroute_TryFill(AS_context *ctx, TracerouteQueue *qptr) {
-    int i = 0, n = 0, before = 0;
+    int i = 0, n = 0, missing_before = 0;
     TracerouteSpider *sptr = NULL;
 
     // check for each TTL
     for (i = 0; i < MAX_TTL; i++) {
         // if the response is NULL.. count it
-        if (qptr->responses[i] == NULL)
-            before++;
-        else
+        if (qptr->responses[i] == NULL) {
+            missing_before++;
+        } else {
         // if BEFORE this response we had some empty(NULL) AND this one exist..
-            if (before && qptr->responses[i])
+            if (missing_before && qptr->responses[i]) {
                 // then lets find other queues which use the same hop (router) because anything below this TTL on their queue response is equal
-                if ((sptr = Traceroute_FindByHop(ctx, qptr->responses[i]->hop_ip, NULL)) != NULL && (sptr->queue != qptr)   )
+                if (((sptr = Traceroute_FindByHop(ctx, qptr->responses[i]->hop_ip, NULL)) != NULL) && (sptr->queue != qptr)) {
                     // loop for all missing TTLs in our queue
-                    for (n = i; n > 0; n--)
+                    for (n = i; n > 0; n--) {
                         // and if the other queue we found has them,
-                        if (sptr->queue->responses[n] && qptr->responses[n] == NULL)
+                        if (sptr->queue->responses[n] && qptr->responses[n] == NULL) {
                             // then lets copy them over...
                             qptr->responses[n] = sptr->queue->responses[n];
+                        }
+                    }
+                }
+            }
+        }
     }
 
     return 0;
@@ -3349,11 +3392,57 @@ int Traceroute_FillAll(AS_context *ctx) {
     int ret = 0;
 
     while (qptr != NULL) {
-
-        ret += Traceroute_TryFill(ctx, qptr);
+        if (qptr->max_ttl)
+            ret += Traceroute_TryFill(ctx, qptr);
 
         qptr = qptr->next;
     }
 
+    return ret;
+}
+
+
+
+// Gather IP addresses out of all packets we see on the wire.. especially IPv6
+int IPGather_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
+    int ret = 0;
+    char *country_src = NULL, *country_dst = NULL;
+    GeoIP *gi = (GeoIP *)ctx->geoip_handle;
+    
+
+    if (iptr->source_ip) {
+        country_src = (char *)GeoIP_country_code_by_ipnum(gi, iptr->source_ip);
+        country_dst = (char *)GeoIP_country_code_by_ipnum(gi, iptr->destination_ip);
+    } else {
+
+        // !!! ipv6 lookup
+    }
+
+    IPAddressesAddGeo(ctx, country_src, iptr->source_ip, &iptr->source_ipv6);
+    IPAddressesAddGeo(ctx, country_dst, iptr->destination_ip, &iptr->destination_ipv6);
+
+    end:;
+    return ret;
+}
+
+
+
+// we wanna capture ip addresses out of al packets we read fromm the wire (especially ipv6)
+int IPGather_Init(AS_context *ctx) {
+    int ret = -1;
+    NetworkAnalysisFunctions *nptr = NULL;
+    FilterInformation *flt = NULL;
+
+    // lets prepare incoming ICMP processing for our traceroutes
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
+
+    // lets filter ipv6 for now.. we can arrange this later  automatically using intelligence_management() above
+    // *** we need a function to MODIFy the filter of an already existing network filter for a network subsystem dropp (incoming functions)
+    FilterPrepare(flt, FILTER_PACKET_IPV6, 0);
+
+    if (Network_AddHook(ctx, flt, &IPGather_Incoming) != 1) goto end;
+    ret =  1;
+
+    end:;
     return ret;
 }
