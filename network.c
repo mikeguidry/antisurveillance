@@ -53,8 +53,6 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
     int bytes_sent = 0;
     char *IP = NULL;
 
-    printf("flush\n");
-
     // if disabled (used to store after as a pcap) fromm python scripts
     // beware.. if things are marked to be cleared it wont until this flag gets removed and the code below gets executed
     // maybe change later.. ***
@@ -69,8 +67,6 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
             //printf("no raw socket\n");
             return -1;
         }
-    } else {
-        printf("sockets okk\n");
     }
     
     while (optr != NULL) {
@@ -95,8 +91,6 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
 
                 // write the packet to the raw network socket.. keeping track of how many bytes
                 bytes_sent = sendto(ctx->raw_socket[0], optr->buf, optr->size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
-
-                printf("writing ipv4: %d socket %d\n", bytes_sent, ctx->raw_socket[optr->proto][0]);
             } else {
 
                 memset(&raw_out_ipv6, 0, sizeof(raw_out_ipv6));
@@ -105,18 +99,7 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
                 raw_out_ipv6.sin6_port   = 0;//htons(optr->dest_port);
                 CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->dest_ipv6);
 
-                IP = (char *)IP_prepare_ascii(NULL, &optr->dest_ipv6);
-                if (IP != NULL) {
-                    printf("IP %s\n", IP);
-                    free(IP);
-                } else {
-                    printf("no ip\n");
-                }
-
                 bytes_sent = sendto(ctx->raw_socket[optr->proto][1], optr->buf, optr->size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
-                perror("hah");
-
-                printf("writing ipv6: %d errno %d socket %d dest port %d proto %d\n", bytes_sent, errno, ctx->raw_socket[optr->proto][1], optr->dest_port, optr->proto);
 
             }
 
@@ -330,9 +313,6 @@ int prepare_socket(AS_context *ctx) {
     int i = 0, proto = 0;
     int which_proto = 0;
 
-    printf("!!!!!!!!!!!!!!!!!!!!!! prepare_socket\n");
-    fflush(stdout);
-
 
     for (proto = 0; proto < 3; proto++) {
 
@@ -341,7 +321,6 @@ int prepare_socket(AS_context *ctx) {
             if (ctx->raw_socket[proto][i] > 0) {
                 // If we cannot use setsockopt.. there must be trouble!
                 if (setsockopt(ctx->raw_socket[proto][i], IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
-                    printf("bad socket\n");
                     close(ctx->raw_socket[proto][i]);
                     ctx->raw_socket[proto][i] = 0;
                 }
@@ -355,11 +334,9 @@ int prepare_socket(AS_context *ctx) {
 
             // open raw socket
             if ((rawsocket[proto][i] = socket(i ? AF_INET6 : AF_INET, SOCK_RAW, which_proto)) <= 0) {
-                printf("didnt work\n");
                 return -1;
             }
 
-            printf("i %d socket %d\n", i, rawsocket[proto][i]);
 
             setsockopt(rawsocket[proto][i], SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
 
@@ -369,8 +346,6 @@ int prepare_socket(AS_context *ctx) {
             
             // set it for later in the overall context
             ctx->raw_socket[proto][i] = rawsocket[proto][i];
-
-            printf("ctx raw socket[%d][%d] = %d\n", proto, i, ctx->raw_socket[proto][i]);
         }
     }
 

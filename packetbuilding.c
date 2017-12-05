@@ -641,19 +641,19 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     p = (struct packeticmp6 *)final_packet;
 
     // prepare IPv6 header
-    p->ip.ip6_ctlun.ip6_un2_vfc = 6 << 4;
-    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size - sizeof(struct ip6_hdr));
-    p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
-    p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMP;
+    p->ip6.ip6_ctlun.ip6_un2_vfc = 6 << 4;
+    p->ip6.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size - sizeof(struct ip6_hdr));
+    p->ip6.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
+    p->ip6.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMP;
 
     // get IP addreses out of the packet
-    CopyIPv6Address(&p->ip.ip6_src, &iptr->source_ipv6);
-    CopyIPv6Address(&p->ip.ip6_dst, &iptr->destination_ipv6);
+    CopyIPv6Address(&p->ip6.ip6_src, &iptr->source_ipv6);
+    CopyIPv6Address(&p->ip6.ip6_dst, &iptr->destination_ipv6);
 
     // prepare ICMP header
     // copy over ICMP parameters from its own structure..
     // I didn't want to support all different ICMP scenarios in PacketBuildInstructions structures
-    memcpy((void *)&p->icmp, &iptr->icmp6, sizeof(struct icmp6_hdr));
+    memcpy((void *)&p->icmp6, &iptr->icmp6, sizeof(struct icmp6_hdr));
     /*
     p->icmp.type = ICMP_ECHO;
     p->icmp.code = 0;
@@ -667,10 +667,10 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
 
     // this should be zero in the build instructions structure.. but just for future reference
     // it should be 0 before we checksum it..
-    p->icmp.icmp6_cksum= 0;
+    p->icmp6.icmp6_cksum= 0;
 
     // calculate ICMP checksum and put it directly into the final packet
-    p->icmp.icmp6_cksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmphdr) + iptr->data_size);
+    p->icmp6.icmp6_cksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmp6_hdr) + iptr->data_size);
     
     // set the raw packet inside of the structure
     iptr->packet = final_packet;
@@ -692,9 +692,6 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
 
 
 
-static int ocount = 0;
-FILE *pcapfd = NULL;
-
 int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     unsigned char *final_packet = NULL;
@@ -702,8 +699,6 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     int final_packet_size = 0;
     struct pseudo_header_udp6 *udp_chk_hdr = NULL;
     char *checkbuf = NULL;
-
-    printf("udp6\n");
 
     // this is only for ipv4 tcp (ret 0 since its not technically an error.. just wrong func)
     if (!(iptr->type & PACKET_TYPE_UDP_6)) return 0;
@@ -730,7 +725,6 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     CopyIPv6Address(&p->ip.ip6_src, &iptr->source_ipv6);
     CopyIPv6Address(&p->ip.ip6_dst, &iptr->destination_ipv6);
 
-printf("souroce port %d dest %d\n", iptr->source_port, iptr->destination_port);
 
     p->udp.source       = htons(iptr->source_port);
     p->udp.dest         = htons(iptr->destination_port);
@@ -790,8 +784,6 @@ printf("souroce port %d dest %d\n", iptr->source_port, iptr->destination_port);
 int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
-
-    printf("send tcp6\n");
 
     if (PacketTCPBuildOptions(iptr) != 1) return -1;
 

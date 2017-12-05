@@ -181,8 +181,8 @@ struct packetudp6 {
 };
 
 struct packeticmp6 {
-    struct ip6_hdr ip;
-    struct icmp6_hdr icmp;
+    struct ip6_hdr ip6;
+    struct icmp6_hdr icmp6;
 };
 
 

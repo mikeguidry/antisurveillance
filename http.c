@@ -733,6 +733,8 @@ HTTPObservedVariables *ObserveGet(AS_context *ctx, int server) {
         
         optr = optr->next;
     }
+    
+    if (!count) return NULL;
 
     r = rand()%count;
     count = 0;

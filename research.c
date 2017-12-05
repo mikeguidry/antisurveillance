@@ -795,6 +795,7 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     struct in_addr src;
     int i = 0;
     int left = 0;
+    char *IP = NULL;
 
     // if the pointer was NULL.. lets just return with 0 (no error...)
     if (rptr == NULL) return ret;
@@ -1040,15 +1041,13 @@ TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_a
     // randomize those TTLs
     RandomizeTTLs(tptr);
 
-    printf("traceroute added\n");
-
     end:;
     return tptr;
 }
 
 
 
-
+static int icount = 0;
 // When we initialize using Traceroute_Init() it added a filter for ICMP, and set this function
 // as the receiver for any packets seen on the wire thats ICMP
 int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
@@ -1061,6 +1060,10 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     uint16_t identifier = 0;
     // ttl has to be extracted as well (possibly from the identifier)
     int ttl = 0;
+    char *IP = NULL;
+    FILE *fd = NULL;
+    char fname[32];
+
 
     if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
         //printf("ipv4 Getting our own packets.. probably loopback\n");
@@ -1072,18 +1075,34 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
         return 0;
     }
 
+    
     // data isnt big enough to contain the identifier
-    if (iptr->data_size >= (20 + sizeof(struct udphdr))) {
-        // udp header in packet
-        udph = ((char *)(iptr->data) + 20);
-        if (ntohs(udph->dest) >= 1024) {
-            // we assume its correct if its >1024... in reality if someone screws with this by spoofing..
-            // whats it really going to accomplish?.. not much.
-            identifier = ntohs(udph->source);
-            ttl = ntohs(udph->dest) - 1024;
+    if (iptr->source_ip) {
+        if (iptr->data_size >= (20 + sizeof(struct udphdr))) {
+            // udp header in packet
+            udph = ((char *)(iptr->data) + 20);
+            if (ntohs(udph->dest) >= 1024) {
+                // we assume its correct if its >1024... in reality if someone screws with this by spoofing..
+                // whats it really going to accomplish?.. not much.
+                identifier = ntohs(udph->source);
+                ttl = ntohs(udph->dest) - 1024;
+            }
+        } else {
+            goto end;
         }
     } else {
-        goto end;
+        if (iptr->data_size >= (48 + sizeof(struct udphdr))) {
+            udph = ((char *)(iptr->data) + 48);
+            if (ntohs(udph->dest) >= 1024) {
+                // we assume its correct if its >1024... in reality if someone screws with this by spoofing..
+                // whats it really going to accomplish?.. not much.
+                identifier = ntohs(udph->source);
+                ttl = ntohs(udph->dest) - 1024;
+            }
+            
+        } else {
+            goto end;
+        }
     }
     
     /*
@@ -1155,12 +1174,10 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
 
         // determine if this is an IPv4/6 so it uses the correct packet building function
         if (tptr->target_ip != 0) {
-            printf("sending udp4\n");
             iptr->type = PACKET_TYPE_UDP_4|PACKET_TYPE_UDP;
             iptr->destination_ip = tptr->target_ip;
             iptr->source_ip = ctx->my_addr_ipv4;
         } else {
-            printf("sending udp6\n");
             iptr->type = PACKET_TYPE_UDP_6|PACKET_TYPE_UDP;
             // destination is the target
             CopyIPv6Address(&iptr->destination_ipv6, &tptr->target_ipv6);
@@ -1388,8 +1405,6 @@ int Traceroute_Perform(AS_context *ctx) {
     // timestamp required for various states of traceroute functionality
     int ts = time(0);
 
-    printf("perform\n");
-
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
 
@@ -1452,8 +1467,6 @@ int Traceroute_Perform(AS_context *ctx) {
                     //else if (tptr->type == TRACEROUTE_UDP)
 
                     for (i = 0; i < 3; i++) {
-                        printf("sending tr\n");
-                        
                         Traceroute_SendUDP(ctx, tptr);
                     }
 
@@ -1476,7 +1489,7 @@ int Traceroute_Perform(AS_context *ctx) {
     // moved to every 40 because the randomly disabling and enabling should be more than MAX_TTL at least
     if ((ccount++ % 40)==0) {
         // save data to disk... need to redo this for incremental
-        //Spider_Save(ctx);
+        Spider_Save(ctx);
 
         // lets randomly enable or disable queues.... 20% of the time we reach this..
         if ((rand()%100) < 20)
@@ -2359,7 +2372,7 @@ void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr
             sptr->asn_num = GEOIP_IPtoASN(ctx, sptr->target_ip);   
         } else {
             if (ctx->geoipv6_handle) {
-                qptr->country = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, sptr->target_ipv6);
+                sptr->country = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, sptr->target_ipv6);
             }            
         }
     }
@@ -3493,19 +3506,14 @@ int IPGather_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     char *country_src = NULL, *country_dst = NULL;
     GeoIP *gi = (GeoIP *)ctx->geoip_handle;
     
-    printf("IPGather_Incoming()\n");
-
     if (gi) {
-        printf("geo\n");
         if (iptr->source_ip) {
             country_src = (char *)GeoIP_country_code_by_ipnum(gi, iptr->source_ip);
             country_dst = (char *)GeoIP_country_code_by_ipnum(gi, iptr->destination_ip);
         } else {
             if (ctx->geoipv6_handle) {
-                printf("v6\n");
                 country_src = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, iptr->source_ipv6);
                 country_dst = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, iptr->destination_ipv6);
-                printf("country src %s dst %s\n", country_src, country_dst);
             }
         }
     }

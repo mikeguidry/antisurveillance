@@ -1049,47 +1049,47 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
-    //printf("Process ICMP4\n");
-
     // allocate space for an instruction structure which analysis of this packet will create
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
-    iptr->type = PACKET_TYPE_ICMP_6 | PACKET_TYPE_IPV6|PACKET_TYPE_ICMP;
+    iptr->type = PACKET_TYPE_ICMP_6 | PACKET_TYPE_IPV6 | PACKET_TYPE_ICMP;
 
     // get IP addreses out of the packet
-    CopyIPv6Address(&iptr->source_ipv6, &p->ip.ip6_src);
-    CopyIPv6Address(&iptr->destination_ipv6, &p->ip.ip6_dst);
+    CopyIPv6Address(&iptr->source_ipv6, &p->ip6.ip6_src);
+    CopyIPv6Address(&iptr->destination_ipv6, &p->ip6.ip6_dst);
 
     // how much data is present in this packet?
-    data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen);// - sizeof(struct packeticmp6);
+    data_size = ntohs(p->ip6.ip6_ctlun.ip6_un1.ip6_un1_plen);// - sizeof(struct packeticmp6);
 
     // set packet as OK (can disqualify from checksum)
     iptr->ok = 1;
 
     // use packet checksum from the packet
-    pkt_chk = p->icmp.icmp6_cksum;
+    pkt_chk = p->icmp6.icmp6_cksum;
 
     // copy data from the original packet
     if (data_size) {
         if ((data = (char *)malloc(data_size)) == NULL) goto end;
-        memcpy(data, (void *)(pptr->buf + sizeof(struct iphdr) + sizeof(struct icmphdr)), data_size);
+        memcpy(data, (void *)(pptr->buf + sizeof(struct ip6_hdr)), data_size);
 
         iptr->data = data;
         iptr->data_size = data_size;
     }
 
+    memcpy(&iptr->icmp6, (void *)(pptr->buf + sizeof(struct ip6_hdr)), sizeof(struct icmp6_hdr));
+
     // set to 0 in packet so we can  calculate correctly..
-    p->icmp.icmp6_cksum = 0;
+    p->icmp6.icmp6_cksum = 0;
 
     // ICMP checksum.. it can happen inline without copying to a new buffer.. no pseudo header
-    our_chk = (unsigned short)in_cksum((unsigned short *)&p->icmp, sizeof(struct icmphdr) + iptr->data_size);
+    our_chk = (unsigned short)in_cksum((unsigned short *)&p->icmp6, sizeof(struct icmp6_hdr) + iptr->data_size);
 
     // did the check equal what we expected?
     if (pkt_chk != our_chk) iptr->ok = 0;
 
     // set back the original checksum we used to verify against
-    p->icmp.icmp6_cksum = pkt_chk;
+    p->icmp6.icmp6_cksum = pkt_chk;
 
     // move original packet to this new structure
     iptr->packet = pptr->buf;
@@ -1125,13 +1125,14 @@ ProcessFunc Processor_Find(int ip_version, int protocol) {
         { 4, IPPROTO_ICMP,  &ProcessICMP4Packet },
         { 6, IPPROTO_TCP,   &ProcessTCP6Packet },
         { 6, IPPROTO_UDP,   &ProcessUDP6Packet },
-        { 6, IPPROTO_ICMP,  &ProcessICMP6Packet },
+        { 6, IPPROTO_ICMPV6,&ProcessICMP6Packet },
         { 0, 0, NULL}
     };
 
     while (PacketProcessors[i].ip_version != 0) {
-        if ((PacketProcessors[i].ip_version == ip_version) && (PacketProcessors[i].protocol == protocol))
+        if ((PacketProcessors[i].ip_version == ip_version) && (PacketProcessors[i].protocol == protocol)) {        
                 return PacketProcessors[i].Processor;
+        }
 
         i++;
     }
@@ -1165,6 +1166,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                 protocol = p->ip.protocol;
             } else if (p->ip.version == 6) {
                 protocol = p6->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt;
+                
             }
 
             // Analysis capabilities are limited so use this function to determine
