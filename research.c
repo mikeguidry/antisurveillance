@@ -173,16 +173,94 @@ char *fourteen_eyes[] = {"AU","CA","NZ","GB","US","DE","FR","NL","NO","BE","DE",
 // check if a country is in the 'fourteen eyes' list.. higher probability of state surveillance during analysis
 int fourteen_check(char *country) {
     int i = 0;
-    for (;i < 14; i++) if (strcmp(country, fourteen_eyes[i])==0) return 1;
+
+    for (;i < 14; i++) if (strcmp(country, fourteen_eyes[i]) == 0) return 1;
+
     return 0;
 }
 
 // check if a country is in the 'fourteen eyes' list.. higher probability of state surveillance during analysis
 int fourteen_check_id(int country_id) {
     int i = 0;
-    for (;i < 14; i++) if (strcmp(geoip_countries[country_id], fourteen_eyes[i])==0) return 1;
+
+    for (;i < 14; i++) if (strcmp(geoip_countries[country_id], fourteen_eyes[i]) == 0) return 1;
+
     return 0;
 }
+
+
+// count border score from a particular traceroute spider to us
+int BorderScore(AS_context *ctx, TracerouteSpider *sptr) {
+    int ret = 0, n = 0;
+    int border_score = 0;
+    TracerouteQueue *qptr = NULL;
+    int last_country = 0;
+
+
+    if (sptr == NULL) return -1;
+
+    GeoIP_lookup(ctx, NULL, sptr);
+
+    // cannot calculate if the country lookup didnt work
+    if (!sptr->country) return -1;
+
+    // we have a traceroute spider which relates to the country right here..
+    // we wanna trace further back its TTL to US using the original queue
+    if ((qptr = sptr->queue) == NULL) goto end;
+
+    // we start with the country.. so we can count each time the border changes
+    last_country = sptr->country;
+
+    // lets count how many countries we go through to reach this destination
+    // yes it is using a random path but thats acceptable for now..
+    // enumerate all TTLs going from the current (hop in couuntry) to us
+    for (n = sptr->ttl; n > 0; n--) {
+        // if we found a response for this lower TTL
+        if ((sptr = qptr->responses[n]) != NULL) {
+            // did we have a country code from this response?
+            // lookup geoip in case
+            GeoIP_lookup(ctx, NULL, sptr);
+            
+            // if the country lookup went well
+            if (sptr->country) {
+                // is this country different than the last hop that we verified against?
+                if (last_country != sptr->country) {
+                    border_score++;
+                    last_country = sptr->country;
+                }
+            }
+        }
+    }
+
+    ret = border_score;
+
+    end:;
+    return ret;
+}
+
+
+// we'd like to know how many hops we have until we reach a country if it is a fourteen eyes country
+// if it matches, thne we want to find a hop.. and count all TTL before it and their countries..
+// for each country swapp we increase border_score
+int fourteen_borderscore(AS_context *ctx, char *country) {
+    int ret = 0;
+    int country_id = country ? GEOIP_CountryToID(country) : 0;
+    TracerouteSpider *sptr = NULL;
+
+    // we search for a response by its  country
+    sptr = ctx->traceroute_spider;
+    while (sptr != NULL) {
+        if (sptr->country && sptr->country == country_id) break;
+
+        sptr = sptr->next;
+    }
+
+    if (sptr)
+        return BorderScore(ctx, sptr);
+
+    return 0;
+}
+
 
 
 // find a spider structure by target address
@@ -205,7 +283,7 @@ TracerouteSpider *Traceroute_FindByTarget(AS_context *ctx, uint32_t target_ipv4,
 
 // find a spider structure by its hop (router) address
 TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struct in6_addr *hop_ipv6) {
-    TracerouteSpider *sptr = ctx->traceroute_spider_jump[hop_ipv4 % JTABLE_SIZE];
+    TracerouteSpider *sptr = ctx->traceroute_spider_jump[IP_JTABLE(hop_ipv4, &hop_ipv6)];
 
     while (sptr != NULL) {
         if (hop_ipv4 && hop_ipv4 == sptr->hop_ip)
@@ -232,12 +310,11 @@ TracerouteSpider *Traceroute_FindByIdentifierTTL(AS_context *ctx, uint32_t id, i
 
 
 // retry for all missing TTL for a particular traceroute queue..
-int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identifier) {
+int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) {
     int i = 0;
     int ret = -1;
     int cur_ttl = 0;
     TracerouteSpider *sptr = NULL;
-    //TracerouteQueue *qptr = NULL;
     int missing = 0;
 
     //printf("traceroute_retry\n");
@@ -273,7 +350,6 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
     }
 
     if (missing) {
-        //printf("has misssing\n");
         // set queue structure to start over, and have a max ttl of how many we have left
         qptr->current_ttl = 0;
         qptr->max_ttl = cur_ttl;
@@ -284,9 +360,7 @@ int Traceroute_Retry(AS_context *ctx, TracerouteQueue *qptr) { //uint32_t identi
 
         // its not completed yet..
         qptr->completed = 0;
-
-        //printf("Enabling incomplete traceroute %u [%d total]\n", qptr->target_ip, cur_ttl);
-    } //printf("doesnt have missing\n");
+    }
 
 
     ret = 1;
@@ -390,7 +464,6 @@ int Search_QueueCheck(AS_context *ctx, SearchContext *sctx, TracerouteSpider *ne
     SearchQueue *qptr = NULL;
     int distance = 0;
     TracerouteSpider *sptr = NULL;
-
 
     printf("count: %d %d\n", L_count((LINK *)sctx->queue), sctx->count);
 
@@ -786,6 +859,9 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
             // insert into list for traceroute information
             Traceroute_Insert(ctx, snew);
 
+            // calculate border score between us and this response
+            snew->border_score = BorderScore(ctx, snew);
+
             // link it to the original queue by its identifier
             Spider_IdentifyTogether(ctx, snew);
 
@@ -800,6 +876,25 @@ int TracerouteAnalyzeSingleResponse(AS_context *ctx, TracerouteResponse *rptr) {
     return ret;
 }
 
+int IP_JTABLE(uint32_t ip, struct in6_addr *ipv6) {
+    int i = 0;
+    uint32_t _ip = 0;
+    uint32_t *_ipv6 = NULL;
+
+    if (ip) {
+        _ip = ip;
+    } else {
+        // add all 4 parts of ipv6 together to make a fake IPv4 just so we can calculate the jump table.. so they share the same
+        while (i < 4) {
+            _ipv6 = (uint32_t *)((char *)ipv6+(sizeof(uint32_t)*i));
+            _ip += *_ipv6;
+
+            i++;
+        }
+    }
+
+    return (_ip % JTABLE_SIZE);
+}
 
 // inserts a traceroute structure into the linked list but does sorting on insertion
 int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
@@ -867,14 +962,11 @@ int Traceroute_Insert(AS_context *ctx, TracerouteSpider *snew) {
         }
     }
 
-    sptr->jump = ctx->traceroute_spider_jump[sptr->hop_ip % JTABLE_SIZE];
-    ctx->traceroute_spider_jump[sptr->hop_ip % JTABLE_SIZE] = sptr;
+    snew->jump = ctx->traceroute_spider_jump[IP_JTABLE(snew->hop_ip, &snew->hop_ipv6)];
+    ctx->traceroute_spider_jump[IP_JTABLE(snew->hop_ip, &snew->hop_ipv6)] = snew;
 
     // every 1000 entries.. lets fill some gaps with other queue data
-    if (ctx->new_traceroute_entries++ >= 1000) {
-        Traceroute_FillAll(ctx);
-        ctx->new_traceroute_entries = 0;
-    }
+    //if (ctx->new_traceroute_entries++ >= 1000) { Traceroute_FillAll(ctx); ctx->new_traceroute_entries = 0; }
 
     ret = 1;
 
@@ -907,7 +999,6 @@ TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_a
 
     // which IP are we performing traceroutes on
     tptr->target_ip = target;
-
 
     // if its an ipv6 addres pasased.. lets copy it (this function will verify its not NULL)
     CopyIPv6Address(&tptr->target_ipv6, targetv6);
@@ -948,6 +1039,8 @@ TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_a
 
     // randomize those TTLs
     RandomizeTTLs(tptr);
+
+    printf("traceroute added\n");
 
     end:;
     return tptr;
@@ -1062,15 +1155,19 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
 
         // determine if this is an IPv4/6 so it uses the correct packet building function
         if (tptr->target_ip != 0) {
-            iptr->type = PACKET_TYPE_UDP_4;
+            printf("sending udp4\n");
+            iptr->type = PACKET_TYPE_UDP_4|PACKET_TYPE_UDP;
             iptr->destination_ip = tptr->target_ip;
             iptr->source_ip = ctx->my_addr_ipv4;
         } else {
-            iptr->type = PACKET_TYPE_UDP_6;
+            printf("sending udp6\n");
+            iptr->type = PACKET_TYPE_UDP_6|PACKET_TYPE_UDP;
             // destination is the target
             CopyIPv6Address(&iptr->destination_ipv6, &tptr->target_ipv6);
+            iptr->destination_ip = 0;
             // source is our ip address
             CopyIPv6Address(&iptr->source_ipv6, &ctx->my_addr_ipv6);
+            iptr->source_ip = 0;
         }
 
         // ports to use (we can  randomize later on diff tries besides 53)
@@ -1147,7 +1244,7 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
         // determine if this is an IPv4/6 so it uses the correct packet building function
         // prepare the ICMP header for the traceroute
         if (tptr->target_ip != 0) {
-            iptr->type = PACKET_TYPE_ICMP_4;
+            iptr->type = PACKET_TYPE_ICMP_4|PACKET_TYPE_ICMP|PACKET_TYPE_ICMP;
             iptr->destination_ip = tptr->target_ip;
             iptr->source_ip = ctx->my_addr_ipv4;
 
@@ -1156,7 +1253,7 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
             icmp.un.echo.id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
 
         } else {
-            iptr->type = PACKET_TYPE_ICMP_6;
+            iptr->type = PACKET_TYPE_ICMP_6|PACKET_TYPE_ICMP|PACKET_TYPE_ICMP;
 
             icmp6.icmp6_type = ICMP6_ECHO_REQUEST;
             icmp6.icmp6_id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
@@ -1291,6 +1388,8 @@ int Traceroute_Perform(AS_context *ctx) {
     // timestamp required for various states of traceroute functionality
     int ts = time(0);
 
+    printf("perform\n");
+
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
 
@@ -1351,8 +1450,13 @@ int Traceroute_Perform(AS_context *ctx) {
                     //if (tptr->type == TRACEROUTE_ICMP)
                       //  Traceroute_SendICMP(ctx, tptr);
                     //else if (tptr->type == TRACEROUTE_UDP)
-                    for (i = 0; i < 3; i++)
+
+                    for (i = 0; i < 3; i++) {
+                        printf("sending tr\n");
+                        
                         Traceroute_SendUDP(ctx, tptr);
+                    }
+
                     /*    else if (tptr->type == TRACEROUTE_TCP)
                         Traceroute_SendTCP(ctx, tptr);*/
                 }
@@ -1366,15 +1470,13 @@ int Traceroute_Perform(AS_context *ctx) {
     Traceroute_AnalyzeResponses(ctx);
     
     // if our queue is lower than the max.. then enable some others
-    Traceroute_MaxQueue(ctx);
-
-        
+    Traceroute_MaxQueue(ctx);     
 
     // *** we will log to the disk every 20 calls (for dev/debugging)
     // moved to every 40 because the randomly disabling and enabling should be more than MAX_TTL at least
     if ((ccount++ % 40)==0) {
         // save data to disk... need to redo this for incremental
-        Spider_Save(ctx);
+        //Spider_Save(ctx);
 
         // lets randomly enable or disable queues.... 20% of the time we reach this..
         if ((rand()%100) < 20)
@@ -1417,6 +1519,7 @@ typedef struct _data_entry {
     unsigned char code;
     uint32_t target_ip;
     uint32_t hop_ip;
+    struct in6_addr hop_ipv6;
     uint16_t identifier;
     unsigned char completed;
     unsigned char enabled;
@@ -1458,7 +1561,10 @@ int Spider_Save(AS_context *ctx) {
         // 1 = queue
         dentry.code = 1;
 
-        dentry.target_ip = qptr->target_ip;        
+        dentry.target_ip = qptr->target_ip;  
+        // !!! ipv6 save/load
+        //CopyIPv6Address(&dentry.target_ipv6, &qptr->target_ipv6);
+      
         dentry.identifier = qptr->identifier;
         dentry.completed = qptr->completed;
         dentry.activity = qptr->ts_activity;
@@ -1479,6 +1585,9 @@ int Spider_Save(AS_context *ctx) {
         dentry.code = 2;
 
         dentry.target_ip = sptr->target_ip;
+        // !!! ipv6 save/load
+        //CopyIPv6Address(&dentry.target_ipv6, &sptr->target_ipv6);
+
         dentry.hop_ip = sptr->hop_ip;
         dentry.identifier = sptr->identifier_id;
         dentry.ts = sptr->ts;
@@ -1506,6 +1615,8 @@ int Spider_Save(AS_context *ctx) {
             // branch connected to most recent hop
             dentry.code = 3;
             dentry.target_ip = sptr->target_ip;
+            // !!! ipv6 save/load
+            //CopyIPv6Address(&dentry.target_ipv6, &sptr->target_ipv6);            
             dentry.hop_ip = sptr->hop_ip;
             dentry.identifier = sptr->identifier_id;
             dentry.ts = sptr->ts;            
@@ -1645,6 +1756,9 @@ int Spider_Load(AS_context *ctx, char *filename) {
             // we wanna control enabled here when we look for all TTL hops
             qnew->enabled = dentry.enabled;
             qnew->target_ip = dentry.target_ip;
+            // !!! save/load ipv6
+            //CopyIPv6Address(&snew->target_ipv6, &dentry.target_ipv6);
+
             qnew->identifier = dentry.identifier;
 
 
@@ -1668,6 +1782,9 @@ int Spider_Load(AS_context *ctx, char *filename) {
         
             snew->target_ip = dentry.target_ip;
             snew->hop_ip = dentry.hop_ip;
+            // !!! save/load ipv6
+            //CopyIPv6Address(&snew->hop_ipv6, &dentry.hop_ipv6);
+
             snew->ttl = dentry.ttl;
             snew->identifier_id = dentry.identifier;
             snew->ts = dentry.ts;
@@ -1698,6 +1815,8 @@ int Spider_Load(AS_context *ctx, char *filename) {
         
             snew->target_ip = dentry.target_ip;
             snew->hop_ip = dentry.hop_ip;
+            // !!! save/load ipv6
+            //CopyIPv6Address(&snew->hop_ipv6, &dentry.target_ipv6);
             snew->ttl = dentry.ttl;
             snew->identifier_id = dentry.identifier;
             snew->ttl = dentry.ttl;
@@ -1705,9 +1824,6 @@ int Spider_Load(AS_context *ctx, char *filename) {
             if (slast != NULL) {
                 snew->branches = slast->branches;
                 slast->branches = snew;
-            } else {
-                printf("slast NULL?\n");
-                exit(0);
             }
         }
 
@@ -1716,8 +1832,9 @@ int Spider_Load(AS_context *ctx, char *filename) {
             //printf("ident together.. id %X\n", snew->identifier_id);
             Spider_IdentifyTogether(ctx, snew);
 
-            snew->jump = ctx->traceroute_spider_jump[snew->hop_ip % JTABLE_SIZE];
-            ctx->traceroute_spider_jump[snew->hop_ip % JTABLE_SIZE] = snew;
+
+            snew->jump = ctx->traceroute_spider_jump[IP_JTABLE(snew->hop_ip, &snew->hop_ipv6)];
+            ctx->traceroute_spider_jump[IP_JTABLE(snew->hop_ip, &snew->hop_ipv6)] = snew;
 
         }
     }
@@ -2076,11 +2193,13 @@ int TracerouteResetRetryCount(AS_context *ctx) {
 int Research_Init(AS_context *ctx) {
     int ret = 0;
 
-    // set context handler for geoip
-    if ((ctx->geoip_handle = GeoIP_open("GeoIP.dat", GEOIP_STANDARD | GEOIP_SILENCE)) == NULL) return -1;
+    // ipv4 geoip
+    ctx->geoip_handle = GeoIP_open("GeoIP.dat", GEOIP_STANDARD | GEOIP_SILENCE);
     
+    // ASN? ipv4/6??
     ctx->geoip_asn_handle = GeoIP_open("GeoIPASNum.dat", GEOIP_ASNUM_EDITION_V6 | GEOIP_SILENCE);
 
+    // ipv6 geoip
     ctx->geoipv6_handle = GeoIP_open("GeoIPv6.dat", GEOIP_STANDARD | GEOIP_SILENCE);
 
     ret = 1;
@@ -2227,7 +2346,10 @@ void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr
             qptr->country = GEOIP_IPtoCountryID(ctx, qptr->target_ip);
             qptr->asn_num = GEOIP_IPtoASN(ctx, qptr->target_ip);
         } else {
-// !!! ipv6
+            if (ctx->geoipv6_handle) {
+                qptr->country = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, qptr->target_ipv6);
+                //qptr->asn_num = GEOIP_IPtoASN(ctx, qptr->target_ip);
+            }
         }
     }
 
@@ -2236,7 +2358,9 @@ void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr
             sptr->country = GEOIP_IPtoCountryID(ctx, sptr->target_ip);
             sptr->asn_num = GEOIP_IPtoASN(ctx, sptr->target_ip);   
         } else {
-// !!! ipv6
+            if (ctx->geoipv6_handle) {
+                qptr->country = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, sptr->target_ipv6);
+            }            
         }
     }
 }
@@ -2306,6 +2430,8 @@ TracerouteAnalysis *Traceroute_AnalysisFind(AS_context *ctx, TracerouteQueue *cl
     return tptr;
 }
 
+
+
 // create a traceroute analysis structure for storing informatiion regarding two sides of a connectioon
 // to be reused, or used again
 TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *client, TracerouteQueue *server) {
@@ -2330,6 +2456,8 @@ TracerouteAnalysis *Traceroute_AnalysisNew(AS_context *ctx, TracerouteQueue *cli
 
     return tptr;
 }
+
+
 
 // count how many attacks/connections are being used in a country..
 // this will allow us to take a list of countries, and load balance between attacking their surveillance platforms
@@ -2660,32 +2788,6 @@ typedef struct _macro_variable {
 } MacroVariable;
 
 
-/*
-
-This function is so we can find live httpp sessioons (or from pcap) and automatically macro-ize it so that portions of it gets changed.
-I'm doing my best to require  zero configuration for the entire operation of attacks.  This is one of the last portions necessary.
-
-This function needs to guess where it should tokenize for macros, or it should investigate other URLs on the same domain which it has come across.
-Obviously if it has more data, or other urls to check against then it will work more efficient, and b e that  much more difficult for anyone to filter.
-
-*/
-/*
-
-also need client body -> url variables
-to match     URL variables here (GET vs POST) so that the macros can be used on both....
-
-it should also attempt to replace any names with naming macros.. email addresses.. etc...
-for example: 
-
-
-*/
-
-int URL_macroize(AS_context *ctx, SiteIdentifier *siteptr, SiteURL *urlptr) {
-    int ret = 0;
-
-    end:;
-    return ret;
-}
 
 
 // Adds a URL to a specific site for future attacks using that domain... so each can look very different
@@ -2734,12 +2836,14 @@ SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
 
 
 // find generated, or loaded attack addresses by country
-IPAddresses *IPAddressesbyGeo(AS_context *ctx, char *country) {
+IPAddresses *IPAddressesbyGeo(AS_context *ctx, int country) {
     IPAddresses *iptr = ctx->ip_list;
+
     while (iptr != NULL) {
-        if (strcmp(iptr->country, country)==0) {
+
+        if (iptr->country == country)
             break;
-        }
+
         iptr = iptr->next;
     }
 
@@ -2749,12 +2853,14 @@ IPAddresses *IPAddressesbyGeo(AS_context *ctx, char *country) {
 // obtains, and allocates if necessary an ip address structure (attack structure for a specific country)
 // *** add ways to separate countries into different regions by long/latitude distances.. automated w geoip/other db
 IPAddresses *IPAddressesPtr(AS_context *ctx, char *country) {
-    IPAddresses *iptr = IPAddressesbyGeo(ctx, country);
+    int country_id = country ? GEOIP_CountryToID(country) : 0;
+    IPAddresses *iptr = IPAddressesbyGeo(ctx, country_id);
 
     if (iptr == NULL) {
         // allocate space for the main structure
         if ((iptr = (IPAddresses *)calloc(1, sizeof(IPAddresses))) == NULL) return NULL;
 
+        iptr->country = country_id;
         iptr->next = ctx->ip_list;
         ctx->ip_list = iptr;
     }
@@ -2825,9 +2931,11 @@ IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int
 
     while (i < count) {
         ip = ResearchGenerateIPCountry(ctx, country);
-
-        if (IPAddressesAddGeo(ctx, country, ip, NULL) == 1)
-            ret++;
+        if (ip) {
+            if (IPAddressesAddGeo(ctx, country, ip, NULL) == 1) {
+                ret++;
+            }
+        }
 
         i++;
     }
@@ -2835,119 +2943,131 @@ IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int
     return ret;
 }
 
+
+struct in6_addr *IPv6SetRandom(AS_context *ctx, char *country) {
+    int country_id = country ? GEOIP_CountryToID(country) : 0;
+    IPAddresses *iptr = IPAddressesbyGeo(ctx, country_id);
+    int r = 0;
+
+    // make sure it exists..
+    if (iptr == NULL) return NULL;
+
+    // pick random IPv6
+    r = rand()%iptr->v6_count;
+
+    return &iptr->v6_addresses[r];
+}
+
+uint32_t IPv4SetRandom(AS_context *ctx, char *country) {
+    int country_id = country ? GEOIP_CountryToID(country) : 0;
+    IPAddresses *iptr = IPAddressesbyGeo(ctx, country_id);
+    int r = 0;
+
+    // make sure it exists..
+    if (iptr == NULL) return NULL;
+
+    // pick random IPv6
+    r = rand()%iptr->v4_count;
+
+    return iptr->v4_addresses[r];
+}
+
 // generating IPv6 addresses is a little more difficult than ipv4.. traceorute will help us accomplish  somme things
 // other subsystems need to automatically append IPv6 addreses to a specfici list to help...
 // we want all possible addresses.. then we can rev dns them, as well as grab AAAA from domains/etc (even domains found in wild without
 // taking their sessions)
-/// !!! several thingss are waiting on ipv6 generation. and its a necessity for first releas
 int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *address) {
     int ret = 0;
     int retry = 100000;
     struct in6_addr ipv6;
-    char *geo = NULL;
+    struct in6_addr doner_ipv6;
     int i = 0;
     char *sptr = (char *)&ipv6;
     char *IP = NULL;
-    char google[] = "2607:f8b0:4000:811::200e";
-    int is_ipv6 = 0;
-    struct _ipv6_doners {
-        int size;
-        char *address;
-    } ipv6_doners[] = {
-      { 2, "\x20\x01" },
-      { 2, "\x24\x00" },
-      { 2, "\x24\x01" },
-      { 2, "\x26\x00" },
-      { 2, "\x26\x05" },
-      { 0, NULL}  
-    };
-/*
-    32,33,34,35,36,37,38
-char ipv6_prefix_1[] = {"2001","2400","2401","2600","2604",
-"2605","2607","2610","2620","2a00",
-"2a01","2a02","2a03",NULL };
+    char *geo = NULL;
+    // if we do not have any IP addresses which are ipv6 then we can initiate a traceroute here to gather some
+    char google_ipv6[] = "2607:f8b0:4000:811::200e";
+    int r = 0;
+    int diff = 0;
 
-char ipv6_prefix_3[] = {"2001:1838:f000","2001:1ac0:0","2001:4b98:abcb","2001:500:2","2001:500:200","2001:500:2d","2001:500:7967","2001:500:856e","2001:500:89","2001:500:90","2001:500:94","2001:500:a8","2001:500:d937","2001:501:b1f9","2001:502:1ca1","2001:502:7094","2001:502:ad09","2001:502:cbe4","2001:502:f3ff","2001:503:231d","2001:503:83eb","2001:503:a83e","2001:503:ba3e","2001:503:d414","2001:610:1","2001:610:3","2001:630:0","2001:678:12","2001:67c:1010","2001:67c:28cc","2001:dcd:1","2001:dcd:2","2001:dcd:3","2001:dcd:4","2400:cb00:2049","2401:fd80:400","2401:fd80:404","2600:1401:1","2600:1401:2","2600:1406:32","2600:1480:800","2600:1480:b000","2600:1800:10","2600:1800:15","2600:1800:5","2600:1801:11","2600:1801:13","2600:1801:6","2600:1802:12","2600:1802:14","2600:1802:7","2600:2000:1000","2600:2000:1001","2600:9000:5300","2600:9000:5301","2600:9000:5302","2600:9000:5303","2600:9000:5304","2600:9000:5305","2600:9000:5306","2600:9000:5307","2604:3400:abca","2604:3400:abcc","2605:f700:c0","2607:f388:","2607:f6d0:0","2610:28:3090","2610:8:6800","2610:8:7800","2610:a1:1015","2610:a1:1016","2610:a1:1017","2610:a1:1019","2620:0:28a0","2620:0:2e60","2620:0:30","2620:0:32","2620:0:34","2620:0:37","2620:0:862","2620:115:c00f","2620:171:802","2620:49:3","2620:74:19","2a00:1620:c0","2a00:bdc0:ff","2a00:d40:1","2a01:618:400","2a02:2720:2","2a02:6b0:6","2a02:6b8:0","2a02:e00:ffec","2a03:1980:d0ff","2a03:2880:fffe", NULL };
-
-int total_blocks = 8;
-
-int r = rand()%2;
-
-char *doners[] = {
-"\x20\x01",
-"\x24\x00",
-"\x24\x01",
-"\x26\x00",
-"\x26\x05",
-
- NULL   
-};
-    IP_prepare((char *)&google, NULL, &ipv6, &is_ipv6);
-
-    // we need a limitation ono the amount of tries...
-    while (retry--) {
-
-        // we need to seed with some initial ipv6 addresses....
-        // we can put several in alist, and mark 00 on parts  we DONT want to use
-        // the rest can be randomly pulled fromm whichever part  f the array
-        int doner = rand()%100;
-
-        for (i = 0; i < sizeof(struct in6_addr); i++) {
-            if (doner[i] != 0) {
-
-            }
-        }
-
-        sptr[0] = 32;//(rand()%6) + 32;
-        sptr[1] = (rand()%20);
-
-        for (i = 4; i < sizeof(struct in6_addr); i++) {
-            if (sptr[i] == 0) {
-                if (i >= 8) {                
-                    // most IPs ive noticed thus  far are below 200 .. so lets try those first
-                    //this isnt an absolute concept.. im going to obtain more IPs, ,and perform some entropy
-                    // cals and use those here as well... its a *little* more difficult than ipv4 but not impossible :)
-                    sptr[i]=(rand()%100 < 20) ? rand()%255 : rand()%190;
-                } else {
-                    sptr[i] = rand()%255;
-                }
-            }
-        }
+    // we can use gathered ips from packet sniffing instead of static doner IPs..
+    IPAddresses *iptr = IPAddressesPtr(ctx, country);
 
 
+    if (iptr == NULL || !iptr->v6_count) {
+        //printf("adding google\n");
+        // turn ascii google ipv6 into binary prepared for network
+        IP_prepare(google_ipv6, NULL, &ipv6, NULL);
+        // add it as a traceroute queue
+        Traceroute_Queue(ctx, 0, &ipv6);
 
-        if (ctx->geoipv6_handle) {
-            geo = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, ipv6);
-            if (geo != NULL) {
-                
-                // found geo we want
-                if (strcmp(geo, country)==0) {
-                    printf("1: %02x\n", (unsigned char)sptr[0]);
-                    IP = (char *)IP_prepare_ascii(0, &ipv6);
-                    if (IP != NULL) {
-                        printf("geo : %s [retry %d]\n", geo, retry);
-                        printf("IPv6: %s %X\n", IP, ctx->geoipv6_handle);
-                        free(IP);
-
-                    }
-                    return 1;
-                    break;
-                }
-            }
-        }
-        
+        // return so we can try again later..
+        return 0;
     }
-*/
-    // if we failed to do it in the amount of retries return no
-    if (!retry) return 0;
 
-if (address != NULL)
-    // copy the address
-    CopyIPv6Address(address, &ipv6);
+
+    // pick which IP we will use randomly
+    r = rand()%iptr->v6_count;
+
+    // copy rando IPv6 from the list
+    CopyIPv6Address(&doner_ipv6, &iptr->v6_addresses[r]);
+
+    for (i = 0; i < sizeof(struct in6_addr); i++) {
+        sptr[i] += -4 + (rand()%10);
+    }
+
+    /*
+    sptr[0] = 32;//(rand()%6) + 32;
+    sptr[1] = (rand()%20);
+
+    for (i = 4; i < sizeof(struct in6_addr); i++) {
+        if (sptr[i] == 0) {
+            if (i >= 8) {                
+                // most IPs ive noticed thus  far are below 200 .. so lets try those first
+                //this isnt an absolute concept.. im going to obtain more IPs, ,and perform some entropy
+                // cals and use those here as well... its a *little* more difficult than ipv4 but not impossible :)
+                sptr[i]=(rand()%100 < 20) ? rand()%255 : rand()%190;
+            } else {
+                sptr[i] = rand()%255;
+            }
+        }
+    }*/
+
+
+
+    if (ctx->geoipv6_handle) {
+        geo = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, ipv6);
+        if (geo != NULL) {
+
+            // found geo we want
+            if (strcmp(geo, country)==0) {
+                
+
+                IP = (char *)IP_prepare_ascii(0, &ipv6);
+
+                if (IP != NULL) {
+                    printf("1: %02x\n", (unsigned char)sptr[0]);
+                    printf("geo : %s [retry %d]\n", geo, retry);
+                    printf("IPv6: %s %X\n", IP, ctx->geoipv6_handle);
+                    free(IP);
+                }
+                return 1;
+            }
+        }
+    }
+        
+
+    if (address != NULL)
+        // copy the address
+        CopyIPv6Address(address, &ipv6);
 
     // return success
     return 1;
 }
+
+
+
+
 
 IPAddresses *GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int count) {
     int ret = 0;
@@ -2986,49 +3106,9 @@ identities (getter/setter, OR synchronization w python/C)
 sites (sync)
 urls (sync)
 
-
-
-
-/*
-
-HTTP_SERVER_NAME
-HTTP_VERSION
-
-USERAGENT
-
-Timezone
-
-TCP options
-
-cookies, encoding type, character set allowed
-
-gzip
-
-POST variable modification (macro)
-
-need to compress the 960 mil email addreses to get size information
-
-need to try to ccompress using topp domains, etc
-
-
-
-
-
-python needs access to incoming connections, or pcap parsing of full connections so it can get access to http properties
-its prob easier to handle HTTP url pulling etc in python than C.. (safer)
-
-------------------------
-
-we need some sort of control mechanism to manipulate things  in a way to gather intelligence which will help overall operatioons, and attacks.
-it needs to gather sites, urls, identities, email addresses, and various routing information.  It should guess, or begin duties for future attacks
-minutes, or hours before their smart paths being calculated for most damaging performances.
-
-
-
-try to find a geo distance calculator to generate IPs furthest fromm the current IP, or near a target country
-
-
 */
+
+
 
 
 typedef struct _attack_targets  {
@@ -3038,6 +3118,7 @@ typedef struct _attack_targets  {
     int identifier;  // categorial identifier to find connections later for specific targets to manipulate.. like a sub identifier
     int ts;          // last timestamp intelligence management affected, or used
     int language;
+    IPAddresses *ip_list;
 } AttackTarget;
 
 AttackTarget *TargetRandom(AS_context *ctx) {
@@ -3055,6 +3136,10 @@ AttackTarget *TargetRandom(AS_context *ctx) {
 Traceroute isnt as successful as I imagined at first on a mass scale.  The UDP version I believe is doing a little bettter.. Anyways.
 I added prioritization for attacks which require a particular path, or target to be accurate.  The others I decided would work fine by
 using fuzzy branches, or imaginary nodes.  It is the best guess at placing information, or links where they have not been proven.
+
+onne way to link 'imaginary'routes is using information fromm tjings like maxmind  IP -> ASN
+
+asn is another way to determine which providers are using similar backbones, and hops
 */
 int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, TracerouteSpider *node2) {
     int ret = 0;
@@ -3104,9 +3189,7 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
 
     if (tptr == NULL) goto end;
 
-    iptr = IPAddressesbyGeo(ctx, tptr->country);
-    if (iptr == NULL) goto end;
-
+    if ((iptr = IPAddressesbyGeo(ctx, tptr->country)) == NULL) goto end;
     
 
     // ipv4
@@ -3151,6 +3234,7 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
 }
 
 
+// find the callback by its ID to retrieve the  information, and veri0fy whethe ro rnot its commpleted
 GenericCallbackQueue *GenericCallbackByID(AS_context *ctx, int id) {
     GenericCallbackQueue *cptr = ctx->generic_callback_queue;
 
@@ -3230,6 +3314,7 @@ int Research_Intelligence_Management_Stage1(AS_context *ctx) {
 
     // 2) initiate traceroutes on those targets setting priority depending on prior dataset, and aggressive-ness
     Research_Traceroute_Target(ctx, tptr, 0);
+
     // --------------------------------------------------------
     /*    
         3) enable/disable local packet to www (either for python callback manipulation, or directly to real attacks)
@@ -3239,11 +3324,6 @@ int Research_Intelligence_Management_Stage1(AS_context *ctx) {
 
     // lets enable live packet capture of www... to gather sessions from live data
     ctx->http_discovery_enabled = 1;
-
-
-    //attack_count = L_count((LINK *)ctx->attack_list);
-
-
 
     /*
       6) determine if an attack should  be disqualified due to overuse, etc... (it can be random, or change its parameters over time depending on location,
@@ -3277,6 +3357,8 @@ int Research_Intelligence_Management_Stage2(AS_context *ctx) {
     // from HTTP discovery... the 2hour timeout can also get modified depending on how quickly those sessions were even loaded
 
     // we also need to replay somme TLS sessions.. (its time to start manipulation of attacks to attack NSA decryption engines)
+
+
     end:;
     return ret;
 }
@@ -3333,7 +3415,8 @@ int Research_Intel_Perform(AS_context *ctx) {
 }
 
 
-
+// !!!
+// write, and link to python for script
 int Research_SyslogSend(AS_context *ctx, uint32_t ip, struct in6_addr ipv6, char *data, int size) {
     int ret = -1;
 
@@ -3392,6 +3475,7 @@ int Traceroute_FillAll(AS_context *ctx) {
     int ret = 0;
 
     while (qptr != NULL) {
+        // make sure that the queue has some TTL that are incomplete otherwise its a waste of CPU cycles
         if (qptr->max_ttl)
             ret += Traceroute_TryFill(ctx, qptr);
 
@@ -3409,15 +3493,24 @@ int IPGather_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     char *country_src = NULL, *country_dst = NULL;
     GeoIP *gi = (GeoIP *)ctx->geoip_handle;
     
+    printf("IPGather_Incoming()\n");
 
-    if (iptr->source_ip) {
-        country_src = (char *)GeoIP_country_code_by_ipnum(gi, iptr->source_ip);
-        country_dst = (char *)GeoIP_country_code_by_ipnum(gi, iptr->destination_ip);
-    } else {
-
-        // !!! ipv6 lookup
+    if (gi) {
+        printf("geo\n");
+        if (iptr->source_ip) {
+            country_src = (char *)GeoIP_country_code_by_ipnum(gi, iptr->source_ip);
+            country_dst = (char *)GeoIP_country_code_by_ipnum(gi, iptr->destination_ip);
+        } else {
+            if (ctx->geoipv6_handle) {
+                printf("v6\n");
+                country_src = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, iptr->source_ipv6);
+                country_dst = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, iptr->destination_ipv6);
+                printf("country src %s dst %s\n", country_src, country_dst);
+            }
+        }
     }
 
+    // add each IP address (whether its ipv4, or 6)
     IPAddressesAddGeo(ctx, country_src, iptr->source_ip, &iptr->source_ipv6);
     IPAddressesAddGeo(ctx, country_dst, iptr->destination_ip, &iptr->destination_ipv6);
 
@@ -3434,15 +3527,53 @@ int IPGather_Init(AS_context *ctx) {
     FilterInformation *flt = NULL;
 
     // lets prepare incoming ICMP processing for our traceroutes
-    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL)
+        goto end;
 
     // lets filter ipv6 for now.. we can arrange this later  automatically using intelligence_management() above
     // *** we need a function to MODIFy the filter of an already existing network filter for a network subsystem dropp (incoming functions)
     FilterPrepare(flt, FILTER_PACKET_IPV6, 0);
 
-    if (Network_AddHook(ctx, flt, &IPGather_Incoming) != 1) goto end;
+    if (Network_AddHook(ctx, flt, &IPGather_Incoming) != 1)
+        goto end;
+
     ret =  1;
 
     end:;
     return ret;
 }
+
+
+
+
+/*
+
+This function is so we can find live httpp sessioons (or from pcap) and automatically macro-ize it so that portions of it gets changed.
+I'm doing my best to require  zero configuration for the entire operation of attacks.  This is one of the last portions necessary.
+
+This function needs to guess where it should tokenize for macros, or it should investigate other URLs on the same domain which it has come across.
+Obviously if it has more data, or other urls to check against then it will work more efficient, and b e that  much more difficult for anyone to filter.
+
+*/
+/*
+
+also need client body -> url variables
+to match     URL variables here (GET vs POST) so that the macros can be used on both....
+
+it should also attempt to replace any names with naming macros.. email addresses.. etc...
+for example: 
+
+
+*/
+
+int URL_macroize(AS_context *ctx, SiteIdentifier *siteptr, SiteURL *urlptr) {
+    int ret = 0;
+
+    end:;
+    return ret;
+}
+
+
+
+//  http parse so we can pull out URLs and macro-ize things
+// ***

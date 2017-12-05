@@ -26,6 +26,7 @@ typedef struct _attack_outgoing_queue {
     int size;
 
     uint32_t dest_ip;
+    struct in6_addr dest_ipv6;
     uint16_t dest_port;
     
 
@@ -41,6 +42,7 @@ typedef struct _attack_outgoing_queue {
     int failed;
 
     int type;
+    int proto;
 } AttackOutgoingQueue;
 
 

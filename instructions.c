@@ -207,11 +207,11 @@ PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, Co
     if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) return NULL;
 
     if (!cptr->is_ipv6) {
-        bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4;
+        bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4|PACKET_TYPE_TCP;
         bptr->source_ip = from_client ? cptr->client_ip : cptr->server_ip;
         bptr->destination_ip = from_client ? cptr->server_ip : cptr->client_ip;
     } else {
-        bptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6;
+        bptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6|PACKET_TYPE_TCP;
         if (from_client) {
             CopyIPv6Address(&bptr->source_ipv6, &cptr->client_ipv6);
             CopyIPv6Address(&bptr->destination_ipv6, &cptr->server_ipv6);
@@ -488,7 +488,7 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
-    iptr->type = PACKET_TYPE_UDP_4 | PACKET_TYPE_IPV4;
+    iptr->type = PACKET_TYPE_UDP_4 | PACKET_TYPE_IPV4|PACKET_TYPE_UDP;
 
     // start out OK.. might fail it later during checksum
     iptr->ok = 1;
@@ -588,7 +588,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
-    iptr->type = PACKET_TYPE_ICMP_4 | PACKET_TYPE_IPV4;
+    iptr->type = PACKET_TYPE_ICMP_4 | PACKET_TYPE_IPV4|PACKET_TYPE_ICMP;
 
     iptr->header_identifier = ntohs(p->ip.id);
 
@@ -677,7 +677,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
 
     // ensure the type is set
-    iptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4;
+    iptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4|PACKET_TYPE_TCP;
 
     // source IP, and port from the IP/TCP headers
     iptr->source_ip = p->ip.saddr;
@@ -858,7 +858,7 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
 
     // ensure the type is set
-    iptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6;
+    iptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6|PACKET_TYPE_TCP;
 
     // source IP, and port from the IP/TCP headers
     CopyIPv6Address(&iptr->source_ipv6, &p->ip.ip6_src);
@@ -953,8 +953,6 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     char *checkbuf = NULL;
     struct pseudo_header_udp6 *udp_chk_hdr = NULL;
     uint32_t pkt_chk = 0, our_chk = 0;
-    //char Aip_src[INET6_ADDRSTRLEN];
-    //char Aip_dst[INET6_ADDRSTRLEN];
 
     p = (struct packetudp6 *)pptr->buf;
 
@@ -963,7 +961,7 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
 
     // ensure the type is set
-    iptr->type = PACKET_TYPE_UDP_6 | PACKET_TYPE_IPV6;
+    iptr->type = PACKET_TYPE_UDP_6 | PACKET_TYPE_IPV6|PACKET_TYPE_UDP;
 
     // source IP, and port from the IP/TCP headers
     CopyIPv6Address(&iptr->source_ipv6, &p->ip.ip6_src);
@@ -1057,7 +1055,7 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
     
     // ensure the type is set
-    iptr->type = PACKET_TYPE_ICMP_6 | PACKET_TYPE_IPV6;
+    iptr->type = PACKET_TYPE_ICMP_6 | PACKET_TYPE_IPV6|PACKET_TYPE_ICMP;
 
     // get IP addreses out of the packet
     CopyIPv6Address(&iptr->source_ipv6, &p->ip.ip6_src);
@@ -1157,33 +1155,34 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
     pptr = packets;
 
     while (pptr != NULL) {
+        if (pptr->buf && pptr->size) {
+            // set structure for reading information from this packet.. for ipv4, and ipv6
+            p = (struct packet *)pptr->buf;
+            p6 = (struct packettcp6 *)pptr->buf;
 
-        // set structure for reading information from this packet.. for ipv4, and ipv6
-        p = (struct packet *)pptr->buf;
-        p6 = (struct packettcp6 *)pptr->buf;
+            // ipv6 is a little different.. so lets set protocol by whichever this is
+            if (p->ip.version == 4) {
+                protocol = p->ip.protocol;
+            } else if (p->ip.version == 6) {
+                protocol = p6->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt;
+            }
 
-        // ipv6 is a little different.. so lets set protocol by whichever this is
-        if (p->ip.version == 4) {
-            protocol = p->ip.protocol;
-        } else if (p->ip.version == 6) {
-            protocol = p6->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt;
+            // Analysis capabilities are limited so use this function to determine
+            // if this packet type has been developed yet
+            if ((Processor = Processor_Find(p->ip.version, protocol)) != NULL)
+                if ((iptr = Processor(pptr)) != NULL) {
+                    // If it processed OK, then lets add it to the list
+                    // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
+                    // rather than L_link_ordered()
+                    // not as pretty although it was required whenever incoming packet counts go into the millions..
+                    if (llast == NULL)
+                        ret = llast = iptr;
+                    else {
+                        llast->next = iptr;
+                        llast = iptr;
+                    }
+                } 
         }
-
-        // Analysis capabilities are limited so use this function to determine
-        // if this packet type has been developed yet
-        if ((Processor = Processor_Find(p->ip.version, protocol)) != NULL)
-            if ((iptr = Processor(pptr)) != NULL) {
-                // If it processed OK, then lets add it to the list
-                // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
-                // rather than L_link_ordered()
-                // not as pretty although it was required whenever incoming packet counts go into the millions..
-                if (llast == NULL)
-                    ret = llast = iptr;
-                else {
-                    llast->next = iptr;
-                    llast = iptr;
-                }
-            } 
 
         // move on to the next element in the list of packets
         pptr = pptr->next;

@@ -202,7 +202,7 @@ typedef struct _antisurveillance_context {
     int start_ts;
 
     // socket for writing to the ethernet device
-    int raw_socket;
+    int raw_socket[3][2];
 
     // promisc read socket for incoming packet events
     int read_socket;

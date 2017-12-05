@@ -220,6 +220,8 @@ typedef struct _traceroute_spider {
     int asn;
 
     uint16_t identifier_id;
+
+    int border_score;
 } TracerouteSpider;
 
 
@@ -468,3 +470,8 @@ typedef struct _traceroute_callback_queue {
 int Generic_CallbackQueueCheck(AS_context *ctx, int);
 int Traceroute_FillAll(AS_context *ctx);
 int IPGather_Init(AS_context *ctx);
+
+uint32_t IPv4SetRandom(AS_context *ctx, char *country);
+struct in6_addr *IPv6SetRandom(AS_context *ctx, char *country);
+int BorderScore(AS_context *ctx, TracerouteSpider *sptr);
+int fourteen_borderscore(AS_context *ctx, char *country);

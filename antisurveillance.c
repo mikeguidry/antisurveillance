@@ -40,6 +40,7 @@ If this is the damage I can do alone... what do you  think will happen in the fu
 // Perform one iteration of each attack structure that was queued
 int AS_perform(AS_context *ctx) {
     AS_attacks *aptr = ctx->attack_list;
+    AttackOutgoingQueue *optr = NULL;
     attack_func func;
     int r = 0;  
     int i = 0;
@@ -108,7 +109,18 @@ int AS_perform(AS_context *ctx) {
     AS_remove_completed(ctx);
 
     // flush network packets queued to wire
-    //if (!ctx->network_write_threaded) FlushAttackOutgoingQueueToNetwork(ctx,);
+    if (!ctx->network_write_threaded)  {
+        pthread_mutex_lock(&ctx->network_queue_mutex);
+
+        optr = ctx->network_queue;
+        ctx->network_queue_last = ctx->network_queue = NULL;
+
+        pthread_mutex_unlock(&ctx->network_queue_mutex);
+        
+        FlushAttackOutgoingQueueToNetwork(ctx, optr);
+
+
+    }
 
     // traceroute, blackhole, scripting?, timers?
     Subsystems_Perform(ctx);

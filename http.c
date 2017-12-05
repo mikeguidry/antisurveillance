@@ -173,6 +173,7 @@ void *thread_gzip_attack(void *arg) {
 
 
 
+// !!! support gzip for new python, etc
 int GZIP_Thread(AS_context *ctx, AS_attacks *aptr, char *client_body, int client_body_size, char *server_body, int server_body_size) {
     GZIPDetails *dptr = (GZIPDetails *)calloc(1, sizeof(GZIPDetails));
     if (dptr == NULL) return 0;
@@ -1109,3 +1110,47 @@ int HTTPDiscover_Cleanup(AS_context *ctx) {
     end:;
     return ret;
 }
+
+
+
+
+/*
+
+HTTP_SERVER_NAME
+HTTP_VERSION
+
+USERAGENT
+
+Timezone
+
+TCP options
+
+cookies, encoding type, character set allowed
+
+gzip
+
+POST variable modification (macro)
+
+need to compress the 960 mil email addreses to get size information
+
+need to try to ccompress using topp domains, etc
+
+
+
+
+
+python needs access to incoming connections, or pcap parsing of full connections so it can get access to http properties
+its prob easier to handle HTTP url pulling etc in python than C.. (safer)
+
+------------------------
+
+we need some sort of control mechanism to manipulate things  in a way to gather intelligence which will help overall operatioons, and attacks.
+it needs to gather sites, urls, identities, email addresses, and various routing information.  It should guess, or begin duties for future attacks
+minutes, or hours before their smart paths being calculated for most damaging performances.
+
+
+
+try to find a geo distance calculator to generate IPs furthest fromm the current IP, or near a target country
+
+
+*/

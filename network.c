@@ -24,7 +24,7 @@ protection to be developed, and this can become the 'third party server' for hun
 #include <linux/if_packet.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
-#include <net/ethernet.h>
+#include <net/ethernet.h>ush
 #include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
@@ -47,8 +47,13 @@ protection to be developed, and this can become the 'third party server' for hun
 int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr) {
     int count = 0;
     AttackOutgoingQueue *onext = NULL;
-    struct sockaddr_in rawsin;
+    struct sockaddr_in raw_out_ipv4;
+    struct sockaddr_in6 raw_out_ipv6;
     struct ether_header *ethhdr = NULL;
+    int bytes_sent = 0;
+    char *IP = NULL;
+
+    printf("flush\n");
 
     // if disabled (used to store after as a pcap) fromm python scripts
     // beware.. if things are marked to be cleared it wont until this flag gets removed and the code below gets executed
@@ -59,11 +64,13 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
     }
 
     // we need some raw sockets.
-    if (ctx->raw_socket <= 0) {
+    if (ctx->raw_socket[0][0] <= 0) {
         if (prepare_socket(ctx) <= 0) {
             //printf("no raw socket\n");
             return -1;
         }
+    } else {
+        printf("sockets okk\n");
     }
     
     while (optr != NULL) {
@@ -79,13 +86,39 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
         if (!optr->ignore) {
             // parameters required to write the spoofed packet to the socket.. it ensures the OS fills in the ethernet layer (src/dst mac
             // addresses for the local IP, and local IP's gateway
-            rawsin.sin_family       = AF_INET;
-            rawsin.sin_port         = optr->dest_port;
-            rawsin.sin_addr.s_addr  = optr->dest_ip;
-            
-        
-            // write the packet to the raw network socket.. keeping track of how many bytes
-            int bytes_sent = sendto(ctx->raw_socket, optr->buf, optr->size, 0, (struct sockaddr *) &rawsin, sizeof(rawsin));
+
+            // ipv4
+            if (optr->dest_ip) {
+                raw_out_ipv4.sin_family       = AF_INET;
+                raw_out_ipv4.sin_port         = htons(optr->dest_port);
+                raw_out_ipv4.sin_addr.s_addr  = optr->dest_ip;
+
+                // write the packet to the raw network socket.. keeping track of how many bytes
+                bytes_sent = sendto(ctx->raw_socket[0], optr->buf, optr->size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
+
+                printf("writing ipv4: %d socket %d\n", bytes_sent, ctx->raw_socket[optr->proto][0]);
+            } else {
+
+                memset(&raw_out_ipv6, 0, sizeof(raw_out_ipv6));
+                // ipv6...
+                raw_out_ipv6.sin6_family = AF_INET6;
+                raw_out_ipv6.sin6_port   = 0;//htons(optr->dest_port);
+                CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->dest_ipv6);
+
+                IP = (char *)IP_prepare_ascii(NULL, &optr->dest_ipv6);
+                if (IP != NULL) {
+                    printf("IP %s\n", IP);
+                    free(IP);
+                } else {
+                    printf("no ip\n");
+                }
+
+                bytes_sent = sendto(ctx->raw_socket[optr->proto][1], optr->buf, optr->size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
+                perror("hah");
+
+                printf("writing ipv6: %d errno %d socket %d dest port %d proto %d\n", bytes_sent, errno, ctx->raw_socket[optr->proto][1], optr->dest_port, optr->proto);
+
+            }
 
             //printf("sendto bytes sent %d errno %d socket %d\n", bytes_sent, errno, ctx->raw_socket);
             // I need to perform some better error checking than just the size..
@@ -194,6 +227,7 @@ void *AS_queue_threaded(void *arg) {
 // over all attack structure queue going to the Internet.
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     AttackOutgoingQueue *optr = NULL;
+    int which_proto = 0;
 
     if (qptr == NULL || qptr->buf == NULL) return -1;
 
@@ -210,8 +244,20 @@ int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     optr->size = qptr->size;
     qptr->size = 0;
 
+    if (qptr->type & PACKET_TYPE_TCP) {
+        which_proto = 0;
+    } else if (qptr->type & IPPROTO_UDP) {
+        which_proto = 1;
+    } else if (qptr->type & IPPROTO_ICMP) {
+        which_proto = 2;
+    }
+
+    optr->proto = which_proto;
+
+
     // required for writing to wire:
     optr->dest_ip = qptr->dest_ip;
+    CopyIPv6Address(&optr->dest_ipv6, &qptr->dest_ipv6);
     optr->dest_port = qptr->dest_port;
 
     // Just in case some function later (during flush) will want to know which attack the buffer was generated for
@@ -278,32 +324,55 @@ void *thread_network_flush(void *arg) {
 
 // prepare raw outgoing socket (requires root)..
 int prepare_socket(AS_context *ctx) {
-    int rawsocket = 0;
+    int rawsocket[3][2];
     int one = 1;
     int bufsize = 1024*1024*50;
+    int i = 0, proto = 0;
+    int which_proto = 0;
 
-    
+    printf("!!!!!!!!!!!!!!!!!!!!!! prepare_socket\n");
+    fflush(stdout);
 
-    if (ctx->raw_socket > 0) {
-        // If we cannot use setsockopt.. there must be trouble!
-        if (setsockopt(ctx->raw_socket, IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
-            close(ctx->raw_socket);
-            ctx->raw_socket = 0;
+
+    for (proto = 0; proto < 3; proto++) {
+
+        for (i = 0; i < 2; i++) {
+
+            if (ctx->raw_socket[proto][i] > 0) {
+                // If we cannot use setsockopt.. there must be trouble!
+                if (setsockopt(ctx->raw_socket[proto][i], IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
+                    printf("bad socket\n");
+                    close(ctx->raw_socket[proto][i]);
+                    ctx->raw_socket[proto][i] = 0;
+                }
+            }
+            
+            switch (proto) {
+                case 0: which_proto = IPPROTO_TCP; break;
+                case 1: which_proto = IPPROTO_UDP; break;
+                case 2: which_proto = IPPROTO_ICMP; break;
+            }
+
+            // open raw socket
+            if ((rawsocket[proto][i] = socket(i ? AF_INET6 : AF_INET, SOCK_RAW, which_proto)) <= 0) {
+                printf("didnt work\n");
+                return -1;
+            }
+
+            printf("i %d socket %d\n", i, rawsocket[proto][i]);
+
+            setsockopt(rawsocket[proto][i], SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
+
+            // ensure the operating system knows that we will include the IP header within our data buffer
+            setsockopt(rawsocket[proto][i], i ? IPPROTO_IPV6 : IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one));
+
+            
+            // set it for later in the overall context
+            ctx->raw_socket[proto][i] = rawsocket[proto][i];
+
+            printf("ctx raw socket[%d][%d] = %d\n", proto, i, ctx->raw_socket[proto][i]);
         }
     }
-    
-    // open raw socket
-    if ((rawsocket = socket(AF_INET, SOCK_RAW, IPPROTO_TCP)) <= 0)
-        return -1;
-
-    setsockopt(rawsocket, SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
-
-    // ensure the operating system knows that we will include the IP header within our data buffer
-    if (setsockopt(rawsocket, IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0)
-        return -1;
-
-    // set it for later in the overall context
-    ctx->raw_socket = rawsocket;
 
     return rawsocket;
 }
@@ -718,6 +787,7 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
 int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, int no_block) {
     int ret = 0;
     AttackOutgoingQueue *optr = NULL;
+    int which_proto = 0;
 
     // allocate a structure for the outgoing packet to get wrote to the network interface
     if ((optr = (AttackOutgoingQueue *)calloc(1, sizeof(AttackOutgoingQueue))) != NULL) {
@@ -726,12 +796,25 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, int no_b
         optr->type = iptr->type;
         optr->size = iptr->packet_size;
 
+        if (iptr->type & PACKET_TYPE_TCP) {
+            which_proto = 0;
+        } else if (iptr->type & IPPROTO_UDP) {
+            which_proto = 1;
+        } else if (iptr->type & IPPROTO_ICMP) {
+            which_proto = 2;
+        }
+
+        optr->proto = which_proto;
+
         // remove the pointer from the instruction structure so it doesnt get freed in this function
         iptr->packet = NULL;
         iptr->packet_size = 0;
 
         // the outgoing structure needs some other information
+        optr->dest_port = iptr->destination_port;
         optr->dest_ip = iptr->destination_ip;
+        CopyIPv6Address(&optr->dest_ipv6, &iptr->destination_ipv6);
+
         optr->ctx = ctx;
 
         // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..

@@ -16,12 +16,16 @@ wire ready.
 #include <netinet/ip_icmp.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include <netinet/ether.h>
+#include <net/ethernet.h>
+
 #include "network.h"
 #include "antisurveillance.h"
 #include "attacks.h"
 #include "packetbuilding.h"
 #include "adjust.h"
 #include "utils.h"
+#include "pcap.h"
 
 // calculate checksum
 unsigned short in_cksum(unsigned short *addr,int len) {
@@ -268,6 +272,7 @@ void BuildPackets(AS_attacks *aptr) {
         qptr->size = ptr->packet_size;
         // These are required for sending the packet out on the raw socket.. so lets pass it
         qptr->dest_ip = ptr->destination_ip;
+        CopyIPv6Address(&qptr->dest_ipv6, &ptr->destination_ipv6);
         qptr->dest_port = ptr->destination_port;
 
         // This should really only matter later.. once they begin 'attempting' to process out
@@ -616,6 +621,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     uint32_t pkt_chk = 0;
     struct icmp6_hdr *icmp = NULL;
 
+    //!!!
     sprintf(stderr, "FIX... change icmp to icmp6 struct\n");
     exit(-1);
 
@@ -686,7 +692,8 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
 
 
 
-
+static int ocount = 0;
+FILE *pcapfd = NULL;
 
 int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
@@ -696,36 +703,34 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     struct pseudo_header_udp6 *udp_chk_hdr = NULL;
     char *checkbuf = NULL;
 
+    printf("udp6\n");
+
     // this is only for ipv4 tcp (ret 0 since its not technically an error.. just wrong func)
     if (!(iptr->type & PACKET_TYPE_UDP_6)) return 0;
 
     // calculate full length of packet.. before we allocate memory for storage
-    final_packet_size = sizeof(struct iphdr) + sizeof(struct udphdr) + iptr->data_size;
+    final_packet_size = sizeof(struct ip6_hdr) + sizeof(struct udphdr) + iptr->data_size;
 
     // allocate space for the packet
-    if ((final_packet = (unsigned char *)calloc(1, final_packet_size)) == NULL) goto end;
+    if ((final_packet = (unsigned char *)calloc(1, final_packet_size)) == NULL)
+        goto end;
 
     // this is the main structure we cast for configuring IP/UDP header parameters
     p = (struct packetudp6 *)final_packet;
-
-    // ensure the final packet was allocated correctly
-    if (final_packet == NULL) return ret;
 
     // IP header below (static)
 
     // prepare IPv6 header
     p->ip.ip6_ctlun.ip6_un2_vfc = 6 << 4;
-    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size  - sizeof(struct ip6_hdr));
+    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(iptr->data_size + sizeof(struct udphdr));
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
     p->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_UDP;
     
-
     // get IP addreses out of the packet
     CopyIPv6Address(&p->ip.ip6_src, &iptr->source_ipv6);
     CopyIPv6Address(&p->ip.ip6_dst, &iptr->destination_ipv6);
 
-    // how much data is present in this packet?
-    p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);
+printf("souroce port %d dest %d\n", iptr->source_port, iptr->destination_port);
 
     p->udp.source       = htons(iptr->source_port);
     p->udp.dest         = htons(iptr->destination_port);
@@ -736,7 +741,8 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
     memcpy((void *)(final_packet + sizeof(struct udphdr) + sizeof(struct ip6_hdr)), iptr->data, iptr->data_size);
 
     // allocate memory for performing checksum calculations
-    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp6) + sizeof(struct udphdr) + iptr->data_size)) == NULL) goto end;
+    if ((checkbuf = (char *)calloc(1, sizeof(struct pseudo_header_udp6) + sizeof(struct udphdr) + iptr->data_size)) == NULL)
+        goto end;
 
     // this is the pseudo header used for UDP verification and its pointer for configuring the parameters
     udp_chk_hdr = (struct pseudo_header_udp6 *)checkbuf;
@@ -784,6 +790,8 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
 int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
+
+    printf("send tcp6\n");
 
     if (PacketTCPBuildOptions(iptr) != 1) return -1;
 
@@ -968,7 +976,7 @@ int SendICMP(AS_context *ctx, uint32_t src_ip, uint32_t dst_ip, struct in6_addr 
         // determine if this is an IPv4/6 so it uses the correct packet building function
         // prepare the ICMP header for the traceroute
         if (dst_ip != 0) {
-            iptr->type = PACKET_TYPE_ICMP_4;
+            iptr->type = PACKET_TYPE_ICMP_4|PACKET_TYPE_ICMP|PACKET_TYPE_ICMP;
             iptr->destination_ip = dst_ip;
             iptr->source_ip = src_ip;
 
@@ -977,7 +985,7 @@ int SendICMP(AS_context *ctx, uint32_t src_ip, uint32_t dst_ip, struct in6_addr 
             icmp.un.echo.id = id;
 
         } else {
-            iptr->type = PACKET_TYPE_ICMP_6;
+            iptr->type = PACKET_TYPE_ICMP_6|PACKET_TYPE_ICMP|PACKET_TYPE_ICMP;
 
             icmp6.icmp6_type = code;
             icmp6.icmp6_id = id;

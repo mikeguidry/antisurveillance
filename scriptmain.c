@@ -72,21 +72,14 @@ int main(int argc, char *argv[]) {
         ctx->traceroute_max_retry = 100;
     }
 
-
+    //printf("1\n");
     // call the init() function in the script
     PythonLoadScript(sctx, script, "init", NULL);
-/*
+    //printf("2\n");
+
     ctx->http_discovery_enabled = 1;
     ctx->http_discovery_max = 50;
 
-    while (geoip_countries[z]) {
-        printf("Country: %s\n", geoip_countries[z]);
-        GenerateIPv6Address(ctx, (char *)geoip_countries[z], NULL);
-        z++;
-
-    }
-    
-    exit(0);  */
     //GenerateIPv6Address(ctx, (char *) "US", NULL);
     while (ctx->script_enable) {
             // call AS_perform() once to iterate all attacks
@@ -99,6 +92,16 @@ int main(int argc, char *argv[]) {
                 printf("Caught Ctrl-C...\n");
                 break;
             }
+
+            z = 0;
+            while (geoip_countries[z]) {
+                //printf("Country: %s\n", geoip_countries[z]);
+                GenerateIPv6Address(ctx, (char *)geoip_countries[z], NULL);
+                z++;
+                //if (z == 255) { z= 0; }
+                //usleep(10000);
+            }
+
     }
 
     // completed... finish routines to free all memory, scripting, and other subsystems..

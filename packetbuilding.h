@@ -16,10 +16,12 @@ typedef struct _pkt_info {
 
 
     uint32_t dest_ip;
+    struct in6_addr dest_ipv6;
     uint16_t dest_port;
 
     char *buf;
     int size;
+
 
     // if we need to wait till a certain time for releasing this packet, then it goes here..
     // this is good for emulation of advanced protocols.. think SSH, telnet, etc anything
@@ -221,7 +223,10 @@ enum {
     PACKET_TYPE_UDP_6=16,
     PACKET_TYPE_ICMP_6=32,
     PACKET_TYPE_IPV4=64,
-    PACKET_TYPE_IPV6=128
+    PACKET_TYPE_IPV6=128,
+    PACKET_TYPE_ICMP=256,
+    PACKET_TYPE_UDP=512,
+    PACKET_TYPE_TCP=1024
 
 };
 
