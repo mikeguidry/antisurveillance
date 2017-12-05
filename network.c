@@ -349,7 +349,7 @@ int prepare_socket(AS_context *ctx) {
             
             switch (proto) {
                 case 0: which_proto = IPPROTO_TCP; break;
-                case 1: which_proto = IPPROTO_UDP; break;
+                case 1: which_proto = i == 1 ? IPPROTO_RAW : IPPROTO_UDP; break;
                 case 2: which_proto = IPPROTO_ICMP; break;
             }
 
