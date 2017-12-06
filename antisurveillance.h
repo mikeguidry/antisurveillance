@@ -205,7 +205,7 @@ typedef struct _antisurveillance_context {
     int raw_socket[3][2];
 
     // promisc read socket for incoming packet events
-    int read_socket;
+    int read_socket[3][2];
 
     // list of attacks
     AS_attacks *attack_list;

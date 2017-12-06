@@ -77,6 +77,7 @@ int main(int argc, char *argv[]) {
     PythonLoadScript(sctx, script, "init", NULL);
     //printf("2\n");
 
+
     ctx->http_discovery_enabled = 1;
     ctx->http_discovery_max = 50;
 
@@ -92,7 +93,7 @@ int main(int argc, char *argv[]) {
                 printf("Caught Ctrl-C...\n");
                 break;
             }
-
+/*
             z = 0;
             while (geoip_countries[z]) {
                 //printf("Country: %s\n", geoip_countries[z]);
@@ -101,7 +102,7 @@ int main(int argc, char *argv[]) {
                 //if (z == 255) { z= 0; }
                 //usleep(10000);
             }
-
+*/
     }
 
     // completed... finish routines to free all memory, scripting, and other subsystems..

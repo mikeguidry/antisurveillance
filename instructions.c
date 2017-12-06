@@ -1049,8 +1049,12 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
+    printf("ICMP6 processing\n");
+
     // allocate space for an instruction structure which analysis of this packet will create
-    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) {
+        goto end;
+    }
     
     // ensure the type is set
     iptr->type = PACKET_TYPE_ICMP_6 | PACKET_TYPE_IPV6 | PACKET_TYPE_ICMP;
@@ -1101,6 +1105,9 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
 
     end:;
 
+    if (iptr == NULL) {
+        printf("err processing\n");
+    }
     return iptr;
 }
 
@@ -1111,7 +1118,7 @@ typedef PacketBuildInstructions *(*ProcessFunc)(PacketInfo *);
 // *** Todo: i don't like this loop.. I'd like to perform this action without a loop later..
 // Seems I cannot use an exact jump table w original values IPPROTO_TCP/UDP are equal to 0
 // https://www.google.com/search?q=define+ipproto_tcp&oq=define+ipproto_tcp&aqs=chrome..69i57.2845j0j7&sourceid=chrome&ie=UTF-8
-ProcessFunc Processor_Find(int ip_version, int protocol) {
+ProcessFunc Processor_Find(int ip_version, int protocol) {//, int *debug_it) {
     int i = 0;
     struct _packet_processors {
         int ip_version;
@@ -1137,8 +1144,16 @@ ProcessFunc Processor_Find(int ip_version, int protocol) {
         i++;
     }
 
+    /*if (ip_version == 6) {
+        if (debug_it) *debug_it = 1;
+
+    }*/
+
     return NULL;
 }
+
+static int pcount = 0;
+
 
 // Process sessions from a pcap packet capture into building instructions to replicate, and massively replay
 // those sessions :) BUT with new IPs, and everything else required to fuck shit up.
@@ -1151,7 +1166,11 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
     PacketBuildInstructions *list = NULL, *llast = NULL;
     PacketBuildInstructions *ret = NULL;
     int protocol = 0;
-    
+    FILE *fd;
+    char fname[32];
+    //int debug_it = 0;
+    struct ether_header *ethhdr = NULL;    
+
     // Enumerate for all packets in the list
     pptr = packets;
 
@@ -1161,6 +1180,19 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
             p = (struct packet *)pptr->buf;
             p6 = (struct packettcp6 *)pptr->buf;
 
+            printf("ip ver %d\n", p->ip.version);
+
+            sprintf(fname, "pkt/dbg_%d_%d.dat", getpid(), pcount++);
+            if ((fd = fopen(fname, "wb")) != NULL) {
+                fwrite(pptr->buf, 1, pptr->size, fd);
+                fclose(fd);
+            }           
+
+            if ((p->ip.version != 4) && (p->ip.version != 6)) {
+                printf("trying to skip eth header\n");
+                p = (struct packet *)((char  *)(pptr->buf) + sizeof(ethhdr));
+                p6 = (struct packettcp6 *)((char  *)(pptr->buf) + sizeof(ethhdr));
+            }
             // ipv6 is a little different.. so lets set protocol by whichever this is
             if (p->ip.version == 4) {
                 protocol = p->ip.protocol;
@@ -1169,9 +1201,11 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                 
             }
 
+            //debug_it = 0;
             // Analysis capabilities are limited so use this function to determine
             // if this packet type has been developed yet
-            if ((Processor = Processor_Find(p->ip.version, protocol)) != NULL)
+            if ((Processor = Processor_Find(p->ip.version, protocol)) != NULL) {//, &debug_it)) != NULL)
+                printf("found processor\n");
                 if ((iptr = Processor(pptr)) != NULL) {
                     // If it processed OK, then lets add it to the list
                     // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
@@ -1183,7 +1217,20 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                         llast->next = iptr;
                         llast = iptr;
                     }
-                } 
+                } else {
+                    printf("couldnt find processor\n");
+                } /*else {
+                    if (debug_it) {
+                        sprintf(fname, "pkt/dbg_%d_%d.dat", getpid(), pcount++);
+                        if ((fd = fopen(fname, "Wb")) != NULL) {
+                            fwrite(pptr->buf, 1, pptr->size, fd);
+                            fclose(fd);
+                        }           
+                    }
+                }*/
+            } else {
+                printf("couldnt find processor for ip ver %d proto %d\n", p->ip.version, protocol);
+            }
         }
 
         // move on to the next element in the list of packets
@@ -1210,7 +1257,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
     // this gets freed on calling function.. since a pointer to the pointer (to mark as freed) wasnt passed
     //PacketsFree(&packets);
-
+printf("leaving convert\n");
     return ret;
 }
 

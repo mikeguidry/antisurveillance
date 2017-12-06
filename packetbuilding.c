@@ -619,11 +619,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     int final_packet_size = 0;
     struct packeticmp6 *p = NULL;
     uint32_t pkt_chk = 0;
-    struct icmp6_hdr *icmp = NULL;
-
-    //!!!
-    sprintf(stderr, "FIX... change icmp to icmp6 struct\n");
-    exit(-1);
+    struct icmp6_hdr *icmp6 = NULL;
 
     // this is only for ipv4 tcp
     if (!(iptr->type & PACKET_TYPE_ICMP_6)) return ret;
@@ -635,14 +631,14 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     if ((final_packet = (char *)calloc(1, final_packet_size)) == NULL) goto end;
 
     // prepare the ICMP header pointer in the final packet buffer we are creating
-    icmp = (struct icmphdr *)(final_packet + sizeof(struct ip6_hdr));
+    icmp6 = (struct icmp6_hdr *)(final_packet + sizeof(struct ip6_hdr));
 
     // this is the structure we use to prepare the IP header parameters inside of this for the wire packet buffer
     p = (struct packeticmp6 *)final_packet;
 
     // prepare IPv6 header
     p->ip6.ip6_ctlun.ip6_un2_vfc = 6 << 4;
-    p->ip6.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size - sizeof(struct ip6_hdr));
+    p->ip6.ip6_ctlun.ip6_un1.ip6_un1_plen = htons(final_packet_size);// - sizeof(struct ip6_hdr));
     p->ip6.ip6_ctlun.ip6_un1.ip6_un1_hlim = iptr->ttl;
     p->ip6.ip6_ctlun.ip6_un1.ip6_un1_nxt = IPPROTO_ICMP;
 
@@ -670,7 +666,7 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     p->icmp6.icmp6_cksum= 0;
 
     // calculate ICMP checksum and put it directly into the final packet
-    p->icmp6.icmp6_cksum = (unsigned short)in_cksum((unsigned short *)icmp, sizeof(struct icmp6_hdr) + iptr->data_size);
+    p->icmp6.icmp6_cksum = (unsigned short)in_cksum((unsigned short *)icmp6, sizeof(struct icmp6_hdr) + iptr->data_size);
     
     // set the raw packet inside of the structure
     iptr->packet = final_packet;

@@ -1063,41 +1063,62 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     char *IP = NULL;
     FILE *fd = NULL;
     char fname[32];
+    struct icmphdr *icmp = NULL;
+    struct icmp6_hdr *icmp6 = NULL;
 
+    printf("Traceroute_IncomingICMP()\n");
 
     if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
-        //printf("ipv4 Getting our own packets.. probably loopback\n");
+        printf("ipv4 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     if (!iptr->source_ip && CompareIPv6Addresses(&ctx->my_addr_ipv6, &iptr->source_ipv6)) {
-        //printf("ipv6 Getting our own packets.. probably loopback\n");
+        printf("ipv6 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     
     // data isnt big enough to contain the identifier
     if (iptr->source_ip) {
+        printf("ipv4\n");
+
         if (iptr->data_size >= (20 + sizeof(struct udphdr))) {
+
             // udp header in packet
             udph = ((char *)(iptr->data) + 20);
+
             if (ntohs(udph->dest) >= 1024) {
                 // we assume its correct if its >1024... in reality if someone screws with this by spoofing..
                 // whats it really going to accomplish?.. not much.
                 identifier = ntohs(udph->source);
                 ttl = ntohs(udph->dest) - 1024;
+
             }
         } else {
+
+            printf("size off\n");
+
             goto end;
+ 
         }
     } else {
+        printf("ICMP v6\n");
+
+        printf("type %d code %d checksum %X\n", iptr->icmp6.icmp6_type, iptr->icmp6.icmp6_code, iptr->icmp6.icmp6_cksum);
+
         if (iptr->data_size >= (48 + sizeof(struct udphdr))) {
+            printf("its ok\n");
+
             udph = ((char *)(iptr->data) + 48);
+printf("ident %d ttl %d\n", ntohs(udph->source), ntohs(udph->dest) - 1024);
             if (ntohs(udph->dest) >= 1024) {
                 // we assume its correct if its >1024... in reality if someone screws with this by spoofing..
                 // whats it really going to accomplish?.. not much.
                 identifier = ntohs(udph->source);
                 ttl = ntohs(udph->dest) - 1024;
+
+                printf("IPv6 incoming traceroute respopnse\n");
             }
             
         } else {
@@ -1121,7 +1142,7 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
         //printf("got from data\n");
     }
     */
-    //printf("incoming icmp ttl %d identifier %u\n", ttl, identifier);
+    printf("incoming icmp ttl %d identifier %u\n", ttl, identifier);
     // this function is mainly to process quickly.. so we will fill another structure so that it can get processed
     // later again with calculations directly regarding its query
 
@@ -1466,7 +1487,7 @@ int Traceroute_Perform(AS_context *ctx) {
                       //  Traceroute_SendICMP(ctx, tptr);
                     //else if (tptr->type == TRACEROUTE_UDP)
 
-                    for (i = 0; i < 3; i++) {
+                    for (i = 0; i < 30; i++) {
                         Traceroute_SendUDP(ctx, tptr);
                     }
 
@@ -1531,6 +1552,7 @@ FILE *file_open_dump(char *filename) {
 typedef struct _data_entry {
     unsigned char code;
     uint32_t target_ip;
+    struct in6_addr target_ipv6;
     uint32_t hop_ip;
     struct in6_addr hop_ipv6;
     uint16_t identifier;
@@ -1542,7 +1564,6 @@ typedef struct _data_entry {
     int ttl;
 } DataEntry;
 #pragma pack(pop)
-
 
 
 // dump traceroute data to disk.. printing a little information..
@@ -1575,8 +1596,7 @@ int Spider_Save(AS_context *ctx) {
         dentry.code = 1;
 
         dentry.target_ip = qptr->target_ip;  
-        // !!! ipv6 save/load
-        //CopyIPv6Address(&dentry.target_ipv6, &qptr->target_ipv6);
+        CopyIPv6Address(&dentry.target_ipv6, &qptr->target_ipv6);
       
         dentry.identifier = qptr->identifier;
         dentry.completed = qptr->completed;
@@ -1598,10 +1618,10 @@ int Spider_Save(AS_context *ctx) {
         dentry.code = 2;
 
         dentry.target_ip = sptr->target_ip;
-        // !!! ipv6 save/load
-        //CopyIPv6Address(&dentry.target_ipv6, &sptr->target_ipv6);
+        CopyIPv6Address(&dentry.target_ipv6, &sptr->target_ipv6);
 
         dentry.hop_ip = sptr->hop_ip;
+        CopyIPv6Address(&dentry.hop_ipv6, &sptr->hop_ipv6);
         dentry.identifier = sptr->identifier_id;
         dentry.ts = sptr->ts;
         dentry.ttl = sptr->ttl;
@@ -1628,9 +1648,10 @@ int Spider_Save(AS_context *ctx) {
             // branch connected to most recent hop
             dentry.code = 3;
             dentry.target_ip = sptr->target_ip;
-            // !!! ipv6 save/load
-            //CopyIPv6Address(&dentry.target_ipv6, &sptr->target_ipv6);            
+            
+            CopyIPv6Address(&dentry.target_ipv6, &sptr->target_ipv6);            
             dentry.hop_ip = sptr->hop_ip;
+            CopyIPv6Address(&dentry.hop_ipv6, &sptr->hop_ipv6);
             dentry.identifier = sptr->identifier_id;
             dentry.ts = sptr->ts;            
             dentry.ttl = sptr->ttl;
@@ -1769,8 +1790,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
             // we wanna control enabled here when we look for all TTL hops
             qnew->enabled = dentry.enabled;
             qnew->target_ip = dentry.target_ip;
-            // !!! save/load ipv6
-            //CopyIPv6Address(&snew->target_ipv6, &dentry.target_ipv6);
+            CopyIPv6Address(&qnew->target_ipv6, &dentry.target_ipv6);
 
             qnew->identifier = dentry.identifier;
 
@@ -1794,9 +1814,9 @@ int Spider_Load(AS_context *ctx, char *filename) {
             // set various information we have read fromm the file into the new structure
         
             snew->target_ip = dentry.target_ip;
+            CopyIPv6Address(&snew->target_ipv6, &dentry.target_ipv6);
             snew->hop_ip = dentry.hop_ip;
-            // !!! save/load ipv6
-            //CopyIPv6Address(&snew->hop_ipv6, &dentry.hop_ipv6);
+            CopyIPv6Address(&snew->hop_ipv6, &dentry.hop_ipv6);
 
             snew->ttl = dentry.ttl;
             snew->identifier_id = dentry.identifier;
@@ -1828,8 +1848,8 @@ int Spider_Load(AS_context *ctx, char *filename) {
         
             snew->target_ip = dentry.target_ip;
             snew->hop_ip = dentry.hop_ip;
-            // !!! save/load ipv6
-            //CopyIPv6Address(&snew->hop_ipv6, &dentry.target_ipv6);
+            CopyIPv6Address(&snew->hop_ipv6, &dentry.hop_ipv6);
+            CopyIPv6Address(&snew->target_ipv6, &dentry.target_ipv6);
             snew->ttl = dentry.ttl;
             snew->identifier_id = dentry.identifier;
             snew->ttl = dentry.ttl;
@@ -1862,6 +1882,11 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
     return 1;
 }
+
+
+
+
+
 
 
 
@@ -2985,6 +3010,15 @@ uint32_t IPv4SetRandom(AS_context *ctx, char *country) {
     return iptr->v4_addresses[r];
 }
 
+
+// tasks awaiting a callback such as enough IPv6 hosts/traceroutes, etc...
+typedef struct _sleeping_tasks {
+    struct _sleeping_tasks *next;
+    
+
+} SleepingTasks;
+
+
 // generating IPv6 addresses is a little more difficult than ipv4.. traceorute will help us accomplish  somme things
 // other subsystems need to automatically append IPv6 addreses to a specfici list to help...
 // we want all possible addresses.. then we can rev dns them, as well as grab AAAA from domains/etc (even domains found in wild without
@@ -3002,17 +3036,32 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
     char google_ipv6[] = "2607:f8b0:4000:811::200e";
     int r = 0;
     int diff = 0;
+    char *ipv6_seed_ips[] = {
+        "2607:f8b0:4000:801::2003", "2607:f8b0:4000:811::200e" ,
+
+    NULL };
 
     // we can use gathered ips from packet sniffing instead of static doner IPs..
     IPAddresses *iptr = IPAddressesPtr(ctx, country);
+    TracerouteQueue *qptr = NULL;
 
 
     if (iptr == NULL || !iptr->v6_count) {
         //printf("adding google\n");
         // turn ascii google ipv6 into binary prepared for network
-        IP_prepare(google_ipv6, NULL, &ipv6, NULL);
-        // add it as a traceroute queue
-        Traceroute_Queue(ctx, 0, &ipv6);
+        for (i = 0; ipv6_seed_ips[i] != NULL; i++) {
+            printf("Adding IPv6 seed: %s\n", ipv6_seed_ips[i]);
+            IP_prepare(ipv6_seed_ips[i], NULL, &ipv6, NULL);
+
+            // add it as a traceroute queue
+            qptr = Traceroute_Queue(ctx, 0, &ipv6);
+            if (qptr) {
+                qptr->priority = 1;
+                qptr->enabled = 1;
+                qptr->completed = 0;
+            }
+            Traceroute_AdjustActiveCount(ctx);
+        }
 
         // return so we can try again later..
         return 0;
@@ -3451,9 +3500,11 @@ int Research_SyslogSend(AS_context *ctx, uint32_t ip, struct in6_addr ipv6, char
 int Traceroute_TryFill(AS_context *ctx, TracerouteQueue *qptr) {
     int i = 0, n = 0, missing_before = 0;
     TracerouteSpider *sptr = NULL;
+    TracerouteSpider *snew = NULL;
+    TracerouteSpider *sfound = NULL;
 
     // check for each TTL
-    for (i = 0; i < MAX_TTL; i++) {
+    for (i = 0; i < (MAX_TTL / 2); i++) {
         // if the response is NULL.. count it
         if (qptr->responses[i] == NULL) {
             missing_before++;
@@ -3461,14 +3512,57 @@ int Traceroute_TryFill(AS_context *ctx, TracerouteQueue *qptr) {
         // if BEFORE this response we had some empty(NULL) AND this one exist..
             if (missing_before && qptr->responses[i]) {
                 // then lets find other queues which use the same hop (router) because anything below this TTL on their queue response is equal
-                if (((sptr = Traceroute_FindByHop(ctx, qptr->responses[i]->hop_ip, NULL)) != NULL) && (sptr->queue != qptr)) {
-                    // loop for all missing TTLs in our queue
-                    for (n = i; n > 0; n--) {
-                        // and if the other queue we found has them,
-                        if (sptr->queue->responses[n] && qptr->responses[n] == NULL) {
-                            // then lets copy them over...
-                            qptr->responses[n] = sptr->queue->responses[n];
+                if (((sptr = Traceroute_FindByHop(ctx, qptr->responses[i]->hop_ip, NULL)) != NULL)) {
+                    while (sptr != NULL) {
+                        if (sptr->queue != qptr) {
+                            // loop for all missing TTLs in our queue
+                            for (n = i; n > 0; n--) {
+                                // and if the other queue we found has them,
+                                if (sptr->queue->responses[n] && qptr->responses[n] == NULL) {
+                                    sfound = sptr->queue->responses[n];
+                                    // allocate space for us to append this response to our interal spider web for analysis
+                                    if ((snew = (TracerouteSpider *)calloc(1, sizeof(TracerouteSpider))) != NULL) {
+                                        // we need to know which TTL later (for spider web analysis)
+                                        snew->ttl = sfound->ttl;
+
+                                        // ensure we log identifier so we can connect all for target easily
+                                        snew->identifier_id = qptr->identifier;
+
+                                        // take note of the hops address (whether its ipv4, or 6)
+                                        snew->hop_ip = sfound->hop_ip;
+                                        CopyIPv6Address(&snew->hop_ipv6, &sfound->hop_ipv6);
+
+                                        // take note of the target ip address
+                                        snew->target_ip = sfound->target_ip;
+                                        CopyIPv6Address(&qptr->target_ipv6, &sfound->target_ipv6);
+
+                                        snew->country = GEOIP_IPtoCountryID(ctx, snew->hop_ip);
+                                        snew->asn_num = GEOIP_IPtoASN(ctx, snew->hop_ip);
+                                        
+                                        // in case later we wanna access the original queue which created the entry
+                                        snew->queue = qptr;
+
+                                        // link into list containing all..
+                                        snew->next = ctx->traceroute_spider;
+                                        ctx->traceroute_spider = snew;
+
+                                        // insert into list for traceroute information
+                                        Traceroute_Insert(ctx, snew);
+
+                                        // calculate border score between us and this response
+                                        snew->border_score = BorderScore(ctx, snew);
+
+                                        // link it to the original queue by its identifier
+                                        Spider_IdentifyTogether(ctx, snew);
+                                    }
+
+                                    // then lets copy them over...
+                                    qptr->responses[n] = snew;//sptr->queue->responses[n];
+                                }
+                            }
                         }
+
+                        sptr = sptr->jump;
                     }
                 }
             }
@@ -3544,6 +3638,9 @@ int IPGather_Init(AS_context *ctx) {
 
     if (Network_AddHook(ctx, flt, &IPGather_Incoming) != 1)
         goto end;
+
+    // lets call this regardless of needing one.. just to initiate ip grabbing, and somme ipv6 tracerouting to populate those IPs
+    GenerateIPv6Address(ctx, "US", NULL);
 
     ret =  1;
 
