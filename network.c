@@ -47,19 +47,17 @@ protection to be developed, and this can become the 'third party server' for hun
 int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     int count = 0;
     OutgoingPacketQueue *onext = NULL;
+    OutgoingPacketQueue *pool = NULL;
     struct sockaddr_in raw_out_ipv4;
     struct sockaddr_in6 raw_out_ipv6;
     struct ether_header *ethhdr = NULL;
     int bytes_sent = 0;
     char *IP = NULL;
+    char *sptr = NULL;
+    int cur_packet = 0;
+    int packet_size = 0;
 
-    // if disabled (used to store after as a pcap) fromm python scripts
-    // beware.. if things are marked to be cleared it wont until this flag gets removed and the code below gets executed
-    // maybe change later.. ***
-    if (ctx->network_disabled) {
-        //printf("network disabled\n");
-        return 0;
-    }
+
 
     // we need some raw sockets.
     if (ctx->write_socket[0][0] <= 0) {
@@ -68,86 +66,67 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
             return -1;
         }
     }
-    
+
     while (optr != NULL) {
 
-#ifdef TESTING_DONT_FREE_OUTGOING
-        if (optr->submitted) {
-            //printf("testing dont submit outgoing\n");
-            optr = optr->next;
-            continue;
-        }
-#endif
-
         if (!optr->ignore) {
-            // parameters required to write the spoofed packet to the socket.. it ensures the OS fills in the ethernet layer (src/dst mac
-            // addresses for the local IP, and local IP's gateway
+            while (cur_packet < optr->cur_packet) {
+                // sptr starts at the beginning of the buffer
+                sptr = (char *)(&optr->buffer);
 
-            // ipv4
-            if (optr->dest_ip) {
-                raw_out_ipv4.sin_family       = AF_INET;
-                raw_out_ipv4.sin_port         = htons(optr->dest_port);
-                raw_out_ipv4.sin_addr.s_addr  = optr->dest_ip;
+                //increase it to the startinng place of this packet
+                sptr += optr->packet_starts[cur_packet];
 
-                // write the packet to the raw network socket.. keeping track of how many bytes
-                bytes_sent = sendto(ctx->write_socket[optr->proto][0], optr->buf, optr->size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
-            } else {
+                // calculate the size of this particular packet we are going to process
+                packet_size = optr->packet_ends[cur_packet] - optr->packet_starts[cur_packet];
 
-                memset(&raw_out_ipv6, 0, sizeof(raw_out_ipv6));
-                // ipv6...
-                raw_out_ipv6.sin6_family = AF_INET6;
-                raw_out_ipv6.sin6_port   = 0;//htons(optr->dest_port);
-                CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->dest_ipv6);
 
-                bytes_sent = sendto(ctx->write_socket[optr->proto][1], optr->buf, optr->size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
+                
+                if (optr->dest_ip[cur_packet]) {
+                    // IPv4
+                    raw_out_ipv4.sin_family       = AF_INET;
+                    raw_out_ipv4.sin_port         = htons(optr->dest_port[cur_packet]);
+                    raw_out_ipv4.sin_addr.s_addr  = optr->dest_ip[cur_packet];
+
+                    // write the packet to the raw network socket.. keeping track of how many bytes
+                    bytes_sent = sendto(ctx->write_socket[optr->proto][0], sptr, packet_size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
+
+                } else {
+                    // ipv6...
+                    memset(&raw_out_ipv6, 0, sizeof(raw_out_ipv6));
+                    raw_out_ipv6.sin6_family = AF_INET6;
+                    raw_out_ipv6.sin6_port   = 0;//htons(optr->dest_port);
+                    CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->dest_ipv6);
+
+                    bytes_sent = sendto(ctx->write_socket[optr->proto][1], sptr, packet_size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
+                }
+
+                // if sent matches size then we count it
+                if (bytes_sent == packet_size) count++;
+
+                // move to the next packet
+                cur_packet++;
             }
-
-            //printf("sendto bytes sent %d errno %d socket %d\n", bytes_sent, errno, ctx->write_socket[0][0]);
-            // I need to perform some better error checking than just the size..
-            if (bytes_sent != optr->size) {
-                // if this packet fails 3 times.. lets ignore it (unroutable??)
-                //if (optr->failed++ > 2) optr->ignore = 1;
-                //break;
-            } else {
-                //optr->failed = 0;
-                count++;
-            }
-
-            // keep track of how many packets.. the calling function will want to keep track
-            
-#ifdef TESTING_DONT_FREE_OUTGOING
-            optr->submitted = 1; optr = optr->next; continue;
-#endif
         }
 
-        // if it was successful... free it
-        //if (!optr->failed) {
 
-            // what comes after? we are about to free the pointer so..
-            onext = optr->next;
+        optr->ts = time(0);
+    
+        onext = optr->next;
 
-            // clear buffer
-            PtrFree(&optr->buf);
+        optr->next = pool;
+        pool = optr;
 
-            // free structure..
-            free(optr);
-
-            // fix up the linked lists
-//            if (ctx->network_queue == optr) ctx->network_queue = onext;
-
-            //if (ctx->network_queue_last == optr) ctx->network_queue_last = NULL;
-
-            //printf("pushed packet\n");
-
-            // move to the next link
-            optr = onext;
-        /*} else {
-            // else move to the n ext
-            optr = optr->next;
-        }*/
+        optr = onext;
     }
 
-    // return how many successful packets were transmitted
+    // put back into pool after...
+    pthread_mutex_lock(&ctx->network_pool_mutex);
+
+    L_link_ordered((LINK **)&ctx->outgoing_pool_waiting, (LINK *)pool);
+
+    pthread_mutex_unlock(&ctx->network_pool_mutex);
+
     return count;
 }
 
@@ -168,96 +147,6 @@ void ClearPackets(AS_context *ctx) {
 }
 
 
-// Adds a queue to outgoing packet list which is protected by a thread.. try means return if it fails
-// This is so we can attempt to add the packet to the outgoing list, and if it would block then we can
-// create a thread... if thread fails for some reason (memory, etc) then itll block for its last call here
-int OutgoingQueueAdd(AS_context *ctx, OutgoingPacketQueue *optr, int only_try) {
-    //if (ctx == NULL) return -1;
-
-    if (only_try) {
-        if (pthread_mutex_trylock(&ctx->network_queue_mutex) != 0)
-            return 0;
-    } else {
-        pthread_mutex_lock(&ctx->network_queue_mutex);
-    }
-    
-    if (ctx->outgoing_queue == NULL) {
-        ctx->outgoing_queue = ctx->outgoing_queue_last = optr;
-    } else {
-        if (ctx->outgoing_queue_last != NULL) {
-            ctx->outgoing_queue_last->next = optr;
-            ctx->outgoing_queue_last = optr;
-        }
-    }
-
-    pthread_mutex_unlock(&ctx->network_queue_mutex);
-
-    return 1;
-}
-
-// thread for queueing into outgoing attack queue.. just to ensure the software doesnt pause from generation of new sessions
-void *AS_queue_threaded(void *arg) {
-    OutgoingPacketQueue *optr = (OutgoingPacketQueue *)arg;
-    AS_context *ctx = optr->ctx;
-
-    OutgoingQueueAdd(ctx, optr, 0);
-
-    pthread_exit(NULL);
-}
-
-// It will move a packet from its PacketInfo (from low level network packet builder) into the
-// over all attack structure queue going to the Internet.
-int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
-    OutgoingPacketQueue *optr = NULL;
-    int which_proto = 0;
-
-    if (qptr == NULL || qptr->buf == NULL) return -1;
-
-    if ((optr = (OutgoingPacketQueue *)calloc(1, sizeof(OutgoingPacketQueue))) == NULL)
-        return -1;
-
-    // we move the pointer so its not going to use CPU usage to copy it again...
-    // the calling function should release the pointer (set to NULL) so that it doesnt
-    // free it too early
-    optr->buf = qptr->buf;
-    qptr->buf = NULL;
-    optr->type = qptr->type;
-
-    optr->size = qptr->size;
-    qptr->size = 0;
-
-    if (qptr->type & PACKET_TYPE_TCP) {
-        which_proto = PROTO_TCP;
-    } else if (qptr->type & IPPROTO_UDP) {
-        which_proto = PROTO_UDP;
-    } else if (qptr->type & IPPROTO_ICMP) {
-        which_proto = PROTO_ICMP;
-    }
-
-    optr->proto = which_proto;
-
-
-    // required for writing to wire:
-    optr->dest_ip = qptr->dest_ip;
-    CopyIPv6Address(&optr->dest_ipv6, &qptr->dest_ipv6);
-    optr->dest_port = qptr->dest_port;
-
-    // Just in case some function later (during flush) will want to know which attack the buffer was generated for
-    optr->attack_info = attack;
-
-    optr->ctx = ctx;
-
-    // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-    if (OutgoingQueueAdd(ctx, optr, 1) == 0) {
-        // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
-        if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
-            // if we for some reason cannot pthread (prob memory).. lets do it blocking
-            OutgoingQueueAdd(ctx, optr, 0);
-        }
-    }
-
-    return 1;
-}
 
 
 
@@ -283,8 +172,13 @@ void *thread_network_flush(void *arg) {
 
         pthread_mutex_unlock(&ctx->network_queue_mutex);
         
-        // how many packets are successful?
-        count = FlushOutgoingQueueToNetwork(ctx, optr);
+        // if disabled (used to store after as a pcap) fromm python scripts
+        // beware.. if things are marked to be cleared it wont until this flag gets removed and the code below gets executed
+        // maybe change later.. ***
+        if (!ctx->network_disabled) {
+            // how many packets are successful?
+            count = FlushOutgoingQueueToNetwork(ctx, optr);
+        }
 
         //if (count)printf("Network Thread Outgoing count flushed: %d\n", count);
         // if none.. then lets sleep..  
@@ -815,8 +709,7 @@ int NetworkAllocateReadPools(AS_context *ctx) {
 }
 
 int NetworkAllocateWritePools(AS_context *ctx) {
-    return 0;
-    /*int i = 0;
+    int i = 0;
     OutgoingPacketQueue *pool[ctx->initial_pool_count];
     OutgoingPacketQueue *pqptr = NULL;
 
@@ -836,7 +729,7 @@ int NetworkAllocateWritePools(AS_context *ctx) {
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
 
-    return 1;*/
+    return 1;
 }
 
 
@@ -866,28 +759,23 @@ void *thread_read_network(void *arg) {
 
     // lets read forever.. until we stop it for some reason
     while (1) {
-
-
         pthread_mutex_lock(&ctx->network_pool_mutex);
 
-        if (ctx->incoming_pool_waiting == NULL) {
-            // allocate space for a new pool..
-            nptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue));
-            if (nptr) nptr->max_buf_size = MAX_BUF_SIZE;
-
-        } else {
-            // grab one from the pool
-            nptr = ctx->incoming_pool_waiting;
-            // remove from pool queue
+        // grab one from the pool
+        nptr = ctx->incoming_pool_waiting;
+        // remove from pool queue
+        if (nptr)
             ctx->incoming_pool_waiting = nptr->next;
-
-            nptr->next = NULL;
-        }
 
         pthread_mutex_unlock(&ctx->network_pool_mutex);
 
-        // bad.
-        if (nptr == NULL) goto end;
+        if (nptr == NULL)
+            if ((nptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue))) == NULL) goto end;
+
+        nptr->max_buf_size = MAX_BUF_SIZE;
+        // so its not still linked to the  pool
+        nptr->next = NULL;
+
 
         if (network_fill_incoming_buffer(ctx, nptr)) {
 
@@ -985,51 +873,54 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
 
 
 // merge this with the other attackqueueadd.. and make 2 smaller functions for each input type..
-int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, int no_block) {
+int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, OutgoingPacketQueue **_optr) {
     int ret = 0;
     OutgoingPacketQueue *optr = NULL;
     int which_proto = 0;
+    char *sptr = NULL;
+    int which_protocol = 0;
 
-    // allocate a structure for the outgoing packet to get wrote to the network interface
-    if ((optr = (OutgoingPacketQueue *)calloc(1, sizeof(OutgoingPacketQueue))) != NULL) {
-        // we need to pass it the final packet which was built for the wire
-        optr->buf = iptr->packet;
-        optr->type = iptr->type;
-        optr->size = iptr->packet_size;
-
-        if (iptr->type & PACKET_TYPE_TCP) {
-            which_proto = PROTO_TCP;
-        } else if (iptr->type & IPPROTO_UDP) {
-            which_proto = PROTO_UDP;
-        } else if (iptr->type & IPPROTO_ICMP) {
-            which_proto = PROTO_ICMP;
-        }
-
-        optr->proto = which_proto;
-
-        // remove the pointer from the instruction structure so it doesnt get freed in this function
-        iptr->packet = NULL;
-        iptr->packet_size = 0;
-
-        // the outgoing structure needs some other information
-        optr->dest_port = iptr->destination_port;
-
-        optr->dest_ip = iptr->destination_ip;
-        CopyIPv6Address(&optr->dest_ipv6, &iptr->destination_ipv6);
-
-        optr->ctx = ctx;
-
-        // if we try to lock mutex to add the newest queue.. and it fails.. lets try to pthread off..
-        if (OutgoingQueueAdd(ctx, optr, no_block ? 1 : 0) == 0) {
-            // create a thread to add it to the network outgoing queue.. (brings it from 4minutes to 1minute) using a pthreaded outgoing flusher
-            if (pthread_create(&optr->thread, NULL, AS_queue_threaded, (void *)optr) != 0) {
-            // if we for some reason cannot pthread (prob memory).. lets do it blocking
-                OutgoingQueueAdd(ctx, optr, 0);
-            }
-        }
-
-        ret = 1;
+    if (((optr = *_optr)) == NULL) {
+        *_optr = optr = OutgoingPoolGet(ctx);
+        if (optr == NULL) return -1;
     }
+
+    // copy packet into outgoing packet queue structure (many together)
+    // for speed and to not use many threads, or malloc, etc
+    sptr = (char *)(optr->buffer);
+
+    if (optr->cur_packet > 0)
+        sptr += optr->packet_starts[optr->cur_packet - 1];
+    memcpy(sptr, iptr->packet, iptr->packet_size);
+
+    optr->dest_ip[optr->cur_packet] = iptr->destination_ip;
+    CopyIPv6Address(&optr->dest_ipv6[optr->cur_packet], &iptr->destination_ipv6);
+    optr->dest_port[optr->cur_packet] = iptr->destination_port;
+    //optr->attack_info[optr->cur_packet] = aptr;
+    // !!! move to prior functioon
+    optr->ctx = ctx;
+
+    if (iptr->type & PACKET_TYPE_TCP) {
+        which_protocol = PROTO_TCP;
+    } else if (iptr->type & IPPROTO_UDP) {
+        which_protocol = PROTO_UDP;
+    } else if (iptr->type & IPPROTO_ICMP) {
+        which_protocol = PROTO_ICMP;
+    }
+
+    // mark protocol
+    optr->packet_protocol[optr->cur_packet] = which_protocol;
+    // mark if its ipv6 by checking if ipv4 is empty
+    optr->packet_ipversion[optr->cur_packet] = (iptr->destination_ip == 0);
+
+
+    optr->packet_starts[optr->cur_packet] = optr->size;
+    optr->packet_ends[optr->cur_packet] = (optr->size + iptr->packet_size);
+
+    // prepare for the next packet
+    optr->cur_packet++;
+
+    ret = 1;
 
     return ret; 
 }

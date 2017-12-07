@@ -244,7 +244,7 @@ typedef struct _antisurveillance_context {
     // lets hold processed packet queue pools here for reuse..
     // so we can skip reallocation
     IncomingPacketQueue *incoming_pool_waiting;
-    //OutgoingPacketQueue *outgoing_pool_waiting;
+    OutgoingPacketQueue *outgoing_pool_waiting;
 
     // how many pools do we begin with?
     int initial_pool_count;
@@ -323,6 +323,9 @@ typedef struct _antisurveillance_context {
     HTTPObservedVariables *observed;
 
     int new_traceroute_entries;
+
+    // how many iterations do we perform per attack for each loop
+    int iterations_per_loop;
 } AS_context;
 
 
@@ -337,3 +340,4 @@ AS_context *Antisurveillance_Init();
 int Test_Generate(AS_context *ctx, int argc, char *argv[]);
 int Test_PCAP(AS_context *ctx, char *filename);
 int Threads_Start(AS_context *);
+OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx);

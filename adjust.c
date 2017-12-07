@@ -81,9 +81,7 @@ void PacketAdjustments(AS_context *ctx, AS_attacks *aptr) {
                 buildptr->source_ip = buildptr->destination_ip = 0;
                 CopyIPv6Address(&buildptr->source_ipv6, &src_ipv6);
                 CopyIPv6Address(&buildptr->destination_ipv6, &dst_ipv6);
-            }
-
-                
+            }   
 
             // Source port from client side to server is changed here
             buildptr->source_port = client_port;

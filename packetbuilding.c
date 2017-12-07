@@ -337,10 +337,13 @@ void PacketsFree(PacketInfo **packets) {
 
 // This is one of the main logic functions.  It handles sessions which are to be replayed many times, along with the timing 
 // logic, and it calls other functions to queue into the network outgoing queue
-void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
+void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr) {
     PacketInfo *pkt = NULL;
     struct timeval tv;
     struct timeval time_diff;
+    char *sptr = NULL;
+    int which_protocol = 0;
+    OutgoingPacketQueue *optr = NULL;
 
     gettimeofday(&tv, NULL);
 
@@ -414,8 +417,41 @@ void PacketQueue(AS_context *ctx, AS_attacks *aptr) {
         if (pkt->wait_time && time_diff.tv_usec < pkt->wait_time) return;
     }
 
-    // Queue this packet into the outgoing queue for the network wire
-    AS_queue(ctx, aptr, pkt);
+    if ((*_optr = optr = OutgoingPoolGet(ctx)) == NULL) return;
+
+    // copy packet into outgoing packet queue structure (many together)
+    // for speed and to not use many threads, or malloc, etc
+    sptr = (char *)(&optr->buffer);
+    if (optr->cur_packet > 0)
+        sptr += optr->packet_starts[optr->cur_packet - 1];
+    memcpy(sptr, pkt->buf, pkt->size);
+
+    optr->dest_ip[optr->cur_packet] = pkt->dest_ip;
+    CopyIPv6Address(&optr->dest_ipv6[optr->cur_packet], &pkt->dest_ipv6);
+    optr->dest_port[optr->cur_packet] = pkt->dest_port;
+    optr->attack_info[optr->cur_packet] = aptr;
+    // !!! move to prior functioon
+    optr->ctx = ctx;
+
+    if (pkt->type & PACKET_TYPE_TCP) {
+        which_protocol = PROTO_TCP;
+    } else if (pkt->type & IPPROTO_UDP) {
+        which_protocol = PROTO_UDP;
+    } else if (pkt->type & IPPROTO_ICMP) {
+        which_protocol = PROTO_ICMP;
+    }
+
+    // mark protocol
+    optr->packet_protocol[optr->cur_packet] = which_protocol;
+    // mark if its ipv6 by checking if ipv4 is empty
+    optr->packet_ipversion[optr->cur_packet] = (pkt->dest_ip == 0);
+
+
+    optr->packet_starts[optr->cur_packet] = optr->size;
+    optr->packet_ends[optr->cur_packet] = (optr->size + pkt->size);
+
+    // prepare for the next packet
+    optr->cur_packet++;
 
     // We set this pointer to the next packet for next iteration of AS_perform()
     aptr->current_packet = pkt->next;
@@ -936,80 +972,3 @@ int PacketTCPBuildOptions(PacketBuildInstructions *iptr) {
     return 1;
 }
 
-
-
-
-// moved into its own function so i can finish supporting UDP, and TCP traceroutes
-int SendICMP(AS_context *ctx, uint32_t src_ip, uint32_t dst_ip, struct in6_addr *src_ipv6, struct in6_addr *dst_ipv6, int code, uint32_t seq, uint32_t id) {
-    int i = 0, ret = 0;
-    PacketBuildInstructions *iptr = NULL;
-    struct icmphdr icmp;
-    struct icmp6_hdr icmp6;
-    OutgoingPacketQueue *optr = NULL;
-
-    // from ubuntu apt-get source traceroute (well that builds it using &0x3f.. whatever.. static is fine)
-    char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
-    
-    // zero ICMP
-    memset(&icmp, 0, sizeof(struct icmphdr));
-    memset(&icmp6, 0, sizeof(struct icmphdr));
-
-
-    // create instruction packet for the ICMP(4/6) packet building functions
-    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
-        // this is the current TTL for this target
-        iptr->ttl = 64;
-        //iptr->ttl = tptr->ttl_list[tptr->current_ttl];
-
-        // determine if this is an IPv4/6 so it uses the correct packet building function
-        // prepare the ICMP header for the traceroute
-        if (dst_ip != 0) {
-            iptr->type = PACKET_TYPE_ICMP_4|PACKET_TYPE_ICMP|PACKET_TYPE_ICMP;
-            iptr->destination_ip = dst_ip;
-            iptr->source_ip = src_ip;
-
-            icmp.type = code;
-            icmp.un.echo.sequence = seq;
-            icmp.un.echo.id = id;
-
-        } else {
-            iptr->type = PACKET_TYPE_ICMP_6|PACKET_TYPE_ICMP|PACKET_TYPE_ICMP;
-
-            icmp6.icmp6_type = code;
-            icmp6.icmp6_id = id;
-            icmp6.icmp6_seq = seq;
-            
-            // destination is the target
-            CopyIPv6Address(&iptr->destination_ipv6, &dst_ipv6);
-            // source is our ip address
-            CopyIPv6Address(&iptr->source_ipv6, &src_ipv6);
-        }
-
-        // copy ICMP parameters into this instruction packet as a complete structure
-        //memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
-        //memcpy(&iptr->icmp6, &icmp6, sizeof(struct icmp6_hdr));
-
-        // set size to the traceroute packet data structure's size...
-        iptr->data_size = sizeof(data);
-
-        if (iptr->data_size && (iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
-            memcpy(iptr->data, data, sizeof(data));
-        }
-
-        // lets build a packet from the instructions we just designed for either ipv4, or ipv6
-        // for either ipv4, or ipv6
-        if (iptr->type & PACKET_TYPE_ICMP_6)
-            i = BuildSingleICMP6Packet(iptr);
-        else if (iptr->type & PACKET_TYPE_ICMP_4)
-            i = BuildSingleICMP4Packet(iptr);
-
-        // if the packet building was successful
-        if (i == 1)
-            NetworkQueueAddBest(ctx, iptr, 0);
-    }
-
-    PacketBuildInstructionsFree(&iptr);
-   
-    end:;
-    return ret;
-}

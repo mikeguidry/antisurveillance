@@ -274,7 +274,7 @@ typedef struct _filter_information {
 
 
 
-void PacketQueue(AS_context *, AS_attacks *aptr);
+void PacketLogic(AS_context *, AS_attacks *aptr, OutgoingPacketQueue **);
 void PacketsFree(PacketInfo **packets);
 void BuildPackets(AS_attacks *aptr);
 int PacketTCPBuildOptions(PacketBuildInstructions *iptr);

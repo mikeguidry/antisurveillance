@@ -1180,7 +1180,7 @@ static int ccount = 0;
 // http://www.binarytides.com/dns-query-code-in-c-with-winsock/
 // *** must finish.. in reality the packet is irrelevant.. since routers dont process the infromation whatsoever...
 // only the final host would even 'see' or process the DNS structure
-int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
+int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr, OutgoingPacketQueue *optr) {
     int i = 0, ret = 0;
     PacketBuildInstructions *iptr = NULL;
     TraceroutePacketData *pdata = NULL;
@@ -1245,9 +1245,10 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr) {
         else if (iptr->type & PACKET_TYPE_UDP_4)
             i = BuildSingleUDP4Packet(iptr);
 
+        
         // if the packet building was successful
         if (i == 1)
-            NetworkQueueAddBest(ctx, iptr, 0);
+            NetworkQueueAddBest(ctx, iptr, optr);
 
     }
 
@@ -1425,6 +1426,7 @@ int Traceroute_Perform(AS_context *ctx) {
     int ret = 0;
     // timestamp required for various states of traceroute functionality
     int ts = time(0);
+    OutgoingPacketQueue *optr = NULL;
 
     // if the list is empty.. then we are done here
     if (tptr == NULL) goto end;
@@ -1488,7 +1490,7 @@ int Traceroute_Perform(AS_context *ctx) {
                     //else if (tptr->type == TRACEROUTE_UDP)
 
                     for (i = 0; i < 3; i++) {
-                        Traceroute_SendUDP(ctx, tptr);
+                        Traceroute_SendUDP(ctx, tptr, &optr);
                     }
 
                     /*    else if (tptr->type == TRACEROUTE_TCP)
@@ -1498,6 +1500,22 @@ int Traceroute_Perform(AS_context *ctx) {
         }
 
         tptr = tptr->next;
+    }
+
+    printf("optr %p\n", optr);
+
+    // if we had any packets to send.. push to outgoing network queue
+    if (optr) {
+        pthread_mutex_lock(&ctx->network_queue_mutex);
+
+        if (ctx->outgoing_queue_last) {
+            ctx->outgoing_queue_last->next = optr;
+            ctx->outgoing_queue_last = optr;
+        } else {
+            ctx->outgoing_queue_last = ctx->outgoing_queue = optr;
+        }
+
+        pthread_mutex_unlock(&ctx->network_queue_mutex);
     }
 
     // analyze all queued responses from the network thread

@@ -37,6 +37,32 @@ If this is the damage I can do alone... what do you  think will happen in the fu
 
 #define TEST
 
+OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
+    OutgoingPacketQueue *optr = NULL;
+
+    // get outgoing packet queue structure from buffer
+    pthread_mutex_lock(&ctx->network_pool_mutex);
+
+    // pull a queue structure from the pool which was previously allocated to cut down
+    // on allocations
+    optr = ctx->outgoing_pool_waiting;
+    if (optr != NULL)
+        // if we did obtain a structure, then we need to push the main pool to the next for the next call
+        ctx->outgoing_pool_waiting = optr->next;
+
+    pthread_mutex_unlock(&ctx->network_pool_mutex);
+    
+    // if we didnt then will allocate a new  one which will go to the pool whenever are complete
+    if (optr == NULL)
+        if ((optr = (OutgoingPacketQueue *)calloc(1, sizeof(OutgoingPacketQueue))) == NULL) return NULL;
+
+    // set the next to NULL (if its a new one then its irrelvant, otherwise its necessary whenever we add it back again)
+    optr->next = NULL;
+
+    return optr;
+}
+
+
 // Perform one iteration of each attack structure that was queued
 int AS_perform(AS_context *ctx) {
     AS_attacks *aptr = ctx->attack_list;
@@ -49,8 +75,7 @@ int AS_perform(AS_context *ctx) {
     // are currently using different threads
     //if (__sync_lock_test_and_set(&ctx->paused, 0)) return 0;
     if (ctx->paused) return 0;
-    
-    
+
     // enumerate through each attack in our list
     while (aptr != NULL) {
         //printf("perform: aptr %p\n", aptr);
@@ -88,7 +113,10 @@ int AS_perform(AS_context *ctx) {
                     // If those function were successful then we would have some packets here to queue..
                     if ((aptr->current_packet != NULL) || (aptr->packets != NULL)) {
                         //printf("packet queue\n");
-                        for (i = 0; i < 30; i++) PacketQueue(ctx, aptr);
+                        // lets execute X iterations (to get 30 packets out for this particular attack)
+                        for (i = 0; i < ctx->iterations_per_loop; i++) {
+                            PacketLogic(ctx, aptr, &optr);
+                        }
                     } else {
                         //printf("completed\n");
                         // otherwise we mark as completed to just free the structure
@@ -109,7 +137,7 @@ int AS_perform(AS_context *ctx) {
     AS_remove_completed(ctx);
 
     // flush network packets queued to wire
-    if (!ctx->network_write_threaded)  {
+    if (!ctx->network_write_threaded && optr)  {
         pthread_mutex_lock(&ctx->network_queue_mutex);
 
         optr = ctx->outgoing_queue;
@@ -118,8 +146,6 @@ int AS_perform(AS_context *ctx) {
         pthread_mutex_unlock(&ctx->network_queue_mutex);
         
         FlushOutgoingQueueToNetwork(ctx, optr);
-
-
     }
 
     // traceroute, blackhole, scripting?, timers?
@@ -195,6 +221,7 @@ AS_context *AS_ctx_new() {
 
     // 25 pools waiting initially for reading packets..
     ctx->initial_pool_count = 25;
+    ctx->iterations_per_loop = 15;
     
     // pool mutex.. so we can ensure its separate
     pthread_mutex_init(&ctx->network_pool_mutex, NULL);
