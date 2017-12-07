@@ -136,16 +136,9 @@ int AS_perform(AS_context *ctx) {
     // to increase speed at times.. depending on queue, etc
     AS_remove_completed(ctx);
 
-    // flush network packets queued to wire
-    if (!ctx->network_write_threaded && optr)  {
-        pthread_mutex_lock(&ctx->network_queue_mutex);
 
-        optr = ctx->outgoing_queue;
-        ctx->outgoing_queue_last = ctx->outgoing_queue = NULL;
-
-        pthread_mutex_unlock(&ctx->network_queue_mutex);
-        
-        FlushOutgoingQueueToNetwork(ctx, optr);
+    if (!ctx->network_write_threaded) {
+        OutgoingQueueProcess(ctx);
     }
 
     // traceroute, blackhole, scripting?, timers?
@@ -220,7 +213,7 @@ AS_context *AS_ctx_new() {
     if ((ctx = (AS_context *)calloc(1, sizeof(AS_context))) == NULL) return NULL;
 
     // 25 pools waiting initially for reading packets..
-    ctx->initial_pool_count = 25;
+    ctx->initial_pool_count = 0;
     ctx->iterations_per_loop = 15;
     
     // pool mutex.. so we can ensure its separate

@@ -68,7 +68,11 @@ def perform(a,b):
             print("AS_perform() - Count is %d") % count
             d = a.networkcount()
             e = a.attackcount()
-            print("Network Queue Count {} Attack Count {}").format(d,e)
+            f = a.incomingqueuecount()
+            g = a.outgoingqueuecount()
+            h = a.incomingpoolcount()
+            i = a.outgoingpoolcount()
+            print("Network Queue Count {} Attack Count {} Queues Inc/Out {} {} Pool(I/O) {} {}").format(d,e,f,g,h,i)
         a.attackperform()
         count = count + 1
 
@@ -159,7 +163,7 @@ def script_perform():
 
     
     # how many packets did that generate?
-    print("network %05d attack %05d traceroute queue %05d\n") % (a.networkcount(), a.attackcount(), a.traceroutecount())
+    print("network %05d attack %05d traceroute queue %05d network inc %d out %d pool %d/%d\n") % (a.networkcount(), a.attackcount(), a.traceroutecount(), a.incomingqueuecount(), a.outgoingqueuecount(), a.incomingpoolcount(), a.outgoingpoolcount())
     
 
     #traceroute_random_ip(a)

@@ -65,6 +65,9 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
     struct timeval tv;
     struct ether_header ethhdr;
     int ts = 0;
+    int cur_packet = 0;
+    char *sptr = NULL;
+    int packet_size = 0;
 
     gettimeofday(&tv, NULL);
 
@@ -100,37 +103,38 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
 
     // for each packet we have in the outgoing queue.. write it to disk
     while (ptr != NULL) {
-        packet_hdr.ts_sec = ts;
+        while (cur_packet < ptr->cur_packet) {
+            // sptr starts at the beginning of the buffer
+            sptr = (char *)(&ptr->buffer);
 
-        //packet_hdr.ts_usec += 200; 
-        //packet_hdr.ts_sec = 0;
+            //increase it to the startinng place of this packet
+            sptr += ptr->packet_starts[cur_packet];
 
-        packet_hdr.incl_len = ptr->size + sizeof(struct ether_header);
-        packet_hdr.orig_len = ptr->size + sizeof(struct ether_header);
+            // calculate the size of this particular packet we are going to process
+            packet_size = ptr->packet_ends[cur_packet] - ptr->packet_starts[cur_packet];
 
-        fwrite((void *)&packet_hdr, 1, sizeof(pcaprec_hdr_t), fd);
+            packet_hdr.ts_sec = ts;
 
-        if (ptr->type & PACKET_TYPE_IPV4)
-            ethhdr.ether_type = ntohs(ETHERTYPE_IP);
-        else if (ptr->type & PACKET_TYPE_IPV6)
-            ethhdr.ether_type = ntohs(0x86DD);
+            //packet_hdr.ts_usec += 200; 
+            //packet_hdr.ts_sec = 0;
 
-        fwrite((void *)&ethhdr, 1, sizeof(struct ether_header), fd);
-        fwrite((void *)ptr->buf, 1, ptr->size, fd);
+            packet_hdr.incl_len = packet_size + sizeof(struct ether_header);
+            packet_hdr.orig_len = packet_size + sizeof(struct ether_header);
 
-        if (free_when_done) {
-            PtrFree(&ptr->buf);
+            fwrite((void *)&packet_hdr, 1, sizeof(pcaprec_hdr_t), fd);
 
-            qnext = ptr->next;
-            
-            PtrFree((char **)&ptr);
+            if (ptr->type & PACKET_TYPE_IPV4)
+                ethhdr.ether_type = ntohs(ETHERTYPE_IP);
+            else if (ptr->type & PACKET_TYPE_IPV6)
+                ethhdr.ether_type = ntohs(0x86DD);
 
-            ptr = qnext;
-        } else {
-            ptr = ptr->next;
+            fwrite((void *)&ethhdr, 1, sizeof(struct ether_header), fd);
+            fwrite((void *)sptr, 1, packet_size, fd);
+
+            cur_packet++;
         }
 
-        //if (out_count++ > 1000) break;
+        ptr = ptr->next;
     }
 
     while (pptr != NULL) {

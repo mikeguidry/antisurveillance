@@ -12,7 +12,7 @@ _OBJ = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructi
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
-$(ODIR)/%.o: %.c $(DEPS) scriptmain.o cmdline.o
+$(ODIR)/%.o: %.c $(DEPS) scriptmain.o 
 	$(CC) -static -c -o $@ $< $(CFLAGS)
 
 pyanti: $(OBJ) obj/scriptmain.o 
@@ -21,7 +21,7 @@ pyanti: $(OBJ) obj/scriptmain.o
 tracedev: $(OBJ) obj/tracedev.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
-anti: $(OBJ) obj/cmdline.o
+anti: $(OBJ)
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 anti_static: $(OBJ) cmdline.o

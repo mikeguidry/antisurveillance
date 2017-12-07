@@ -34,16 +34,8 @@ protection to be developed, and this can become the 'third party server' for hun
 
 
 
-// flushes the attack outgoing queue to the network, and then frees up the lists..
-// raw sockets here.. or we could use a writing pcap mode..
-// itd be smart to attempt to find a naming scheme, and an instructions file
-// so this can be paired with command line tools so things like scp, and ssh can be used
-// with a timing mechanism (ntp, or something else which allows correct timing for launching commands)
-// so that future pakets can be generated (weeks, days, etc) in advance.. and sent to correct locations
-// worldwide to be replayed for particular reasons, or just continous...
-// we arent always sure the queues will flush.. so.. we should allow checking, and ensuring some packets can stay in queue
-// itd be nice to get them out as quickly as possible since AS_perform() or other commands handle timings
-// timings needs to be moved from seconds to milliseconds (for advanced protocol emulation)
+// this is the iterface between the packet queue, and the operating system to send packets..
+// it is the final place a packet buffer should rest before its discarded
 int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     int count = 0;
     OutgoingPacketQueue *onext = NULL;
@@ -57,8 +49,6 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     int cur_packet = 0;
     int packet_size = 0;
 
-
-
     // we need some raw sockets.
     if (ctx->write_socket[0][0] <= 0) {
         if (prepare_socket(ctx) <= 0) {
@@ -68,7 +58,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     }
 
     while (optr != NULL) {
-
+        // be sure it wasnt marked to get ignored
         if (!optr->ignore) {
             while (cur_packet < optr->cur_packet) {
                 // sptr starts at the beginning of the buffer
@@ -90,7 +80,6 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
 
                     // write the packet to the raw network socket.. keeping track of how many bytes
                     bytes_sent = sendto(ctx->write_socket[optr->proto][0], sptr, packet_size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
-
                 } else {
                     // ipv6...
                     memset(&raw_out_ipv6, 0, sizeof(raw_out_ipv6));
@@ -120,7 +109,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         optr = onext;
     }
 
-    // put back into pool after...
+    // put back into pool after for use again.. without requiring infinite reallocations
     pthread_mutex_lock(&ctx->network_pool_mutex);
 
     L_link_ordered((LINK **)&ctx->outgoing_pool_waiting, (LINK *)pool);
@@ -147,6 +136,23 @@ void ClearPackets(AS_context *ctx) {
 }
 
 
+int OutgoingQueueProcess(AS_context *ctx) {
+    OutgoingPacketQueue *optr = NULL;
+    int count = 0;
+
+    if (!ctx->network_disabled) {
+        pthread_mutex_lock(&ctx->network_queue_mutex);
+
+        optr = ctx->outgoing_queue;
+        ctx->outgoing_queue_last = ctx->outgoing_queue = NULL;
+
+        pthread_mutex_unlock(&ctx->network_queue_mutex);
+
+        count = FlushOutgoingQueueToNetwork(ctx, optr);
+    }
+
+    return count;
+}
 
 
 
@@ -165,21 +171,9 @@ void *thread_network_flush(void *arg) {
 
 
     while (1) {
-        pthread_mutex_lock(&ctx->network_queue_mutex);
 
-        optr = ctx->outgoing_queue;
-        ctx->outgoing_queue_last = ctx->outgoing_queue = NULL;
-
-        pthread_mutex_unlock(&ctx->network_queue_mutex);
+        count = OutgoingQueueProcess(ctx);
         
-        // if disabled (used to store after as a pcap) fromm python scripts
-        // beware.. if things are marked to be cleared it wont until this flag gets removed and the code below gets executed
-        // maybe change later.. ***
-        if (!ctx->network_disabled) {
-            // how many packets are successful?
-            count = FlushOutgoingQueueToNetwork(ctx, optr);
-        }
-
         //if (count)printf("Network Thread Outgoing count flushed: %d\n", count);
         // if none.. then lets sleep..  
         if (!count) {
@@ -514,11 +508,16 @@ int network_process_incoming_buffer(AS_context *ctx) {
     // lock thread so we dont attempt to read or write while another thread is
     pthread_mutex_lock(&ctx->network_incoming_mutex);
 
+
     // lets pop the buffer we need to read first from the list
     nptr = ctx->incoming_queue;
 
+    
+
     // set all to NULL so its awaiting for future packets...
     ctx->incoming_queue = ctx->incoming_queue_last = NULL;
+
+    printf(" npptr count %d\n", L_count((LINK *)nptr)); 
 
     // unlock thread...
     pthread_mutex_unlock(&ctx->network_incoming_mutex);
@@ -541,10 +540,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
             // calculate the size of this particular packet we are going to process
             packet_size = nptr->packet_ends[cur_packet] - nptr->packet_starts[cur_packet];
 
-            printf("will process packet protocol %d ip ver %d size %d\n", 
-            nptr->packet_protocol[cur_packet],
-            nptr->packet_ipversion[cur_packet],
-            packet_size);
+            //printf("will process packet protocol %d ip ver %d size %d\n", nptr->packet_protocol[cur_packet],nptr->packet_ipversion[cur_packet],packet_size);
 
             // call the function which processes it by turning it into a packet structure
             // it will then send to the correct functions for analysis, and processing afterwards
@@ -572,8 +568,12 @@ int network_process_incoming_buffer(AS_context *ctx) {
     // lets the empty queue 
     pthread_mutex_lock(&ctx->network_pool_mutex);
 
+    printf("\n\n\n\n\nputting back into pool! count %d\n\n\n\n\n\n\n\n\n", L_count((LINK *)pool));
+    
     // put back into waiting pool so we dont allocate over and over
     L_link_ordered((LINK **)&ctx->incoming_pool_waiting, (LINK *)pool);
+
+    printf("\n\n\n\n\nafter back into pool! count %d\n\n\n\n\n\n\n\n\n", L_count((LINK *)ctx->incoming_pool_waiting));
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
 
@@ -635,7 +635,7 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
     //printf("network_fill_incoming_buffer %p %p\n", ctx, nptr);
 
     // clean up the packet queue structure (counts must be zero first time callling NetworkReadSocket())
-    memset(nptr->buf, 0, sizeof(IncomingPacketQueue));
+    memset(nptr, 0, sizeof(IncomingPacketQueue));
 
     // no need since calloc
     nptr->max_buf_size = MAX_BUF_SIZE;
@@ -686,7 +686,7 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
 
 int NetworkAllocateReadPools(AS_context *ctx) {
     int i = 0;
-    IncomingPacketQueue *pool[ctx->initial_pool_count];
+    IncomingPacketQueue *pool[ctx->initial_pool_count + 1];
     IncomingPacketQueue *pqptr = NULL;
 
     pthread_mutex_lock(&ctx->network_pool_mutex);
@@ -776,35 +776,18 @@ void *thread_read_network(void *arg) {
         // so its not still linked to the  pool
         nptr->next = NULL;
 
+        network_fill_incoming_buffer(ctx, nptr);
 
-        if (network_fill_incoming_buffer(ctx, nptr)) {
+        pthread_mutex_lock(&ctx->network_incoming_mutex);
 
-            //printf("got packets\n");
-            // now lets get the packets into the actual queue as fast as possible
-            // we read untiil there isnt anything left before we lock the mutex
-            pthread_mutex_lock(&ctx->network_incoming_mutex);    
-        
-            // link ordered... (maybe slow?) lets try..
-            //L_link_ordered((LINK **)&ctx->incoming_queue, (LINK *)nptr);
-
-            // alternate if slow.. itll be quick
-            // find the last buffer we queued if it exists
-            if (ctx->incoming_queue_last) {
-                // set the next of that to this new one
-                ctx->incoming_queue_last->next = nptr;
-                // set the last as this one for the next queue
-                ctx->incoming_queue_last = nptr;
-            } else {
-                // buffer is completely empty.. set it, and the last pointer to this one
-                ctx->incoming_queue = ctx->incoming_queue_last = nptr;
-            }
-
-            //printf("packets queued for processing\n");
-            
-            // lets unlink just in case.. so we allocate a new one
-            nptr = NULL;
+        if (ctx->incoming_queue_last) {
+            // set the next of that to this new one
+            ctx->incoming_queue_last->next = nptr;
+            // set the last as this one for the next queue
+            ctx->incoming_queue_last = nptr;
         } else {
-            pthread_mutex_lock(&ctx->network_incoming_mutex);    
+            // buffer is completely empty.. set it, and the last pointer to this one
+            ctx->incoming_queue = ctx->incoming_queue_last = nptr;
         }
 
         // get paused variable from network disabled

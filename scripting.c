@@ -174,6 +174,60 @@ static PyObject *PyASC_PCAPsave(PyAS_Config* self, PyObject *Pfilename){
 }
 
 // count outgoing network queue
+static PyObject *PyASC_QueueIncomingCount(PyAS_Config* self){
+    long ret = 0;
+
+    if (self->ctx) {
+        pthread_mutex_lock(&self->ctx->network_queue_mutex);
+        ret = L_count((LINK *)self->ctx->incoming_queue);
+        pthread_mutex_unlock(&self->ctx->network_queue_mutex);
+    }
+
+    return PyInt_FromLong(ret);
+}
+
+// count outgoing network queue
+static PyObject *PyASC_QueueOutgoingCount(PyAS_Config* self){
+    long ret = 0;
+
+    if (self->ctx) {
+        pthread_mutex_lock(&self->ctx->network_queue_mutex);
+        ret = L_count((LINK *)self->ctx->outgoing_queue);
+        pthread_mutex_unlock(&self->ctx->network_queue_mutex);
+    }
+
+    return PyInt_FromLong(ret);
+}
+
+// count outgoing network queue
+static PyObject *PyASC_QueueOutgoingPoolCount(PyAS_Config* self){
+    long ret = 0;
+
+    if (self->ctx) {
+        pthread_mutex_lock(&self->ctx->network_queue_mutex);
+        ret = L_count((LINK *)self->ctx->outgoing_pool_waiting);
+        pthread_mutex_unlock(&self->ctx->network_queue_mutex);
+    }
+
+    return PyInt_FromLong(ret);
+}
+
+// count outgoing network queue
+static PyObject *PyASC_QueueIncomingPoolCount(PyAS_Config* self){
+    long ret = 0;
+
+    if (self->ctx) {
+        pthread_mutex_lock(&self->ctx->network_queue_mutex);
+
+        ret = L_count((LINK *)self->ctx->incoming_pool_waiting);
+        
+        pthread_mutex_unlock(&self->ctx->network_queue_mutex);
+    }
+
+    return PyInt_FromLong(ret);
+}
+
+// count outgoing network queue
 static PyObject *PyASC_NetworkCount(PyAS_Config* self){
     long ret = 0;
 
@@ -1296,6 +1350,14 @@ static PyMethodDef PyASC_methods[] = {
 
     {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_VARARGS|METH_KEYWORDS,    "" },
     {"spidersave", (PyCFunction)PyASC_SpiderSave,    METH_VARARGS|METH_KEYWORDS,    "" },
+    {"incomingqueuecount", (PyCFunction)PyASC_QueueIncomingCount,    METH_NOARGS,    "" },
+    {"outgoingqueuecount", (PyCFunction)PyASC_QueueOutgoingCount,    METH_NOARGS,    "" },
+    
+    {"incomingpoolcount", (PyCFunction)PyASC_QueueIncomingPoolCount,    METH_NOARGS,    "" },
+    {"outgoingpoolcount", (PyCFunction)PyASC_QueueOutgoingPoolCount,    METH_NOARGS,    "" },
+
+
+    
 
 
     {"attackdetails", (PyCFunction)PyASC_AttackDetails,    METH_VARARGS|METH_KEYWORDS,    "gives details about an attack" },

@@ -1259,7 +1259,6 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
     // this gets freed on calling function.. since a pointer to the pointer (to mark as freed) wasnt passed
     //PacketsFree(&packets);
-    printf("leaving convert\n");
 
     return ret;
 }

@@ -1205,3 +1205,13 @@ typedef struct _tls_information {
 
 
 } TLSInformation;
+
+
+int SSLModification(AS_attacks *aptr) {
+    int ret = 0;
+
+
+
+    end:;
+    return ret;
+}
