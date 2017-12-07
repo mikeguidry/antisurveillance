@@ -18,6 +18,7 @@ are built for on the wire sessions we want to automatically pull and reproduce..
 #include <netinet/ip6.h>
 #include <string.h>
 #include <errno.h>  
+#include <net/ethernet.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
@@ -1169,30 +1170,38 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
     FILE *fd;
     char fname[32];
     //int debug_it = 0;
-    struct ether_header *ethhdr = NULL;    
+    struct ether_header *ethhdr = NULL;
+    char *buf = NULL;
+    int buf_size = 0;
 
     // Enumerate for all packets in the list
     pptr = packets;
 
     while (pptr != NULL) {
         if (pptr->buf && pptr->size) {
-            // set structure for reading information from this packet.. for ipv4, and ipv6
-            p = (struct packet *)pptr->buf;
-            p6 = (struct packettcp6 *)pptr->buf;
 
-            printf("ip ver %d\n", p->ip.version);
+            // lets check if this packet has ethernet header attached to the front  of it
+            ethhdr = (struct ether_header *)pptr->buf;
+// !!! finish verification of which ether packeet is coming through
+// either keep the original which had read all 3 on a single socket...
+// or figur eout which ones include ip, ether, etc headers
 
-            sprintf(fname, "pkt/dbg_%d_%d.dat", getpid(), pcount++);
-            if ((fd = fopen(fname, "wb")) != NULL) {
-                fwrite(pptr->buf, 1, pptr->size, fd);
-                fclose(fd);
-            }           
-
-            if ((p->ip.version != 4) && (p->ip.version != 6)) {
-                printf("trying to skip eth header\n");
-                p = (struct packet *)((char  *)(pptr->buf) + sizeof(ethhdr));
-                p6 = (struct packettcp6 *)((char  *)(pptr->buf) + sizeof(ethhdr));
+            if (ethhdr->ether_type != ntohs(ETHERTYPE_IP)) {
+                //if (ethhdr->ether_type == ntohs(0x86DD)) {
+                printf("found ethernet header\n");
+                printf("no eth? %X vs %X without change %X\n", ntohs(ethhdr->ether_type), htons(ethhdr->ether_type), ethhdr->ether_type);
+                buf = pptr->buf + sizeof(struct ether_header);
+                buf_size = pptr->size - sizeof(struct ether_header);
+            } else {
+                printf("no eth? %X vs %X without change %X\n", ntohs(ethhdr->ether_type), htons(ethhdr->ether_type), ethhdr->ether_type);
+                buf = pptr->buf;
+                buf_size = pptr->size;
             }
+
+            // set structure for reading information from this packet.. for ipv4, and ipv6
+            p = (struct packet *)buf;
+            p6 = (struct packettcp6 *)buf;
+
             // ipv6 is a little different.. so lets set protocol by whichever this is
             if (p->ip.version == 4) {
                 protocol = p->ip.protocol;
@@ -1205,7 +1214,6 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
             // Analysis capabilities are limited so use this function to determine
             // if this packet type has been developed yet
             if ((Processor = Processor_Find(p->ip.version, protocol)) != NULL) {//, &debug_it)) != NULL)
-                printf("found processor\n");
                 if ((iptr = Processor(pptr)) != NULL) {
                     // If it processed OK, then lets add it to the list
                     // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
@@ -1217,20 +1225,17 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                         llast->next = iptr;
                         llast = iptr;
                     }
-                } else {
-                    printf("couldnt find processor\n");
-                } /*else {
-                    if (debug_it) {
-                        sprintf(fname, "pkt/dbg_%d_%d.dat", getpid(), pcount++);
-                        if ((fd = fopen(fname, "Wb")) != NULL) {
-                            fwrite(pptr->buf, 1, pptr->size, fd);
-                            fclose(fd);
-                        }           
-                    }
-                }*/
+                }
             } else {
-                printf("couldnt find processor for ip ver %d proto %d\n", p->ip.version, protocol);
-            }
+                    printf("couldnt find processor\n");
+                
+
+                    sprintf(fname, "pkt/dbg_%d_%d.dat", getpid(), pcount++);
+                    if ((fd = fopen(fname, "wb")) != NULL) {
+                        fwrite(pptr->buf, 1, pptr->size, fd);
+                        fclose(fd);
+                    }
+                }
         }
 
         // move on to the next element in the list of packets
@@ -1257,7 +1262,8 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
     // this gets freed on calling function.. since a pointer to the pointer (to mark as freed) wasnt passed
     //PacketsFree(&packets);
-printf("leaving convert\n");
+    printf("leaving convert\n");
+
     return ret;
 }
 

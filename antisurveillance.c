@@ -192,15 +192,25 @@ AS_context *AS_ctx_new() {
 
     // allocate memory for the main context
     if ((ctx = (AS_context *)calloc(1, sizeof(AS_context))) == NULL) return NULL;
+
+    // 25 pools waiting initially for reading packets..
+    ctx->initial_pool_count = 25;
     
+    // pool mutex.. so we can ensure its separate
+    pthread_mutex_init(&ctx->network_pool_mutex, NULL);
+
+    // allocate network read pools
+    // !!! add network write  pools the same way to  block using too many threads, etc
+    NetworkAllocateReadPools(ctx);
+
     // initialize anything related to special attacks in attacks.c
     attacks_init(ctx);
 
-    // other things in research.c (geoip, etc) maybe move later or redo init/deinit
-    Research_Init(ctx);
-
     // initialize traceroute filter & packet analysis function
     Traceroute_Init(ctx);
+
+    // other things in research.c (geoip, etc) maybe move later or redo init/deinit
+    Research_Init(ctx);
 
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
@@ -216,6 +226,7 @@ AS_context *AS_ctx_new() {
     // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
     HTTPDiscover_Init(ctx);
 
+    // this is a subsystem which will get access to all packets to add IPv6 (mainly) addreses to use for generating new random-ish  addresses
     IPGather_Init(ctx);
 
     return ctx;

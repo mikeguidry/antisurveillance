@@ -1487,7 +1487,7 @@ int Traceroute_Perform(AS_context *ctx) {
                       //  Traceroute_SendICMP(ctx, tptr);
                     //else if (tptr->type == TRACEROUTE_UDP)
 
-                    for (i = 0; i < 30; i++) {
+                    for (i = 0; i < 3; i++) {
                         Traceroute_SendUDP(ctx, tptr);
                     }
 

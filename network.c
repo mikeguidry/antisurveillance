@@ -62,7 +62,7 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
     }
 
     // we need some raw sockets.
-    if (ctx->raw_socket[0][0] <= 0) {
+    if (ctx->write_socket[0][0] <= 0) {
         if (prepare_socket(ctx) <= 0) {
             //printf("no raw socket\n");
             return -1;
@@ -90,7 +90,7 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
                 raw_out_ipv4.sin_addr.s_addr  = optr->dest_ip;
 
                 // write the packet to the raw network socket.. keeping track of how many bytes
-                bytes_sent = sendto(ctx->raw_socket[optr->proto][0], optr->buf, optr->size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
+                bytes_sent = sendto(ctx->write_socket[optr->proto][0], optr->buf, optr->size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
             } else {
 
                 memset(&raw_out_ipv6, 0, sizeof(raw_out_ipv6));
@@ -99,10 +99,10 @@ int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr
                 raw_out_ipv6.sin6_port   = 0;//htons(optr->dest_port);
                 CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->dest_ipv6);
 
-                bytes_sent = sendto(ctx->raw_socket[optr->proto][1], optr->buf, optr->size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
+                bytes_sent = sendto(ctx->write_socket[optr->proto][1], optr->buf, optr->size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
             }
 
-            //printf("sendto bytes sent %d errno %d socket %d\n", bytes_sent, errno, ctx->raw_socket);
+            //printf("sendto bytes sent %d errno %d socket %d\n", bytes_sent, errno, ctx->write_socket[0][0]);
             // I need to perform some better error checking than just the size..
             if (bytes_sent != optr->size) {
                 // if this packet fails 3 times.. lets ignore it (unroutable??)
@@ -227,11 +227,11 @@ int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr) {
     qptr->size = 0;
 
     if (qptr->type & PACKET_TYPE_TCP) {
-        which_proto = 0;
+        which_proto = PROTO_TCP;
     } else if (qptr->type & IPPROTO_UDP) {
-        which_proto = 1;
+        which_proto = PROTO_UDP;
     } else if (qptr->type & IPPROTO_ICMP) {
-        which_proto = 2;
+        which_proto = PROTO_ICMP;
     }
 
     optr->proto = which_proto;
@@ -304,60 +304,69 @@ void *thread_network_flush(void *arg) {
     }
 }
 
+
+
 // prepare raw outgoing socket (requires root)..
 int prepare_socket(AS_context *ctx) {
-    int rawsocket[3][2];
     int one = 1;
-    int bufsize = 1024*1024*50;
-    int i = 0, proto = 0;
-    int which_proto = 0;
+    int ip_ver = 0, proto = 0;
+    int which_proto = 0, which_domain = 0;
+    int bufsize = 1024*1024*10;
 
 
     for (proto = 0; proto < 3; proto++) {
+        for (ip_ver = 0; ip_ver < 2; ip_ver++) {
 
-        for (i = 0; i < 2; i++) {
-
-            if (ctx->raw_socket[proto][i] > 0) {
+            // if the sockets already exist.. lets just make sure its still usable
+            if (ctx->write_socket[proto][ip_ver] > 0) {
                 // If we cannot use setsockopt.. there must be trouble!
-                if (setsockopt(ctx->raw_socket[proto][i], IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
-                    close(ctx->raw_socket[proto][i]);
-                    ctx->raw_socket[proto][i] = 0;
-                }
+                if (setsockopt(ctx->write_socket[proto][ip_ver], IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
+                    close(ctx->write_socket[proto][ip_ver]);
+                    ctx->write_socket[proto][ip_ver] = 0;
+                } else
+                    // socket is OK
+                    continue;
             }
             
+            // if it was not usable.. lets initialize a new one
+
+            // use correct settings for correct ipv4/6 or tcp/udp/icmp..
+            // not pretty maybe use a structure  later.. quick dev
             switch (proto) {
-                case 0: which_proto = IPPROTO_TCP; break;
-                case 1: which_proto = i == 1 ? IPPROTO_RAW : IPPROTO_UDP; break;
-                case 2: which_proto = IPPROTO_ICMP; break;
+                case PROTO_TCP: which_proto = IPPROTO_TCP; break;
+                case PROTO_UDP: which_proto = (ip_ver == IPVER_6) ? IPPROTO_RAW : IPPROTO_UDP; break;
+                case PROTO_ICMP: which_proto = IPPROTO_ICMP; break;
             }
 
+            switch (ip_ver) {
+                case IPVER_6: which_domain = AF_INET6; break;
+                case IPVER_4: which_domain = AF_INET; break;
+            }
+            
             // open raw socket
-            if ((rawsocket[proto][i] = socket(i ? AF_INET6 : AF_INET, SOCK_RAW, which_proto)) <= 0) {
+            if ((ctx->write_socket[proto][ip_ver] = socket(which_domain, SOCK_RAW, which_proto)) <= 0) {
+                printf("couldnt open socket\n");
                 return -1;
             }
 
-
-            setsockopt(rawsocket[proto][i], SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
+            setsockopt(ctx->write_socket[proto][ip_ver], SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
 
             // ensure the operating system knows that we will include the IP header within our data buffer
-            setsockopt(rawsocket[proto][i], i ? IPPROTO_IPV6 : IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one));
-
-            
-            // set it for later in the overall context
-            ctx->raw_socket[proto][i] = rawsocket[proto][i];
+            setsockopt(ctx->write_socket[proto][ip_ver], (ip_ver == IPVER_6) ? IPPROTO_IPV6 : IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one));
         }
     }
 
-    return rawsocket;
+    return 1;
 }
+
+
 
 
 // http://yusufonlinux.blogspot.com/2010/11/data-link-access-and-zero-copy.html
 // https://austinmarton.wordpress.com/2011/09/14/sending-raw-ethernet-packets-from-a-specific-interface-in-c-on-linux/
 // prepare raw incoming socket.. we perform our own filtering so we want all packets
-int prepare_read_socket(AS_context *ctx) {
-    int ret = 0;
-    int sockfd[3][2];
+int prepare_read_socket_old(AS_context *ctx) {
+    int sockfd = 0;
     struct ifreq ifr;
     struct sockaddr_ll sll;
     char network[] = "wlp2s0";
@@ -367,9 +376,80 @@ int prepare_read_socket(AS_context *ctx) {
     struct ifreq if_mac;
     struct ifreq if_ip;
     int one = 1;
-    int bufsize = 1024*1024*1;
+    int bufsize = 1024*1024*10;
+
+    // set ifr structure to 0
+    memset (&ifr, 0, sizeof (struct ifreq));
+    memset(&if_mac, 0, sizeof(struct ifreq));
+    memset(&if_ip, 0, sizeof(struct ifreq));
+    
+
+    // if we have a read socket.. then we wanna make sure its OK.. quick IOCTL call would do it
+    if (ctx->raw_socket != 0) {
+        // if this works properly.. it should already have been initialized
+        if (ioctl (ctx->raw_socket, SIOCGIFINDEX, &ifr) == 0) goto end;
+
+        // close it if not..
+        close(ctx->raw_socket);
+
+        // set to 0 since its stale
+        ctx->raw_socket = 0;
+    }
+
+    // initialize a new socket
+    if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1) goto end;
+
+    
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUFFORCE, &bufsize, sizeof(bufsize));
+    
+    // set non blocking
+    //https://stackoverflow.com/questions/1543466/how-do-i-change-a-tcp-socket-to-be-non-blocking
+    flags = fcntl(sockfd, F_GETFL, flags);
+    flags |= O_NONBLOCK;
+    flags = fcntl(sockfd, F_SETFL, flags);
+
+    // other parts of this application require this socket
+    ctx->raw_socket = sockfd;
+
+    printf("OLD open socket %d\n", sockfd);
+
+    end:;
+    
+    // if it failed for any reason...
+    if (ctx->raw_socket == 0 && sockfd) close(sockfd);
+
+    // return if it was successful
+    return (ctx->raw_socket != 0);
+}
+
+
+/*
+typedef struct _socket_info {
+    int proto;
+    int domain;
+    int ethernet_header;
+    int ip_header;
+} socket_info[] = {
+
+}*/
+
+// http://yusufonlinux.blogspot.com/2010/11/data-link-access-and-zero-copy.html
+// https://austinmarton.wordpress.com/2011/09/14/sending-raw-ethernet-packets-from-a-specific-interface-in-c-on-linux/
+// prepare raw incoming socket.. we perform our own filtering so we want all packets
+int prepare_read_socket(AS_context *ctx) {
+    int ret = 0;
+    struct ifreq ifr;
+    struct sockaddr_ll sll;
+    char network[] = "wlp2s0";
+    int protocol= IPPROTO_TCP;
+    int sockopt = 1;
+    int flags = 0;
+    struct ifreq if_mac;
+    struct ifreq if_ip;
+    int one = 1;
+    int bufsize = 1024*1024*10;
     int ip_ver = 0;
-    int which_proto = 0, proto = 0;
+    int which_proto = 0, proto = 0, which_domain = 0;
 
     // set ifr structure to 0
     memset (&ifr, 0, sizeof (struct ifreq));
@@ -379,13 +459,13 @@ int prepare_read_socket(AS_context *ctx) {
 
     for (proto = 0; proto < 3; proto++) {
         for (ip_ver = 0; ip_ver < 2; ip_ver++) {
-
-            sockfd[proto][ip_ver] = 0;
-
             // if we have a read socket.. then we wanna make sure its OK.. quick IOCTL call would do it
             if (ctx->read_socket[proto][ip_ver] != 0) {
                 // if this works properly.. it should already have been initialized
-                if (ioctl (ctx->read_socket[proto][ip_ver], SIOCGIFINDEX, &ifr) == 0) goto end;
+                if (ioctl (ctx->read_socket[proto][ip_ver], SIOCGIFINDEX, &ifr) == 0) {
+                    //printf("bad\n");
+                    goto end;
+                }
 
                 // close it if not..
                 close(ctx->read_socket[proto][ip_ver]);
@@ -395,25 +475,28 @@ int prepare_read_socket(AS_context *ctx) {
             }
 
             switch (proto) {
-                case 0: which_proto = IPPROTO_TCP; break;
-                case 1: which_proto = ip_ver == 1 ? IPPROTO_RAW : IPPROTO_UDP; break;
-                case 2: which_proto = IPPROTO_ICMPV6; break;
+                case PROTO_TCP: which_proto = IPPROTO_TCP; break;
+                //case PROTO_UDP: which_proto = (ip_ver == IPVER_6) ? IPPROTO_RAW : IPPROTO_UDP; break;
+                case PROTO_UDP: which_proto = IPPROTO_UDP; break;
+                case PROTO_ICMP: which_proto = (ip_ver == IPVER_6) ? IPPROTO_ICMPV6 : IPPROTO_ICMP; break;
             }
-//htons(ETH_P_ALL)
-            // initialize a new socket
-            if ((sockfd[proto][ip_ver] = socket(ip_ver ? AF_INET6 : AF_INET, SOCK_RAW, which_proto)) == -1) goto end;
 
+            switch (ip_ver) {
+                case 0: which_domain = AF_INET; break;
+                case 1: which_domain = AF_INET6; break;
+            }
+
+            //printf("allocating socket proto %d ip ver %d\n", proto, ip_ver);
+            // initialize a new socket
+            ctx->read_socket[proto][ip_ver] = socket(which_domain, SOCK_RAW, which_proto);
             
-            setsockopt(sockfd[proto][ip_ver], SOL_SOCKET, SO_RCVBUFFORCE, &bufsize, sizeof(bufsize));
+            setsockopt(ctx->read_socket[proto][ip_ver], SOL_SOCKET, SO_RCVBUFFORCE, &bufsize, sizeof(bufsize));
             
             // set non blocking
             //https://stackoverflow.com/questions/1543466/how-do-i-change-a-tcp-socket-to-be-non-blocking
-            flags = fcntl(sockfd[proto][ip_ver], F_GETFL, flags);
+            flags = fcntl(ctx->read_socket[proto][ip_ver], F_GETFL, flags);
             flags |= O_NONBLOCK;
-            flags = fcntl(sockfd[proto][ip_ver], F_SETFL, flags);
-
-            // other parts of this application require this socket
-            ctx->read_socket[proto][ip_ver] = sockfd[proto][ip_ver];
+            flags = fcntl(ctx->read_socket[proto][ip_ver], F_SETFL, flags);
         }
     }
 
@@ -483,7 +566,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
     // analyze that packet, and turn it into a instructions structure
     if ((iptr = PacketsToInstructions(pptr)) == NULL) {
-        printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
+        //printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
         /*    if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
         fclose(fd); } */
@@ -527,6 +610,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 // this will process the incoming buffers
 int network_process_incoming_buffer(AS_context *ctx) {
     IncomingPacketQueue *nptr = NULL, *nnext = NULL;
+    IncomingPacketQueue *pool = NULL;
     int ret = 0;
     char *sptr = NULL;
     int cur_packet = 0;
@@ -547,7 +631,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
 
     if (nptr == NULL) goto end;
 
-    printf("\n\nnetwork_process_incoming_buffer: first link %p\n", nptr);
+    //printf("\n\nnetwork_process_incoming_buffer: first link %p\n", nptr);
 
     // now lets process all packets we have.. each is a cluster of packets
     while (nptr != NULL) {
@@ -564,7 +648,9 @@ int network_process_incoming_buffer(AS_context *ctx) {
             packet_size = nptr->packet_ends[cur_packet] - nptr->packet_starts[cur_packet];
 
             printf("will process packet protocol %d ip ver %d size %d\n", 
-            nptr->packet_protocol[cur_packet], nptr->packet_ipversion[cur_packet], packet_size);
+            nptr->packet_protocol[cur_packet],
+            nptr->packet_ipversion[cur_packet],
+            packet_size);
 
             // call the function which processes it by turning it into a packet structure
             // it will then send to the correct functions for analysis, and processing afterwards
@@ -578,79 +664,105 @@ int network_process_incoming_buffer(AS_context *ctx) {
         // we are finished processing that cluster... we can free it
         nnext = nptr->next;
 
+        // put in pool...
+        nptr->next = pool;
+        pool = nptr;
+
         // free this structure since we are finished with it
-        free(nptr);
+        //free(nptr);
         
         // go to the next cluster of packets we are processing
         nptr = nnext;
     }
 
-end:;
+    // lets the empty queue 
+    pthread_mutex_lock(&ctx->network_pool_mutex);
+
+    // put back into waiting pool so we dont allocate over and over
+    L_link_ordered((LINK **)&ctx->pool_waiting, (LINK *)pool);
+
+    pthread_mutex_unlock(&ctx->network_pool_mutex);
+
+    end:;
     return ret;
 }
 
+int NetworkReadSocket(IncomingPacketQueue *nptr, int socket) {
+    char *sptr = NULL;
+    int r = 0;
+    int ret = 0;
+
+    // reset using our buffer..
+    sptr = (char *)&nptr->buf;
+    
+    // increase pointer to the correct location (After the last packet)
+    sptr += nptr->packet_ends[nptr->cur_packet];
+
+    r = recvfrom(socket, sptr, nptr->max_buf_size - nptr->size, MSG_DONTWAIT, NULL, NULL);
+    //if (r <= 0) perror("recvfrom");
+    //printf("recvfrom(%d) = %d\n", socket, r);
+
+    // if no more packets.. lets break and send it off for processing
+    if (r > 0) {
+        // set where this packet begins, and  ends
+        nptr->packet_starts[nptr->cur_packet] = nptr->size;
+        nptr->packet_ends[nptr->cur_packet] = (nptr->size + r);
+
+        // prep for the next packet
+        nptr->cur_packet++;
+
+        // increase the size of our buffer (for pushing to queue)
+        nptr->size += r;
+
+        ret = 1;
+    } 
+
+    return ret;
+}
 
 // this attempts to get one cluster of packets from the read socket..
 // it can get called from the threaded version, or in general from a function
 // which just needs to read on its own timing (or from python)/loops
 int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
-    char *sptr = NULL;
-    int r = 0;
     int ret = 0;
     int proto = 0;
     int ip_ver = 0;
     int packet_count = 0;
 
-    printf("network_fill_incoming_buffer %p %p\n", ctx, nptr);
+    //printf("network_fill_incoming_buffer %p %p\n", ctx, nptr);
 
-    // reset using our buffer..
-    sptr = (char *)&nptr->buf;
+    // clean up the packet queue structure (counts must be zero first time callling NetworkReadSocket())
+    memset(nptr->buf, 0, sizeof(IncomingPacketQueue));
+
     // no need since calloc
+    nptr->max_buf_size = MAX_BUF_SIZE;
     nptr->cur_packet = 0;
     nptr->size = 0;
 
-    // read until we run out of packets, or we fill our buffer size by 80%
+    // lets read old socket (All in one)
+    if (ctx->raw_socket)
+        NetworkReadSocket(nptr, ctx->raw_socket);
+
+    // enumerate for each protocol and packet type to read into our buffer
     do {
         packet_count = 0;
 
         for (proto = 0; proto < 3; proto++) {
             for (ip_ver = 0; ip_ver < 2; ip_ver++) {
+                packet_count += NetworkReadSocket(nptr, ctx->read_socket[proto][ip_ver]);
 
-                //printf("wanna read from %d\n", ctx->read_socket[proto][ip_ver]);
+                // so we can track which protocols later for debugging purposes
+                // !!! remove later
+                nptr->packet_protocol[nptr->cur_packet - 1] = proto;
+                nptr->packet_ipversion[nptr->cur_packet - 1] = ip_ver;
 
-                //r = recv(sptr, max_buf_size - size, )
-                r = recvfrom(ctx->read_socket[proto][ip_ver], sptr, nptr->max_buf_size - nptr->size, MSG_DONTWAIT, NULL, NULL);
+                // if we have used 90% of the buffer size...
+                if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) goto too_much;
 
-                // if no more packets.. lets break and send it off for processing
-                if (r > 0) {
-
-                    if (ip_ver == 1)
-                        printf("read %d bytes from proto %d ip ver %d\n", r, proto, ip_ver ? 6 : 4);
-
-                    // set where this packet begins, and  ends
-                    nptr->packet_starts[nptr->cur_packet] = nptr->size;
-                    nptr->packet_ends[nptr->cur_packet] = (nptr->size + r);
-
-                    nptr->packet_protocol[nptr->cur_packet] = proto;
-                    nptr->packet_ipversion[nptr->cur_packet] = ip_ver;
-
-                    // prep for the next packet
-                    nptr->cur_packet++;
-
-                    // increase by the amount we read..
-                    sptr += r;
-                    // increase the size of our buffer (for pushing to queue)
-                    nptr->size += r;
-
-                    // if we have used 90% of the buffer size...
-                    if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) goto too_much;
-
-                    // we only have positions for a max of 1024 packets with this buffer
-                    if (nptr->cur_packet >= MAX_PACKETS)  goto too_much;
-
-                    packet_count++;
-                }
+                // we only have positions for a max of 1024 packets with this buffer
+                if (nptr->cur_packet >= MAX_PACKETS) goto too_much;
             }
+
         }
     } while (packet_count);
 
@@ -661,9 +773,38 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
 
     end:;
 
-    printf("network_fill_incoming_buffer ret %d\n", ret);
+    //printf("network_fill_incoming_buffer ret %d\n", ret);
     return ret;
 }
+
+
+
+int NetworkAllocateReadPools(AS_context *ctx) {
+    int i = 0;
+    IncomingPacketQueue *pool[ctx->initial_pool_count];
+    IncomingPacketQueue *pqptr = NULL;
+
+    pthread_mutex_lock(&ctx->network_pool_mutex);
+    
+    // allocate X pools for reading.. (some will get queued awaiting processing, etc)..
+    // this should cut down on memory allocations
+    while (i < ctx->initial_pool_count) {
+        pool[i++] = pqptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue));
+
+        if (pqptr != NULL) {
+            // put into the pool
+            pqptr->next = ctx->pool_waiting;
+            ctx->pool_waiting = pqptr;
+        }
+    }
+
+    pthread_mutex_unlock(&ctx->network_pool_mutex);
+
+    return 1;
+}
+
+
+
 
 // thread to read constantly from the network
 void *thread_read_network(void *arg) {
@@ -677,6 +818,7 @@ void *thread_read_network(void *arg) {
 
     //printf("network reading thread\n");
     // open raw reading socket
+    //prepare_read_socket_old(ctx);
     i = prepare_read_socket(ctx);
 
     // if sock didnt open, or we cant allocae space for reading packets
@@ -689,17 +831,27 @@ void *thread_read_network(void *arg) {
     // lets read forever.. until we stop it for some reason
     while (1) {
 
-        //printf("while\n");
-        // only alllocate a buffer if we dont have one already... (no need to keep doing it if no packets were found)
-        if (nptr == NULL) {
-            // if we cannot allocate a buffer for some reason...
-            if ((nptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue))) == NULL) {
-                //printf("cannot allocate buffer space for reading incoming packets!\n");
-                goto end;
-            }
 
-            nptr->max_buf_size = MAX_BUF_SIZE;
+        pthread_mutex_lock(&ctx->network_pool_mutex);
+
+        if (ctx->pool_waiting == NULL) {
+            // allocate space for a new pool..
+            nptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue));
+            if (nptr) nptr->max_buf_size = MAX_BUF_SIZE;
+
+        } else {
+            // grab one from the pool
+            nptr = ctx->pool_waiting;
+            // remove from pool queue
+            ctx->pool_waiting = nptr->next;
+
+            nptr->next = NULL;
         }
+
+        pthread_mutex_unlock(&ctx->network_pool_mutex);
+
+        // bad.
+        if (nptr == NULL) goto end;
 
         if (network_fill_incoming_buffer(ctx, nptr)) {
 
@@ -810,11 +962,11 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, int no_b
         optr->size = iptr->packet_size;
 
         if (iptr->type & PACKET_TYPE_TCP) {
-            which_proto = 0;
+            which_proto = PROTO_TCP;
         } else if (iptr->type & IPPROTO_UDP) {
-            which_proto = 1;
+            which_proto = PROTO_UDP;
         } else if (iptr->type & IPPROTO_ICMP) {
-            which_proto = 2;
+            which_proto = PROTO_ICMP;
         }
 
         optr->proto = which_proto;
@@ -825,6 +977,7 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, int no_b
 
         // the outgoing structure needs some other information
         optr->dest_port = iptr->destination_port;
+
         optr->dest_ip = iptr->destination_ip;
         CopyIPv6Address(&optr->dest_ipv6, &iptr->destination_ipv6);
 

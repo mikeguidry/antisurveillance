@@ -53,7 +53,7 @@ def agents(a):
 # in all countries without requiring any data ahead of time except some IPs
 # to start to help us get routes, and then we will add random IPs afterwards
 def top_sites_research(a):
-    return 0
+    #return 0
     lines = open("top1m_resolved.txt").readlines()
     random.shuffle(lines)
     for ip in lines:
@@ -241,7 +241,6 @@ def init():
     cnt = a.traceroutecount(disabled=0)
     print("count %d") % cnt
     if (cnt < 1000):
-	print("hi")
         top_sites_research(a)
         cnt = a.traceroutecount(disabled=0)
         print("count %d") % cnt

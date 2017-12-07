@@ -202,7 +202,9 @@ typedef struct _antisurveillance_context {
     int start_ts;
 
     // socket for writing to the ethernet device
-    int raw_socket[3][2];
+    int write_socket[3][2];
+
+    int raw_socket;
 
     // promisc read socket for incoming packet events
     int read_socket[3][2];
@@ -237,6 +239,13 @@ typedef struct _antisurveillance_context {
 
     IncomingPacketQueue *incoming_queue;
     IncomingPacketQueue *incoming_queue_last;
+
+    // lets hold processed packet queue pools here for reuse..
+    // so we can skip reallocation
+    IncomingPacketQueue *pool_waiting;
+    // how many pools do we begin with?
+    int initial_pool_count;
+    pthread_mutex_t network_pool_mutex;
 
     int aggressive;
 

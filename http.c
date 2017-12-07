@@ -798,6 +798,12 @@ HTTPObservedVariables *ObserveAdd(AS_context *ctx, int ttl, int window_size) {
 
     
 // This will have access to the full http connection... (using ConnectionData to filter out each side)
+// It will parse information and  send over  to  a python script to  determine if anything  should be changed...
+// if so itll replace whatever, and  then create an attack structure out of it, and  mark  it as coming from live
+// fromm live tellls another  part of the appp to remove this session its  going to replay many *many* times 
+// so that later this same  function can incorporate a new one
+// this means itll always obtain new user agents, new sites,  etc...
+// will require 0 upkeep
 int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     int ret = 0, i = 0;
     char *server_body = NULL;
