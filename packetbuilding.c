@@ -945,7 +945,7 @@ int SendICMP(AS_context *ctx, uint32_t src_ip, uint32_t dst_ip, struct in6_addr 
     PacketBuildInstructions *iptr = NULL;
     struct icmphdr icmp;
     struct icmp6_hdr icmp6;
-    AttackOutgoingQueue *optr = NULL;
+    OutgoingPacketQueue *optr = NULL;
 
     // from ubuntu apt-get source traceroute (well that builds it using &0x3f.. whatever.. static is fine)
     char data[]="@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";

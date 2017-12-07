@@ -17,8 +17,8 @@ typedef struct _filter_information FilterInformation;
 
 // this is the queue which shouldnt have anything to do with processing, or other functions.. its where
 // all attacks go to get submitted directly to the wire.. 
-typedef struct _attack_outgoing_queue {
-    struct _attack_outgoing_queue *next;
+typedef struct _outgoing_packet_queue {
+    struct _outgoing_packet_queue *next;
 
     AS_attacks *attack_info;
 
@@ -43,7 +43,7 @@ typedef struct _attack_outgoing_queue {
 
     int type;
     int proto;
-} AttackOutgoingQueue;
+} OutgoingPacketQueue;
 
 
 #define MAX_BUF_SIZE 1024*1024*10
@@ -84,14 +84,15 @@ int prepare_socket();
 void *thread_network_flush(void *arg);
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr);
 void *AS_queue_threaded(void *arg);
-int OutgoingQueueAdd(AS_context *,AttackOutgoingQueue *optr, int only_try);
-int FlushAttackOutgoingQueueToNetwork(AS_context *ctx, AttackOutgoingQueue *optr);
+int OutgoingQueueAdd(AS_context *,OutgoingPacketQueue *optr, int only_try);
+int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr);
 void ClearPackets(AS_context *ctx);
 int process_packet(AS_context *ctx, char *packet, int size);
 void *thread_read_network(void *arg);
 int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_function);
 int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, int);
 int NetworkAllocateReadPools(AS_context *ctx);
+int NetworkAllocateWritePools(AS_context *ctx);
 
 
 
@@ -107,3 +108,4 @@ enum {
 };
 
 
+    

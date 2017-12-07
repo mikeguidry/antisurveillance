@@ -81,6 +81,7 @@ int main(int argc, char *argv[]) {
     ctx->http_discovery_enabled = 1;
     ctx->http_discovery_max = 50;
 
+
     //GenerateIPv6Address(ctx, (char *) "US", NULL);
     while (ctx->script_enable) {
             // call AS_perform() once to iterate all attacks

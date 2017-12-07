@@ -577,11 +577,11 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
-    //printf("Process ICMP4\n");
+    printf("Process ICMP4\n");
 
     // data coming from network.. so sanity checks required
     if (pptr->size < sizeof(struct packeticmp4)) {
-        //printf("size small\n");
+        printf("size small\n");
         goto end;
     }
 
@@ -1182,21 +1182,21 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
             // lets check if this packet has ethernet header attached to the front  of it
             ethhdr = (struct ether_header *)pptr->buf;
-// !!! finish verification of which ether packeet is coming through
-// either keep the original which had read all 3 on a single socket...
-// or figur eout which ones include ip, ether, etc headers
+            // !!! finish verification of which ether packeet is coming through
+            // either keep the original which had read all 3 on a single socket...
+            // or figur eout which ones include ip, ether, etc headers
 
-            if (ethhdr->ether_type != ntohs(ETHERTYPE_IP)) {
+            /*if (ethhdr->ether_type != ntohs(ETHERTYPE_IP)) {
                 //if (ethhdr->ether_type == ntohs(0x86DD)) {
                 printf("found ethernet header\n");
                 printf("no eth? %X vs %X without change %X\n", ntohs(ethhdr->ether_type), htons(ethhdr->ether_type), ethhdr->ether_type);
                 buf = pptr->buf + sizeof(struct ether_header);
                 buf_size = pptr->size - sizeof(struct ether_header);
-            } else {
-                printf("no eth? %X vs %X without change %X\n", ntohs(ethhdr->ether_type), htons(ethhdr->ether_type), ethhdr->ether_type);
+            } else { */
+                //printf("no eth? %X vs %X without change %X\n", ntohs(ethhdr->ether_type), htons(ethhdr->ether_type), ethhdr->ether_type);
                 buf = pptr->buf;
                 buf_size = pptr->size;
-            }
+            //}
 
             // set structure for reading information from this packet.. for ipv4, and ipv6
             p = (struct packet *)buf;
@@ -1226,16 +1226,13 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                         llast = iptr;
                     }
                 }
-            } else {
+            } /*else {
                     printf("couldnt find processor\n");
                 
 
                     sprintf(fname, "pkt/dbg_%d_%d.dat", getpid(), pcount++);
-                    if ((fd = fopen(fname, "wb")) != NULL) {
-                        fwrite(pptr->buf, 1, pptr->size, fd);
-                        fclose(fd);
-                    }
-                }
+                    FileWrite(fname, pptr->buf, pptr->size);
+                } */
         }
 
         // move on to the next element in the list of packets

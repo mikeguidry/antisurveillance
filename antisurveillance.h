@@ -228,8 +228,6 @@ typedef struct _antisurveillance_context {
     pthread_mutex_t gzip_cache_mutex;
 
     // network queue
-    AttackOutgoingQueue *network_queue;
-    AttackOutgoingQueue *network_queue_last;
     pthread_mutex_t network_queue_mutex;
     pthread_t network_write_thread;
     pthread_mutex_t network_incoming_mutex;
@@ -240,9 +238,14 @@ typedef struct _antisurveillance_context {
     IncomingPacketQueue *incoming_queue;
     IncomingPacketQueue *incoming_queue_last;
 
+    OutgoingPacketQueue *outgoing_queue;
+    OutgoingPacketQueue *outgoing_queue_last;
+
     // lets hold processed packet queue pools here for reuse..
     // so we can skip reallocation
-    IncomingPacketQueue *pool_waiting;
+    IncomingPacketQueue *incoming_pool_waiting;
+    OutgoingPacketQueue *outgoing_pool_waiting;
+
     // how many pools do we begin with?
     int initial_pool_count;
     pthread_mutex_t network_pool_mutex;
@@ -308,11 +311,14 @@ typedef struct _antisurveillance_context {
     AttackTarget *research_target_list;
 
     HTTPBuffer *http_buffer_list;
+
     int http_discovery_enabled;
+    int http_discovery_max;
+    int http_discovery_skip_ours;
+
     int intel_stage;
     GenericCallbackQueue *generic_callback_queue;
 
-    int http_discovery_max;
 
     HTTPObservedVariables *observed;
 

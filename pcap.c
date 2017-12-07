@@ -53,9 +53,9 @@ using other rudimentary tools.  A subsystem for packet capturing can also log to
 // dump all outgoing queued network packets to a pcap file (to be viewed/analyzed, or played directly to the Internet)
 // Changing to support PacketInfo (which will be raw packets from wire when we capture soon for quantum insert protection,
 // etc)
-int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, PacketInfo *ipackets, int free_when_done) {    
-    AttackOutgoingQueue *ptr = packets;
-    AttackOutgoingQueue *qnext = NULL;
+int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, PacketInfo *ipackets, int free_when_done) {    
+    OutgoingPacketQueue *ptr = packets;
+    OutgoingPacketQueue *qnext = NULL;
 
     PacketInfo *pptr = NULL;
     PacketInfo *pnext = NULL;

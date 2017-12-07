@@ -1266,7 +1266,7 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
     int ret = 0;
     TraceroutePacketData *pdata = NULL;
     int i = 0;
-    AttackOutgoingQueue *optr = NULL;
+    OutgoingPacketQueue *optr = NULL;
     struct icmp6_hdr icmp6;
     
     memset(&icmp, 0, sizeof(struct icmphdr));
@@ -3457,19 +3457,19 @@ int Research_Intel_Perform(AS_context *ctx) {
         ctx->intel_stage++; // set to 5...
     }// else if (ctx->intel_stage == 6) {}
 
-    if (ctx->http_discovery_enabled) {
-        // lets perform this at evvery stage
-        aptr = ctx->attack_list;
-        // disqualify old attacks to get replaced with new
-        while (aptr != NULL) {
-            timeval_subtract(&time_diff, &aptr->ts, &tv);
 
-            // lets kill attacks after 2 hours..IF discovery is on!
-            if (aptr->live_source && time_diff.tv_sec >= (60*60*2))
-                aptr->completed = 1;
 
-            aptr = aptr->next;
-        }
+    // lets perform this at evvery stage
+    aptr = ctx->attack_list;
+    // disqualify old attacks to get replaced with new
+    while (aptr != NULL) {
+        timeval_subtract(&time_diff, &aptr->ts, &tv);
+
+        // lets kill attacks after 2 hours..IF discovery is on!
+        if (aptr->live_source && time_diff.tv_sec >= (60*60*2))
+            aptr->completed = 1;
+
+        aptr = aptr->next;
     }
 
     end:;

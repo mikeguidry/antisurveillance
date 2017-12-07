@@ -2,8 +2,8 @@
 struct _pkt_info;
 typedef struct _pkt_info PacketInfo;
 
-struct _attack_outgoing_queue;
-typedef struct _attack_outgoing_queue AttackOutgoingQueue;
+struct _outgoing_packet_queue;
+typedef struct _outgoing_packet_queue OutgoingPacketQueue;
 
 struct _filter_information;
 typedef struct _filter_information FilterInformation;
@@ -44,7 +44,7 @@ typedef struct _pcap_operations {
 
 int PCAPtoAttack(AS_context *, char *filename, int dest_port, int count, int interval, FilterInformation *pcap_flt);
 PacketInfo *PcapLoad(char *filename);
-int PcapSave(AS_context *, char *filename, AttackOutgoingQueue *packets, PacketInfo *iptr, int free_when_done);
+int PcapSave(AS_context *, char *filename, OutgoingPacketQueue *packets, PacketInfo *iptr, int free_when_done);
 int PCAP_Init(AS_context *ctx);
 int PCAP_OperationAdd(AS_context *ctx, char *filename, FilterInformation *flt);
 int PCAP_OperationRemove(AS_context *ctx, char *filename);

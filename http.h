@@ -54,10 +54,10 @@ void *thread_gzip_attack(void *arg);
 void attacks_init(AS_context *);
 int BuildHTTP4Session(AS_context *, AS_attacks *aptr, uint32_t server_ip, uint32_t client_ip, uint32_t server_port,  char *client_body,
 int client_size, char *server_body, int server_size);
-int HTTPDiscover_Init(AS_context *ctx);
-int HTTPDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
+int WebDiscover_Init(AS_context *ctx);
+int WebDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 char *ConnectionData(PacketBuildInstructions *iptr, int side, int *_size);
-int HTTPDiscover_Cleanup(AS_context *ctx);
+int WebDiscover_Cleanup(AS_context *ctx);
 
 
 typedef struct _http_observed_variables {

@@ -248,7 +248,8 @@ enum {
     FILTER_PACKET_IPV4=512,
     FILTER_PACKET_IPV6=1024,
     FILTER_CLIENT_IPV6=2048,
-    FILTER_SERVER_IPV6=4096
+    FILTER_SERVER_IPV6=4096,
+    FILTER_OURS=8192
 };
 
 // This is the structure used to pass around filter information internally.

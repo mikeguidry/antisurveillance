@@ -164,9 +164,8 @@ static PyObject *PyASC_PCAPsave(PyAS_Config* self, PyObject *Pfilename){
     const char* s = PyString_AsString(Pfilename);
 
     if (s && self->ctx) {
-        //int PcapSave(AS_context *ctx, char *filename, AttackOutgoingQueue *packets, PacketInfo *ipackets, int free_when_done);
         pthread_mutex_lock(&self->ctx->network_queue_mutex);
-        ret = PcapSave(self->ctx, (char *)s, self->ctx->network_queue, NULL, 0);
+        ret = PcapSave(self->ctx, (char *)s, self->ctx->outgoing_queue, NULL, 0);
         pthread_mutex_unlock(&self->ctx->network_queue_mutex);
     }
 
@@ -180,7 +179,7 @@ static PyObject *PyASC_NetworkCount(PyAS_Config* self){
 
     if (self->ctx) {
         pthread_mutex_lock(&self->ctx->network_queue_mutex);
-        ret = L_count((LINK *)self->ctx->network_queue);
+        ret = L_count((LINK *)self->ctx->outgoing_queue);
         pthread_mutex_unlock(&self->ctx->network_queue_mutex);
     }
 
