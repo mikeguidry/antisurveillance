@@ -815,7 +815,8 @@ int NetworkAllocateReadPools(AS_context *ctx) {
 }
 
 int NetworkAllocateWritePools(AS_context *ctx) {
-    int i = 0;
+    return 0;
+    /*int i = 0;
     OutgoingPacketQueue *pool[ctx->initial_pool_count];
     OutgoingPacketQueue *pqptr = NULL;
 
@@ -835,7 +836,7 @@ int NetworkAllocateWritePools(AS_context *ctx) {
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
 
-    return 1;
+    return 1;*/
 }
 
 

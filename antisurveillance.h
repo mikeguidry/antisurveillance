@@ -244,7 +244,7 @@ typedef struct _antisurveillance_context {
     // lets hold processed packet queue pools here for reuse..
     // so we can skip reallocation
     IncomingPacketQueue *incoming_pool_waiting;
-    OutgoingPacketQueue *outgoing_pool_waiting;
+    //OutgoingPacketQueue *outgoing_pool_waiting;
 
     // how many pools do we begin with?
     int initial_pool_count;
