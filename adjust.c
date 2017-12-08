@@ -51,7 +51,10 @@ void PacketAdjustments(AS_context *ctx, AS_attacks *aptr) {
     uint32_t server_seq_diff = 0;
 
 
-    if ((rand()%100) < IPV6_STATS_DEC_2017) {
+    // this % is for the final version which will work on everything.. id like a simple release as quick as posssible..
+    // therefore.. this shouldnt be full 22%...... we are only traceroute'ing some google IPs and generating from there
+    // I need more seed information to activate this completely..
+    if ((rand()%100) < (IPV6_STATS_DEC_2017 / 10)) {
         // lets use ipv6 for 20% of the time
         //GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *address)
         GenerateIPv6Address(ctx, NULL, &src_ipv6);

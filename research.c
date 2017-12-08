@@ -3515,6 +3515,11 @@ int Research_SyslogSend(AS_context *ctx, uint32_t ip, struct in6_addr ipv6, char
 // about the networks they wish to attack cannot just perform it themselves
 // the simplest way to do this is to find another traceroute or several which has the same hop
 // at the same TTL, and anything below that TTL can be assumed would be OK to fill
+
+// ---
+// I must have been high when I thought this  concept would be accurate.  The real internet has much more
+// routes than i guessed prior... BGP routing had put various paths mixed in... it shows a true need
+// to complete BGP routing for my network 0day attack... coming soon.
 int Traceroute_TryFill(AS_context *ctx, TracerouteQueue *qptr) {
     int i = 0, n = 0, missing_before = 0;
     TracerouteSpider *sptr = NULL;

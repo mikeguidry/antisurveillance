@@ -220,7 +220,6 @@ AS_context *AS_ctx_new() {
     pthread_mutex_init(&ctx->network_pool_mutex, NULL);
 
     // allocate network read pools
-    // !!! add network write  pools the same way to  block using too many threads, etc
     NetworkAllocateReadPools(ctx);
     NetworkAllocateWritePools(ctx);
 

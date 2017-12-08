@@ -413,6 +413,7 @@ int PCAP_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     while (cptr != NULL) {
 
+        // auto match.. (so if no filter is supplied then everything is logged)
         filter_ok = 1;
 
         // check against filter in structure..

@@ -517,7 +517,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
     // set all to NULL so its awaiting for future packets...
     ctx->incoming_queue = ctx->incoming_queue_last = NULL;
 
-    printf(" npptr count %d\n", L_count((LINK *)nptr)); 
+    printf("nptr count %d\n", L_count((LINK *)nptr)); 
 
     // unlock thread...
     pthread_mutex_unlock(&ctx->network_incoming_mutex);
@@ -568,12 +568,12 @@ int network_process_incoming_buffer(AS_context *ctx) {
     // lets the empty queue 
     pthread_mutex_lock(&ctx->network_pool_mutex);
 
-    printf("\n\n\n\n\nputting back into pool! count %d\n\n\n\n\n\n\n\n\n", L_count((LINK *)pool));
+    printf("\nputting back into pool! count %d\n", L_count((LINK *)pool));
     
     // put back into waiting pool so we dont allocate over and over
     L_link_ordered((LINK **)&ctx->incoming_pool_waiting, (LINK *)pool);
 
-    printf("\n\n\n\n\nafter back into pool! count %d\n\n\n\n\n\n\n\n\n", L_count((LINK *)ctx->incoming_pool_waiting));
+    printf("\nafter back into pool! count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
 

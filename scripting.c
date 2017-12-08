@@ -1350,12 +1350,14 @@ static PyMethodDef PyASC_methods[] = {
 
     {"spiderload", (PyCFunction)PyASC_SpiderLoad,    METH_VARARGS|METH_KEYWORDS,    "" },
     {"spidersave", (PyCFunction)PyASC_SpiderSave,    METH_VARARGS|METH_KEYWORDS,    "" },
+
+    // -- for testing.. not really important for later..
     {"incomingqueuecount", (PyCFunction)PyASC_QueueIncomingCount,    METH_NOARGS,    "" },
     {"outgoingqueuecount", (PyCFunction)PyASC_QueueOutgoingCount,    METH_NOARGS,    "" },
     
     {"incomingpoolcount", (PyCFunction)PyASC_QueueIncomingPoolCount,    METH_NOARGS,    "" },
     {"outgoingpoolcount", (PyCFunction)PyASC_QueueOutgoingPoolCount,    METH_NOARGS,    "" },
-
+    // --
 
     
 
