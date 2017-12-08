@@ -71,6 +71,9 @@ int BuildHTTP4Session(AS_context *ctx, AS_attacks *aptr, uint32_t server_ip, uin
     uint32_t client_seq = rand()%0xFFFFFFFF;
     uint32_t server_seq = rand()%0xFFFFFFFF;
 
+    if (!max_packet_size_client) max_packet_size_client = 1500 - (20*2);
+    if (!max_packet_size_server) max_packet_size_server = 1500 - (20*2);
+
     memset(&cptr, 0, sizeof(ConnectionProperties));
     // so we can change the seqs again later if we repeat this packet (w rebuilt source ports, identifiers and now seq)
 
@@ -658,9 +661,8 @@ int WebDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     // we are not currently monitoring this http session...is it a SYN? (new connection)
     if (hptr == NULL) {
         // look for SYN packet (start of connection)
-        if ((iptr->flags & TCP_FLAG_SYN) && iptr->ack == 0) {
-
-            if (ctx->http_discovery_skip_ours) {
+        if ((iptr->flags & TCP_FLAG_SYN)) { // && iptr->ack == 0) {
+            if (ctx->http_discovery_skip_ours && 1==1) {
                 // first we need to verify that this isnt some connection that we are currently replaying (an attack)
                 // i might have to change interval from one second to 5 here.. but with enough attacks it shouldnt matter
                 while (aptr != NULL) {
@@ -679,6 +681,7 @@ int WebDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
             hptr->source_ip = iptr->source_ip;
             hptr->destination_ip = iptr->destination_ip;
 
+            
             hptr->source_port = iptr->source_port;
             hptr->destination_port = iptr->destination_port;
 
@@ -695,6 +698,7 @@ int WebDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
             ret = 1;
         }
     } else {
+        
         // is this the  client, or  server packet?        
         iptr->client = (iptr->source_port == hptr->source_port);
 
@@ -711,9 +715,10 @@ int WebDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
         ret  = 1;
     }
 
-
     // we wanna duplicate the instructions so that the network subsystem can continue to send to other modules afterwards
     if (ret == 1) {
+        hptr->ts = time(0);
+
         if ((packet_copy = InstructionsDuplicate(iptr)) != NULL) {
             // we copied the next (which should be  NULL but just in case something else in future  gives us iptr)
             packet_copy->next = NULL;
@@ -871,6 +876,10 @@ int WebDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 
     if (hptr->size == 0) goto end;
 
+    if (!max_packet_size_client) max_packet_size_client = 1500 - (20*2);
+    if (!max_packet_size_server) max_packet_size_server = 1500 - (20*2);
+
+
     memset(&cptr, 0, sizeof(ConnectionProperties));
 
     // get cient side of http connection..
@@ -893,8 +902,10 @@ int WebDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     new_source_ip = source_ip;
     new_destination_ip = destination_ip;
 
-    i = 1;
-    //i  = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip, &new_dest_port, &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
+    if (ctx->http_discovery_add_always)
+        i = 1;
+    else
+        i = ResearchPyDiscoveredHTTPSession(ctx, &new_source_ip, &new_source_port, &new_destination_ip, &new_dest_port, &source_country, &destination_country, &client_body, &client_body_size, &server_body, &server_body_size);
     //printf("i: %d\n", i);
 
     if (i == 0) goto end;
@@ -982,6 +993,10 @@ int WebDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
         max_packet_size_server = OS_server ? OS_server->window_size : (1500 - (20 * 2 + 12)); 
 
     }
+
+    if (!max_packet_size_client) max_packet_size_client = 1500 - (20*2);
+    if (!max_packet_size_server) max_packet_size_server = 1500 - (20*2);
+
 
 
     IP_prepare(new_source_ip, &cptr.client_ip, &cptr.client_ipv6, &is_src_ipv6);
@@ -1078,14 +1093,21 @@ int WebDiscover_Perform(AS_context *ctx) {
     HTTPBuffer *hptr = ctx->http_buffer_list;
     int ts = time(0);
 
+    //printf("discovery perform()\n");
+
     // loop and analyze any completed sessions we found in live traffic
     while (hptr != NULL) {
+        //printf("hptr %d %d\n", hptr->processed, hptr->complete);
         if (!hptr->processed && hptr->complete) {
+            //printf("processing completed\n");
             if (L_count((LINK *)ctx->attack_list) < ctx->http_discovery_max) {
+                //printf("count ok ports %d\n", hptr->destination_port);
 
                 // we will process port 80 (http) OR ssl (443)
-                if ((hptr->destination_port == 80) || (hptr->destination_port == 443))
+                if ((hptr->destination_port == 80) || (hptr->destination_port == 443)) {
+                    //printf("we found some connection lets attempt to add it in.. to be replayed\n");
                     ret += WebDiscover_AnalyzeSession(ctx, hptr);
+                }
             }
         }
 
@@ -1098,7 +1120,9 @@ int WebDiscover_Perform(AS_context *ctx) {
         }
 
         // we give a maximum of this timmeout  (currently 10 seconds) for a complete http session to buffer
-        if ((ts - hptr->ts) > HTTP_DISCOVER_TIMEOUT) hptr->processed = 1;
+        if ((ts - hptr->ts) > HTTP_DISCOVER_TIMEOUT) {
+            hptr->processed = 1;
+        }
 
         hptr = hptr->next;
     }

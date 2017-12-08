@@ -30,7 +30,6 @@ LINK *L_last(LINK *list) {
     while (list->next != NULL) {
       list = list->next;
     }
-    
     return list;
 }
 

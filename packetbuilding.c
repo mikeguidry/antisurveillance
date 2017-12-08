@@ -254,11 +254,13 @@ void BuildPackets(AS_attacks *aptr) {
         ptr = ptr->next;
     }
 
+
     // All packets were successful.. lets move them to a different structure..
     // PacketInfo is the structure used to put into the outgoing network buffer..
     // this mightt be possible to remove.. but i wanted to give some room for additional
     // protocols later.. so i decided to keep for now...
     ptr = aptr->packet_build_instructions;
+    printf("build packets instructions %d\n", L_count((LINK *)ptr));
 
     while (ptr != NULL) {
         if ((qptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) {
@@ -343,7 +345,7 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
     struct timeval time_diff;
     char *sptr = NULL;
     int which_protocol = 0;
-    OutgoingPacketQueue *optr = NULL;
+    OutgoingPacketQueue *optr = *_optr;
 
     gettimeofday(&tv, NULL);
 
@@ -414,23 +416,27 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
         // Is it too soon to send this packet? (we check its milliseconds)
         timeval_subtract(&time_diff, &aptr->ts, &tv);
 
-        if (pkt->wait_time && time_diff.tv_usec < pkt->wait_time) return;
+        if (pkt->wait_time && time_diff.tv_usec < pkt->wait_time) {
+            //printf("delaying\n");
+            return;
+        }
     }
 
-    if ((*_optr = optr = OutgoingPoolGet(ctx)) == NULL) return;
+    if (optr == NULL)
+        if ((*_optr = optr = OutgoingPoolGet(ctx)) == NULL)
+            return;
+
 
     // copy packet into outgoing packet queue structure (many together)
     // for speed and to not use many threads, or malloc, etc
     sptr = (char *)(&optr->buffer);
-    if (optr->cur_packet > 0)
-        sptr += optr->packet_starts[optr->cur_packet - 1];
+    sptr += optr->size;
     memcpy(sptr, pkt->buf, pkt->size);
 
     optr->dest_ip[optr->cur_packet] = pkt->dest_ip;
     CopyIPv6Address(&optr->dest_ipv6[optr->cur_packet], &pkt->dest_ipv6);
     optr->dest_port[optr->cur_packet] = pkt->dest_port;
     optr->attack_info[optr->cur_packet] = aptr;
-    // !!! move to prior functioon
     optr->ctx = ctx;
 
     if (pkt->type & PACKET_TYPE_TCP) {
@@ -449,6 +455,8 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
 
     optr->packet_starts[optr->cur_packet] = optr->size;
     optr->packet_ends[optr->cur_packet] = (optr->size + pkt->size);
+
+    optr->size += pkt->size;
 
     // prepare for the next packet
     optr->cur_packet++;

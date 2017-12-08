@@ -230,6 +230,11 @@ PacketBuildInstructions *BuildInstructionsNew(PacketBuildInstructions **list, Co
     // OS emulation
     bptr->ttl = from_client ? cptr->client_ttl : cptr->server_ttl;
     bptr->tcp_window_size = from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server;
+    if (bptr->tcp_window_size  == 0) {
+        bptr->tcp_window_size = 1500 - ((20*2)+12);
+    }
+
+    bptr->next = NULL;
 
     // FIFO ordering
     L_link_ordered((LINK **)list, (LINK *)bptr);
@@ -338,7 +343,14 @@ int GenerateTCPSendDataInstructions(ConnectionProperties *cptr, PacketBuildInstr
 
     // now the sending side must loop until it sends all daata
     while (data_size > 0) {
+
+
         packet_size = min(data_size, from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server);
+
+        if (packet_size == 0 && data_size) {
+            packet_size = 1500 - (20*2+12);
+            if (packet_size > data_size) packet_size = data_size;
+        }
 
         //if (packet_size > 53) packet_size -=
         // if something wasn't handled properly.. (when i turned off OSPick().. i had to search for hours to find this =/)
@@ -371,7 +383,6 @@ int GenerateTCPSendDataInstructions(ConnectionProperties *cptr, PacketBuildInstr
         bptr->seq = *remote_seq;
         bptr->client = !from_client;
         bptr->aptr = cptr->aptr;
-
     }
 
     L_link_ordered((LINK **)final_build_list, (LINK *)build_list);
@@ -432,7 +443,8 @@ int GenerateTCPCloseConnectionInstructions(ConnectionProperties *cptr, PacketBui
     bptr->client = from_client;
     bptr->header_identifier =  (*src_identifier)++;
     bptr->ack = *remote_seq;
-    bptr->seq = (*my_seq)++;
+    bptr->seq = *my_seq;
+    *my_seq += 1;
     bptr->aptr = cptr->aptr;
     
     
@@ -444,7 +456,8 @@ int GenerateTCPCloseConnectionInstructions(ConnectionProperties *cptr, PacketBui
     bptr->client = !from_client;
     bptr->header_identifier = (*dst_identifier)++;
     bptr->ack = *my_seq;
-    bptr->seq = (*remote_seq)++;
+    bptr->seq = *remote_seq;
+    *remote_seq += 1;
     bptr->aptr = cptr->aptr;
 
 
@@ -682,11 +695,13 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 
     // source IP, and port from the IP/TCP headers
     iptr->source_ip = p->ip.saddr;
-    iptr->source_port = ntohs(p->tcp.source);
+    iptr->source_port = ntohs(p->tcp.dest);;//ntohs(p->tcp.source);
     
     // destination IP, and port from the TCP/IP headers
     iptr->destination_ip = p->ip.daddr;
-    iptr->destination_port = ntohs(p->tcp.dest);
+    iptr->destination_port = ntohs(p->tcp.source);;//ntohs(p->tcp.dest);
+
+    printf("packet ports %d -> %d\n", iptr->source_port, iptr->destination_port);
     
     // Ensure this new structure has the proper flags which were set in this packet
     iptr->flags = flags;
@@ -1226,7 +1241,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                         llast = iptr;
                     }
                 }
-            } /*else {
+            }/* else {
                     printf("couldnt find processor\n");
                 
 

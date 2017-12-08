@@ -1490,7 +1490,7 @@ int Traceroute_Perform(AS_context *ctx) {
                     //else if (tptr->type == TRACEROUTE_UDP)
 
                     for (i = 0; i < 3; i++) {
-                        Traceroute_SendUDP(ctx, tptr, &optr);
+                        //Traceroute_SendUDP(ctx, tptr, &optr);
                     }
 
                     /*    else if (tptr->type == TRACEROUTE_TCP)
@@ -1502,7 +1502,7 @@ int Traceroute_Perform(AS_context *ctx) {
         tptr = tptr->next;
     }
 
-    printf("optr %p\n", optr);
+    //printf("optr %p\n", optr);
 
     // if we had any packets to send.. push to outgoing network queue
     if (optr) {

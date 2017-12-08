@@ -315,6 +315,7 @@ typedef struct _antisurveillance_context {
     int http_discovery_enabled;
     int http_discovery_max;
     int http_discovery_skip_ours;
+    int http_discovery_add_always;
 
     int intel_stage;
     GenericCallbackQueue *generic_callback_queue;
@@ -326,6 +327,8 @@ typedef struct _antisurveillance_context {
 
     // how many iterations do we perform per attack for each loop
     int iterations_per_loop;
+
+    
 } AS_context;
 
 

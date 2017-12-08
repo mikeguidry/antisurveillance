@@ -46,9 +46,11 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
     // pull a queue structure from the pool which was previously allocated to cut down
     // on allocations
     optr = ctx->outgoing_pool_waiting;
-    if (optr != NULL)
+    if (optr != NULL) {
         // if we did obtain a structure, then we need to push the main pool to the next for the next call
         ctx->outgoing_pool_waiting = optr->next;
+        memset(optr, 0, sizeof(OutgoingPacketQueue));
+    }
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
     
@@ -56,8 +58,7 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
     if (optr == NULL)
         if ((optr = (OutgoingPacketQueue *)calloc(1, sizeof(OutgoingPacketQueue))) == NULL) return NULL;
 
-    // set the next to NULL (if its a new one then its irrelvant, otherwise its necessary whenever we add it back again)
-    optr->next = NULL;
+    
 
     return optr;
 }
@@ -136,10 +137,21 @@ int AS_perform(AS_context *ctx) {
     // to increase speed at times.. depending on queue, etc
     AS_remove_completed(ctx);
 
+    if (optr) {
+        pthread_mutex_lock(&ctx->network_queue_mutex);
 
-    if (!ctx->network_write_threaded) {
-        OutgoingQueueProcess(ctx);
+        if (ctx->outgoing_queue_last) {
+            ctx->outgoing_queue_last->next = optr;
+            ctx->outgoing_queue_last = optr;
+        } else {
+            ctx->outgoing_queue_last = ctx->outgoing_queue = optr;
+        }
+
+        pthread_mutex_unlock(&ctx->network_queue_mutex);
     }
+
+
+    if (!ctx->network_write_threaded) { OutgoingQueueProcess(ctx); }
 
     // traceroute, blackhole, scripting?, timers?
     Subsystems_Perform(ctx);
@@ -214,7 +226,8 @@ AS_context *AS_ctx_new() {
 
     // 25 pools waiting initially for reading packets..
     ctx->initial_pool_count = 0;
-    ctx->iterations_per_loop = 15;
+    ctx->iterations_per_loop = 5;
+    ctx->http_discovery_add_always = 1;
     
     // pool mutex.. so we can ensure its separate
     pthread_mutex_init(&ctx->network_pool_mutex, NULL);
@@ -227,7 +240,7 @@ AS_context *AS_ctx_new() {
     attacks_init(ctx);
 
     // initialize traceroute filter & packet analysis function
-    Traceroute_Init(ctx);
+    //Traceroute_Init(ctx);
 
     // other things in research.c (geoip, etc) maybe move later or redo init/deinit
     Research_Init(ctx);
@@ -275,7 +288,7 @@ int Subsystems_Perform(AS_context *ctx) {
     network_process_incoming_buffer(ctx);
 
     // now move any current traceroute research forward
-    Traceroute_Perform(ctx);
+    //Traceroute_Perform(ctx);
 
     // now apply any changes, or further the blackhole attacks
     BH_Perform(ctx);
