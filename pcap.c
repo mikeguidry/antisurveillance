@@ -291,7 +291,7 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
 
             // find the connection for some last minute things required for building an attack
             // from the connection
-            if ((final_instructions = InstructionsFindConnection(&packetinstructions, pcap_flt ? pcap_flt : &flt)) == NULL) goto end;
+            if ((final_instructions = InstructionsFindConnection(ctx, &packetinstructions, pcap_flt ? pcap_flt : &flt)) == NULL) goto end;
         
             if (final_instructions == NULL) break;
 
@@ -418,7 +418,7 @@ int PCAP_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
         // check against filter in structure..
         if (cptr->flt)
-            if (!FilterCheck(cptr->flt, iptr))  
+            if (!FilterCheck(ctx, cptr->flt, iptr))  
                 filter_ok = 0;
 
         if (filter_ok)

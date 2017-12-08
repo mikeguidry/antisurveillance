@@ -95,16 +95,22 @@ void FilterPrepare(FilterInformation *fptr, int type, uint32_t value) {
     if (type & FILTER_PACKET_IPV6)
         fptr->flags |= FILTER_PACKET_IPV6;
 
+    if (type & FILTER_OURS)
+        fptr->flags |= FILTER_OURS;
+
 }
 
 
 // Filters through packets ensuring that it matches a criteria of something being looked for..
-int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
+int FilterCheck(AS_context *ctx, FilterInformation *fptr, PacketBuildInstructions *iptr) {
     int ret = 0;
     struct iphdr *ip = (struct iphdr *)iptr->packet;
     struct tcphdr *tcp = NULL;
     struct icmphdr *icmp = NULL;
     struct udphdr *udp = NULL;
+    OutgoingPacketQueue *optr = NULL;
+    int cur_packet = 0;
+    int found = 0;
 
     //return 1;
 
@@ -188,6 +194,34 @@ int FilterCheck(FilterInformation *fptr, PacketBuildInstructions *iptr) {
     // is this packet IPv6?
     if (fptr->flags & FILTER_PACKET_IPV6)
         if (!(iptr->type & PACKET_TYPE_IPV6)) goto end;
+
+    // we must verify that this packet doesnt match any of our recent outgoing packet queues...
+    // this is so we dont continously add our own virtual sessions into the system as new attack
+    // structures
+    // this is a bit CPU intensive.. i might decide to just check for ports later (by using an array
+    // after a session  was replayed)
+    if (fptr->flags & FILTER_OURS) {
+        pthread_mutex_lock(&ctx->network_pool_mutex);
+
+        optr = ctx->outgoing_pool_waiting;
+
+        while (optr != NULL && !found) {
+            while (cur_packet < optr->cur_packet) {
+                if ((optr->source_port[cur_packet] == iptr->source_port) &&
+                (optr->dest_port[cur_packet] == iptr->destination_port)) {
+                    // we need this temporary value since the mutex has been locked...
+                    found = 1;
+                    break;
+                }
+
+                cur_packet++;
+            }
+            
+            optr = optr->next;
+        }
+
+        pthread_mutex_unlock(&ctx->network_pool_mutex);
+    }
 
     ret = 1;
 
@@ -1284,7 +1318,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 // return those connections separately..
 // It is loopable, and it used to load an entire PCAP in a different function.
 // There is another threaded function for use with high packet counts.
-PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **instructions, FilterInformation *flt) {
+PacketBuildInstructions *InstructionsFindConnection(AS_context *ctx, PacketBuildInstructions **instructions, FilterInformation *flt) {
     PacketBuildInstructions *iptr = *instructions;
     PacketBuildInstructions *ilast = NULL, *inext = NULL;
     uint32_t src_ip=0, dst_ip=0;
@@ -1315,7 +1349,7 @@ PacketBuildInstructions *InstructionsFindConnection(PacketBuildInstructions **in
         // no point in replaying bad checksum packets...
         if (iptr->ok != 0) {
             // make sure it matches our filter (right now hard coded for www)
-            if (FilterCheck(flt ? flt : &fptr, iptr)) {
+            if (FilterCheck(ctx, flt ? flt : &fptr, iptr)) {
                 //fcount++; // filter couont..
             
                 //printf("passed pass filter  %d:%d -> %d:%d data %p data size %d %X %X flags\n", src.s_addr, iptr->source_port, dst.s_addr, iptr->destination_port, iptr->data, iptr->data_size, iptr->header_identifier, iptr->flags);
@@ -1463,7 +1497,7 @@ void *thread_packet_analysis(void *arg) {
     details->start_ts = time(0);    
 
     while (1) {
-        if ((cptr = InstructionsFindConnection(details->incoming_list, details->Filter)) == NULL) break;
+        if ((cptr = InstructionsFindConnection(details->ctx, details->incoming_list, details->Filter)) == NULL) break;
         if ((aptr = InstructionsToAttack(details->ctx, cptr, details->replay_count, details->interval)) == NULL) break;
 
         aptr->next = details->attacks;

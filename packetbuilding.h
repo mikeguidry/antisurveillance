@@ -18,6 +18,7 @@ typedef struct _pkt_info {
     uint32_t dest_ip;
     struct in6_addr dest_ipv6;
     uint16_t dest_port;
+    uint16_t source_port;
 
     char *buf;
     int size;

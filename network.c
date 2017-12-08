@@ -32,6 +32,44 @@ protection to be developed, and this can become the 'third party server' for hun
 
 
 
+OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
+    OutgoingPacketQueue *optr = NULL;
+    int ts = time(0);
+
+    // get outgoing packet queue structure from buffer
+    pthread_mutex_lock(&ctx->network_pool_mutex);
+
+    // we wanna be able to filter out our own sessions.. and since we are going to perfor so many at a time
+    // the ports may change in the actual attack strucctures.. so we must verify against older already sent packets
+    optr = ctx->outgoing_pool_waiting;
+
+    // loop for all outgoing queues...
+    while (optr != NULL) {
+        // be sure its existed for at least 3 seconds...
+        if ((ts - optr->ts) > 3) {
+            // if so then we can use it.. we will assume that all packets were verified properly
+            break;
+        }
+
+        optr = optr->next;
+    }
+
+    if (optr != NULL) {
+        // if we did obtain a structure, then we need to push the main pool to the next for the next call
+        ctx->outgoing_pool_waiting = optr->next;
+        memset(optr, 0, sizeof(OutgoingPacketQueue));
+    }
+
+    pthread_mutex_unlock(&ctx->network_pool_mutex);
+    
+    // if we didnt then will allocate a new  one which will go to the pool whenever are complete
+    if (optr == NULL)
+        if ((optr = (OutgoingPacketQueue *)calloc(1, sizeof(OutgoingPacketQueue))) == NULL) return NULL;    
+
+    return optr;
+}
+
+
 
 
 // this is the iterface between the packet queue, and the operating system to send packets..
@@ -469,7 +507,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         //printf("%s:%d -> %s:%d\n", Asrc_ip, iptr->source_port, Adst_ip, iptr->destination_port);
 
         // if the packet passes the filter then call its processing function
-        if (FilterCheck(nptr->flt, iptr)) {
+        if (FilterCheck(ctx, nptr->flt, iptr)) {
             // maybe verify respoonse, and break the loop inn some case
             r = nptr->incoming_function(ctx, iptr);
             

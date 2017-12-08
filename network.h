@@ -44,7 +44,10 @@ typedef struct _outgoing_packet_queue {
     int packet_protocol[MAX_PACKETS];
     int packet_ipversion[MAX_PACKETS];
 
+    // this port is necessary for sendto() to handle missing structures relating to the packet
     uint16_t dest_port[MAX_PACKETS];
+    // we also need the source port to verify against connections laater so we dont keep readding ours..
+    uint16_t source_port[MAX_PACKETS];
     uint32_t dest_ip[MAX_PACKETS];
     struct in6_addr dest_ipv6[MAX_PACKETS];
     AS_attacks *attack_info[MAX_PACKETS];

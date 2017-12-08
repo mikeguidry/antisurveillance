@@ -276,6 +276,7 @@ void BuildPackets(AS_attacks *aptr) {
         qptr->dest_ip = ptr->destination_ip;
         CopyIPv6Address(&qptr->dest_ipv6, &ptr->destination_ipv6);
         qptr->dest_port = ptr->destination_port;
+        qptr->source_port = ptr->source_port;
 
         // This should really only matter later.. once they begin 'attempting' to process out
         // false packets.. Doubtfully going to work in any capacity.
@@ -435,6 +436,7 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
 
     optr->dest_ip[optr->cur_packet] = pkt->dest_ip;
     CopyIPv6Address(&optr->dest_ipv6[optr->cur_packet], &pkt->dest_ipv6);
+    optr->source_port[optr->cur_packet] = pkt->source_port;
     optr->dest_port[optr->cur_packet] = pkt->dest_port;
     optr->attack_info[optr->cur_packet] = aptr;
     optr->ctx = ctx;

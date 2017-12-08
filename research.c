@@ -1490,7 +1490,7 @@ int Traceroute_Perform(AS_context *ctx) {
                     //else if (tptr->type == TRACEROUTE_UDP)
 
                     for (i = 0; i < 3; i++) {
-                        //Traceroute_SendUDP(ctx, tptr, &optr);
+                        Traceroute_SendUDP(ctx, tptr, &optr);
                     }
 
                     /*    else if (tptr->type == TRACEROUTE_TCP)

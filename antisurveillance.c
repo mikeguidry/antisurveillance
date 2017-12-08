@@ -37,32 +37,6 @@ If this is the damage I can do alone... what do you  think will happen in the fu
 
 #define TEST
 
-OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
-    OutgoingPacketQueue *optr = NULL;
-
-    // get outgoing packet queue structure from buffer
-    pthread_mutex_lock(&ctx->network_pool_mutex);
-
-    // pull a queue structure from the pool which was previously allocated to cut down
-    // on allocations
-    optr = ctx->outgoing_pool_waiting;
-    if (optr != NULL) {
-        // if we did obtain a structure, then we need to push the main pool to the next for the next call
-        ctx->outgoing_pool_waiting = optr->next;
-        memset(optr, 0, sizeof(OutgoingPacketQueue));
-    }
-
-    pthread_mutex_unlock(&ctx->network_pool_mutex);
-    
-    // if we didnt then will allocate a new  one which will go to the pool whenever are complete
-    if (optr == NULL)
-        if ((optr = (OutgoingPacketQueue *)calloc(1, sizeof(OutgoingPacketQueue))) == NULL) return NULL;
-
-    
-
-    return optr;
-}
-
 
 // Perform one iteration of each attack structure that was queued
 int AS_perform(AS_context *ctx) {
