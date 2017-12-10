@@ -49,8 +49,8 @@ int BuildHTTP4Session(AS_context *ctx, AS_attacks *aptr, uint32_t server_ip, uin
     int ret = -1;
     // get observed details (ttl/window/agent/server version) from live packet capture
     // to use in generating sessions.. just makes it this much moree difficult to filter.
-    HTTPObservedVariables *OS_client = ObserveGet(ctx, 0);
-    HTTPObservedVariables *OS_server = ObserveGet(ctx, 1);
+    HTTPObservedVariables *OS_client = ObserveGet(ctx, FROM_CLIENT);
+    HTTPObservedVariables *OS_server = ObserveGet(ctx, FROM_SERVER);
 
 
     // these are in headers.. and seems to be +1 fromm start..
@@ -740,15 +740,15 @@ int WebDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 // so that nobody has to keep things updated.. itll always transform itself with the current browwsers as long as
 // someone on the network uses it.. you can even just replay packets, and itll gather the data
 // this is for OS emulation
-HTTPObservedVariables *ObserveGet(AS_context *ctx, int server) {
+HTTPObservedVariables *ObserveGet(AS_context *ctx, int from_client) {
     HTTPObservedVariables *optr = NULL;
     int count = L_count((LINK *)optr);
     int r = 0;
 
     optr = ctx->observed;
     while (optr != NULL) {
-        if (server && optr->server_version != NULL) count++;
-        if (!server && optr->useragent != NULL) count++;
+        if (!from_client && optr->server_version != NULL) count++;
+        if (from_client && optr->useragent != NULL) count++;
         
         optr = optr->next;
     }
@@ -760,8 +760,8 @@ HTTPObservedVariables *ObserveGet(AS_context *ctx, int server) {
 
     optr = ctx->observed;
     while (optr != NULL) {
-        if (server && optr->server_version != NULL) count++;
-        if (!server && optr->useragent != NULL) count++;
+        if (!from_client  && optr->server_version != NULL) count++;
+        if (from_client && optr->useragent != NULL) count++;
         
         if (count == r) break;
 
@@ -850,8 +850,8 @@ int WebDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
 
     // get observed details (ttl/window/agent/server version) from live packet capture
     // to use in generating sessions.. just makes it this much moree difficult to filter.
-    HTTPObservedVariables *OS_client = ObserveGet(ctx, 0);
-    HTTPObservedVariables *OS_server = ObserveGet(ctx, 1);
+    HTTPObservedVariables *OS_client = ObserveGet(ctx, FROM_CLIENT);
+    HTTPObservedVariables *OS_server = ObserveGet(ctx, FROM_SERVER);
 
     
 
@@ -1259,20 +1259,6 @@ unsigned char extension_session_ticket[4];
 } TLSHandshake;
 
 
-// now we wanna take TLS authentication connections, and peform the same actions..
-// the only difference is that the body, and other information are irrelevant...
-// itll be about sizes, etc
-// this will clog NSA decryption operations
-typedef struct _tls_information {
-    struct _tls_information *next;
-
-    int algorithm;
-    int key_size;
-
-
-
-} TLSInformation;
-
 
 enum {
     TLS_CHANGE_CIPHER       = 0x14,
@@ -1303,11 +1289,10 @@ int TLS_Version(char *data) {
 int random_untouched(unsigned char *data, int size, char *touched, int not_null) {
     int r = rand()%size;
     int i = 0;
-    int try = 10;
+    int try = 50;
 
 
     while (try--) {
-
         if (try == 1)
             i = 0;
         else
@@ -1354,7 +1339,7 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
     tptr = (TLSRecord *)(iptr->packet);
 
     // lets get a pointer to the tls handshake information.. (its type 22)
-    if ((tptr->type == 0x16) && iptr->packet_size >= (sizeof(TLSRecord) + sizeof(TLSHandshake))) {
+    if ((tptr->type == TLS_HANDSHAKE) && iptr->packet_size >= (sizeof(TLSRecord) + sizeof(TLSHandshake))) {
         hptr = (TLSHandshake *)(iptr->packet + sizeof(TLSRecord));
 
         // if we have extra data lets prepare the pointer, and calculate the size of the data
@@ -1362,12 +1347,21 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
             data = (char *)(iptr->packet + sizeof(TLSRecord) + sizeof(TLSHandshake));
             data_size = iptr->packet_size - (sizeof(TLSRecord) + sizeof(TLSHandshake));
         }
+
+        // we must modify the TLS handshake keys.. in the future i will want to 
+        // have some actual keys so another thread will encrypt partial messages such as GET /
+        // I hope that everyone knows thats how these things get cracked... its extremely simple on these 90% session old ciphers
+        // anyways .. ill save cracking for a different day.
+        i = 0; while (i < 4) { hptr->random_time[i++] = rand()%256; }
+        i = 0; while (i < 28) { hptr->random_big[i++] = rand()%256; }
+
+
     // actual TLS data.. this is what we can modify/randomize..
-    } else if (tptr->type == 0x17) {
+    } else if (tptr->type == TLS_APPLICATION_DATA) {
             data = (char *)(iptr->packet + sizeof(TLSRecord));
             data_size = iptr->packet_size - (sizeof(TLSRecord));
 
-            if ((touched = calloc(1, data_size)) == NULL) return -1;
+            if (!data_size || (touched = calloc(1, data_size)) == NULL) return -1;
             
             // before we modify data.. lets determine if we should append new data to this packet..
             // i'd say lets try it for 30% of all
@@ -1375,7 +1369,7 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
                 // how much more data do we add to this packet? lets add a random amount depending on the original packet
                 i = ((data_size / (1+rand()%3)));
                 // allocate memory for this packet
-                if ((new_packet = (char *)calloc(iptr->packet_size + i)) == NULL) return -1;
+                if ((new_packet = (char *)calloc(1, iptr->packet_size + i)) == NULL) return -1;
                 // copy the old packet over into the new packet
                 memcpy(new_packet, iptr->packet, iptr->packet_size);
                 // get pointers to the beginning of the data in this new packet (TLS record beginning of the datqa)
@@ -1431,6 +1425,7 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
                     // mark as touched so we dont use it again
                     touched[untouched] = 1;
 
+                    // swap both bytes
                     a = data[i];
                     data[i] = data[untouched];
                     data[untouched] = a;
@@ -1449,6 +1444,8 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
                 }
             }
     }
+
+    end:;
 
     return 1;
 }
