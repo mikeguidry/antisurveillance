@@ -1022,20 +1022,40 @@ int WebDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     cptr.client_emulated_operating_system = 0;
     cptr.server_emulated_operating_system = 0;
 
-    // open the connection...
-    if (GenerateTCPConnectionInstructions(&cptr, &build_list) != 1) { ret = -2; goto err; }
+    if (hptr->destination_port == 80) {
+        // open the connection...
+        if (GenerateTCPConnectionInstructions(&cptr, &build_list) != 1) { ret = -2; goto err; }
 
-    // now we must send data from client to server (http request)
-    if (GenerateTCPSendDataInstructions(&cptr, &build_list, FROM_CLIENT, client_body, client_body_size) != 1) { ret = -3; goto err; }
+        // now we must send data from client to server (http request)
+        if (GenerateTCPSendDataInstructions(&cptr, &build_list, FROM_CLIENT, client_body, client_body_size) != 1) { ret = -3; goto err; }
 
-    // now we must send data from the server to the client (web page body)
-    if (GenerateTCPSendDataInstructions(&cptr, &build_list, FROM_SERVER, server_body, server_body_size) != 1) { ret = -4; goto err; }
+        // now we must send data from the server to the client (web page body)
+        if (GenerateTCPSendDataInstructions(&cptr, &build_list, FROM_SERVER, server_body, server_body_size) != 1) { ret = -4; goto err; }
 
-    // now lets close the connection from client side first
-    if (GenerateTCPCloseConnectionInstructions(&cptr, &build_list, FROM_CLIENT) != 1) { ret = -5; goto err; }
+        // now lets close the connection from client side first
+        if (GenerateTCPCloseConnectionInstructions(&cptr, &build_list, FROM_CLIENT) != 1) { ret = -5; goto err; }
 
-    // that concludes all packets
-    aptr->packet_build_instructions = build_list;
+        // that concludes all packets
+        aptr->packet_build_instructions = build_list;
+    } else if (hptr->destination_port == 443) {
+        // if i == 1 it means we want to check if its SSL, so we can automaticallly weaponize the packets into attack
+        // if it doesnt return 1 we expecct python to have adjusted the packets...
+        // one issue here is that currently python cannot handle packet by packet so itll repllay the entire connection together
+        // this wont work .. and can be easily detected
+        if (hptr->destination_port == 443) {
+            iptr = hptr->packet_list;
+            while (iptr != NULL) {
+                // attempt to modify the SSL packets on this connection before we add it as an attack
+                SSL_Modifications(ctx, iptr);
+
+                iptr = iptr->next;
+            }
+        }
+
+        // move over the instructions to the new attack structure
+        aptr->packet_build_instructions = hptr->packet_list;
+        hptr->packet_list = NULL;
+    }
 
     // lets set as live source..
     // or we need to use some kinda callbacks like traceroutee queu for 75% completion
@@ -1044,6 +1064,7 @@ int WebDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     aptr->paused = 0;
     aptr->count = 99999999;
     aptr->repeat_interval = 1;
+
     // now lets build the low level packets for writing to the network interface
     BuildPackets(aptr);    
 
@@ -1215,6 +1236,28 @@ try to find a geo distance calculator to generate IPs furthest fromm the current
 */
 
 
+typedef struct _tls_record {
+	unsigned char type;
+	unsigned char version_major;
+	unsigned char version_minor;
+	unsigned short length;
+} TLSRecord;
+
+
+typedef struct _tls_handshake {
+unsigned char type;
+unsigned char length[3];
+unsigned char ssl_version[2];
+unsigned char random_time[4];
+unsigned char random_big[28];
+unsigned char session_id_length[1];
+unsigned char cipher_suite[2];
+unsigned char compression_method[1];
+unsigned char extension_legnth[2];
+unsigned char extension_renegotiation[5];
+unsigned char extension_session_ticket[4];
+} TLSHandshake;
+
 
 // now we wanna take TLS authentication connections, and peform the same actions..
 // the only difference is that the body, and other information are irrelevant...
@@ -1231,11 +1274,181 @@ typedef struct _tls_information {
 } TLSInformation;
 
 
-int SSLModification(AS_attacks *aptr) {
-    int ret = 0;
+enum {
+    TLS_CHANGE_CIPHER       = 0x14,
+    TLS_ALERT               = 0x15,
+    TLS_HANDSHAKE           = 0x16,
+    TLS_APPLICATION_DATA    = 0x17
+};
+
+enum {
+    INVALID_VER,
+    SSL_VER_3_0,
+    TLS_VER_1_0,
+    TLS_VER_1_1,
+    TLS_VER_1_2,
+    TLS_VER_1_3
+};
+
+int TLS_Version(char *data) {
+    if (data[0] == 3) {
+        if (data[1] == 0) return SSL_VER_3_0;
+        if (data[1] == 1) return TLS_VER_1_0;
+        if (data[1] == 2) return TLS_VER_1_2;
+        if (data[1] == 3) return TLS_VER_1_3;
+    }
+    return INVALID_VER;
+}
+
+int random_untouched(unsigned char *data, int size, char *touched, int not_null) {
+    int r = rand()%size;
+    int i = 0;
+    int try = 10;
 
 
+    while (try--) {
 
-    end:;
-    return ret;
+        if (try == 1)
+            i = 0;
+        else
+            i = rand()%size;
+
+        while (i < size) {
+            if (touched[i] == 0) {
+                if (!not_null || (not_null && data[i]))
+                    return i;
+            }
+        }
+    }
+
+    return -1;
+
+}
+
+// This will manipulate TLS data so that the checksums are different...
+// It will modify old data, and sometimes insert new data into each packet...
+// It will generate new (random) keys, and maybe some other things.  Anytnig required so that surveillance platforms
+// must fully process AND attempt to crack fabricated sessions...  can you say kill resources?
+int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
+    TLSRecord *tptr = NULL;
+    TLSHandshake *hptr = NULL;
+    char *data = NULL;
+    int data_size = 0;
+    int i = 0;
+    char *touched = NULL;
+    int untouched = 0;
+    int a = 0, b = 0;
+    int op = 0;
+    char *new_packet = NULL;
+    int new_packet_size = 0;
+    char *new_data = NULL;
+    int new_data_size = 0;
+
+    // first lets be sure the packet is going towards SSL
+    if ((iptr->destination_port != 443) && (iptr->source_port != 443)) return -1;
+
+    // is the packet size smaller than TLSREcord? then lets ignore it
+    if (iptr->packet_size < sizeof(TLSRecord)) return -1;
+
+    // lets prepare the pointers we wish to use
+    tptr = (TLSRecord *)(iptr->packet);
+
+    // lets get a pointer to the tls handshake information.. (its type 22)
+    if ((tptr->type == 0x16) && iptr->packet_size >= (sizeof(TLSRecord) + sizeof(TLSHandshake))) {
+        hptr = (TLSHandshake *)(iptr->packet + sizeof(TLSRecord));
+
+        // if we have extra data lets prepare the pointer, and calculate the size of the data
+        if (iptr->packet_size > (sizeof(TLSRecord) + sizeof(TLSHandshake))) {
+            data = (char *)(iptr->packet + sizeof(TLSRecord) + sizeof(TLSHandshake));
+            data_size = iptr->packet_size - (sizeof(TLSRecord) + sizeof(TLSHandshake));
+        }
+    // actual TLS data.. this is what we can modify/randomize..
+    } else if (tptr->type == 0x17) {
+            data = (char *)(iptr->packet + sizeof(TLSRecord));
+            data_size = iptr->packet_size - (sizeof(TLSRecord));
+
+            if ((touched = calloc(1, data_size)) == NULL) return -1;
+            
+            // before we modify data.. lets determine if we should append new data to this packet..
+            // i'd say lets try it for 30% of all
+            if ((rand()%100) < 30) {
+                // how much more data do we add to this packet? lets add a random amount depending on the original packet
+                i = ((data_size / (1+rand()%3)));
+                // allocate memory for this packet
+                if ((new_packet = (char *)calloc(iptr->packet_size + i)) == NULL) return -1;
+                // copy the old packet over into the new packet
+                memcpy(new_packet, iptr->packet, iptr->packet_size);
+                // get pointers to the beginning of the data in this new packet (TLS record beginning of the datqa)
+                new_data = iptr->packet + sizeof(TLSRecord);
+                // we calculate the new data size using the amount that was addded (calculated from the original packet size)
+                new_data_size = data_size + i;
+
+                // loop for the new  amount we are adding.. starting at the end of the old data
+                i = data_size;
+                while (i < new_data_size) {
+                    untouched = random_untouched(data, data_size, touched, 0);
+                    if (untouched == 0) {
+                        new_data[i] = rand()%255;
+                    } else {
+                        touched[untouched] = 1;
+                        // copy data randomly fromm another portion of the packet to this  new location
+                        // id rathere use  other encrypted data than use rand() for all this at the moment
+                        new_data[i] = data[untouched];
+                    }
+                }
+
+                // now we need to replace the origal poointers..
+                PtrFree(&iptr->packet);
+                iptr->packet = new_packet;
+                iptr->packet_size = new_packet_size;
+
+                // tls record pointer needs to be updated
+                tptr = (TLSRecord *)(iptr->packet);
+                // increase by our size
+                tptr->length += new_data_size - data_size;
+
+                // prepare pointers for the next section
+                data = new_data;
+                data_size = new_data_size;
+            }
+
+            // i would completely randomize this EXCEPT.. i don't want the NSA etc to be able to quickly use entropy calculations
+            // to filter out our NON secure random numbers... i think its better to do some types of arithmetic which is also used
+            // in cryptographic algorithms
+            i = 0;
+            while (i < data_size) {
+                // since we are going to perform operations with other data.. lets be sure we only use different operands(bytes) once
+                // this is our second variable.. the first is the current iteration
+                // lets mark the current as touched so we never get it as the second operand
+                touched[i] = 1;
+                // get a pointer to data that hasn't been touched by this loop yet
+                untouched = random_untouched(data, data_size, touched, 0);
+
+                // pick a random operation
+                op = rand()%5;
+                // just swap this byte with another one randomly
+                if (op == 0) {
+                    // mark as touched so we dont use it again
+                    touched[untouched] = 1;
+
+                    a = data[i];
+                    data[i] = data[untouched];
+                    data[untouched] = a;
+                } else if (op == 1) {
+                    // shift right by 1-3
+                    data[i] >>= 1+rand()%3;
+                } else if (op == 2) {
+                    // shift left by 1-3
+                    data[i] <<= 1+rand()%3;
+                } else if (op == 3) {
+                    // multiply by 1-24
+                    data[i] *= 1+rand()%25;
+                } else if (op == 4) {
+                    // xor by 1-255
+                    data[i] ^= 1+rand()%254;
+                }
+            }
+    }
+
+    return 1;
 }

@@ -30,6 +30,8 @@ http.c because it will likely rely on other functions.
 //https://www.akamai.com/us/en/about/our-thinking/state-of-the-internet-report/state-of-the-internet-ipv6-adoption-visualization.jsp
 // soon lookup each country/ip gen
 void PacketAdjustments(AS_context *ctx, AS_attacks *aptr) {
+    PacketBuildInstructions *buildptr = NULL;
+
     // our new source port must be above 1024 and below 65536 (generally acceptable on all OS) <1024 is privileged
     int client_port = (1024 + rand()%(65535 - 1024));
     // the identifier portion of the packets..
@@ -73,7 +75,7 @@ void PacketAdjustments(AS_context *ctx, AS_attacks *aptr) {
     }
 
     // loop through each packet instruction in memory for this attack
-    PacketBuildInstructions *buildptr = aptr->packet_build_instructions;
+    buildptr = aptr->packet_build_instructions;
     while (buildptr != NULL) {
         // we can determine which side of the connection by this variable we had set during analysis
         if (buildptr->client) {
@@ -133,7 +135,16 @@ void PacketAdjustments(AS_context *ctx, AS_attacks *aptr) {
 
     // We would like to manipulate HTTP sessions to increase resources, etc on mass surveillance platforms.
     if (aptr->destination_port == 80) HTTPContentModification(aptr);
-    if (aptr->destination_port == 443) SSLModification(aptr);
+    if (aptr->destination_port == 443) {
+        buildptr = aptr->packet_build_instructions;
+        while (buildptr != NULL) {
+            // modify this particular packets SSL structures..
+            // it has to be each individually due to the protocol, and replaying it requiring things to be separate
+            SSL_Modifications(ctx, buildptr);
+
+            buildptr = buildptr->next;
+        }
+    }
 
     // Rebuild all packets using the modified instructions
     BuildPackets(aptr);

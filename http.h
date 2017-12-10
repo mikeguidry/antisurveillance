@@ -88,3 +88,4 @@ typedef struct _http_observed_variables {
 HTTPObservedVariables *ObserveAdd(AS_context *ctx, int ttl, int window_size);
 HTTPObservedVariables *ObserveCheck(AS_context *ctx, int ttl, int window_size);
 HTTPObservedVariables *ObserveGet(AS_context *ctx, int server);
+int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr);

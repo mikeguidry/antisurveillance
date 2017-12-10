@@ -1273,8 +1273,6 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
     memset(&icmp, 0, sizeof(struct icmphdr));
     memset(&icmp6, 0, sizeof(struct icmphdr));
 
-    
-
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
         // this is the current TTL for this target
@@ -3705,3 +3703,85 @@ int URL_macroize(AS_context *ctx, SiteIdentifier *siteptr, SiteURL *urlptr) {
 
 //  http parse so we can pull out URLs and macro-ize things
 // ***
+
+
+/*
+
+// moved into its own function so i can finish supporting UDP, and TCP traceroutes
+int ICMP_Send(AS_context *ctx, int type) {
+    PacketBuildInstructions *iptr = NULL;
+    struct icmphdr icmp;
+    int ret = 0;
+    TraceroutePacketData *pdata = NULL;
+    int i = 0;
+    OutgoingPacketQueue *optr = NULL;
+    struct icmp6_hdr icmp6;
+    
+    memset(&icmp, 0, sizeof(struct icmphdr));
+    memset(&icmp6, 0, sizeof(struct icmp6_hdr));
+
+    // create instruction packet for the ICMP(4/6) packet building functions
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+        // this is the current TTL for this target
+        iptr->ttl = tptr->ttl_list[tptr->current_ttl];
+
+        // determine if this is an IPv4/6 so it uses the correct packet building function
+        // prepare the ICMP header for the traceroute
+        if (tptr->target_ip != 0) {
+            iptr->type = PACKET_TYPE_ICMP_4|PACKET_TYPE_ICMP|PACKET_TYPE_ICMP;
+            iptr->destination_ip = tptr->target_ip;
+            iptr->source_ip = ctx->my_addr_ipv4;
+
+            icmp.type = type;
+            icmp.un.echo.sequence = tptr->identifier;
+            icmp.un.echo.id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
+
+        } else {
+            iptr->type = PACKET_TYPE_ICMP_6|PACKET_TYPE_ICMP|PACKET_TYPE_ICMP;
+
+            icmp6.icmp6_type = type;
+            icmp6.icmp6_id = tptr->identifier + tptr->ttl_list[tptr->current_ttl];
+            icmp6.icmp6_seq = tptr->identifier;
+            
+            // destination is the target
+            CopyIPv6Address(&iptr->destination_ipv6, &tptr->target_ipv6);
+            // source is our ip address
+            CopyIPv6Address(&iptr->source_ipv6, &ctx->my_addr_ipv6);
+        }
+
+        // copy ICMP parameters into this instruction packet as a complete structure
+        memcpy(&iptr->icmp, &icmp, sizeof(struct icmphdr));
+        memcpy(&iptr->icmp6, &icmp6, sizeof(struct icmp6_hdr));
+
+        // set size to the traceroute packet data structure's size...
+        iptr->data_size = sizeof(TraceroutePacketData);
+
+        if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
+            pdata = (TraceroutePacketData *)iptr->data;
+
+            // lets include a little message since we are performing a lot..
+            // if ever on a botnet, or worm.. disable this obviously
+            strncpy(&pdata->msg, "performing traceroute research", sizeof(pdata->msg));
+
+            // set the identifiers so we know which traceroute queue the responses relates to
+            pdata->identifier = tptr->identifier;
+            pdata->ttl = iptr->ttl;
+        }
+
+        // lets build a packet from the instructions we just designed for either ipv4, or ipv6
+        // for either ipv4, or ipv6
+        if (iptr->type & PACKET_TYPE_ICMP_6)
+            i = BuildSingleICMP6Packet(iptr);
+        else if (iptr->type & PACKET_TYPE_ICMP_4)
+            i = BuildSingleICMP4Packet(iptr);
+
+        // if the packet building was successful
+        if (i == 1)
+            NetworkQueueAddBest(ctx, iptr, 0);
+    }
+
+    PacketBuildInstructionsFree(&iptr);
+   
+    end:;
+    return ret;
+}*/
