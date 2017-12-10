@@ -1235,6 +1235,17 @@ try to find a geo distance calculator to generate IPs furthest fromm the current
 
 */
 
+/*
+
+
+Below here are SSL modifications.  We are pulling SSL sessions out of the wild so it didn't make sense to fully implement the technologies.  I decided
+to just modify data, and keys.  It will allow reusing these sessions, and filling up those encryption queues on pointless sessions.  In the future,
+they will begin only attempting to crack sessions which are of interest rather than most.  It can be tailored with other technologies to get details.
+Websites, ISPs, or end users can install applications which pass their browser details such as IP, and websites they visit to help a system
+generate these connections thus ensuring any real traffic related to them takes exponential resources to view.
+
+
+*/
 
 typedef struct _tls_record {
 	unsigned char type;
@@ -1286,6 +1297,8 @@ int TLS_Version(char *data) {
     return INVALID_VER;
 }
 
+// takes a buffer, and another buffer made to keep track of the first, and it finds a random byte which has not been already used
+// or returned by the same buffer
 int random_untouched(unsigned char *data, int size, char *touched, int not_null) {
     int r = rand()%size;
     int i = 0;
@@ -1449,3 +1462,6 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     return 1;
 }
+
+
+
