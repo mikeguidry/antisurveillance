@@ -328,7 +328,15 @@ typedef struct _antisurveillance_context {
     // how many iterations do we perform per attack for each loop
     int iterations_per_loop;
 
-    
+    // dont get picky (coutryr, etc) when generating IPv6 IPs
+    // this is good until i finish traceroute, and other research
+    // itll allow a full blown launch now
+    int ipv6_gen_any;
+
+    char *network_interface;
+
+    // each iteration we grab the amount of free memory.. we wont keep all packets for 3 seconds if its below 200 megabytes
+    int free_memory;
 } AS_context;
 
 

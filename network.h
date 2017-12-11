@@ -17,7 +17,6 @@ typedef struct _filter_information FilterInformation;
 #define MAX_BUF_SIZE 1024*1024*10
 #define MAX_PACKETS 10000
 
-//!!! move to network.c
 // this is the queue which shouldnt have anything to do with processing, or other functions.. its where
 // all attacks go to get submitted directly to the wire.. 
 typedef struct _outgoing_packet_queue {

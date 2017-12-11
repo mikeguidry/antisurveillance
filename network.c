@@ -45,6 +45,10 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
 
     // loop for all outgoing queues...
     while (optr != NULL) {
+
+        // if the memory is below 200 megabytes, then we do not hold it for 3 seconds...
+        if (ctx->free_memory < 200) break;
+
         // be sure its existed for at least 3 seconds...
         if ((ts - optr->ts) > 3) {
             // if so then we can use it.. we will assume that all packets were verified properly
@@ -273,8 +277,11 @@ int prepare_socket(AS_context *ctx) {
             }
             
             // open raw socket
-            if ((ctx->write_socket[proto][ip_ver] = socket(which_domain, SOCK_RAW, which_proto)) <= 0)
+            if ((ctx->write_socket[proto][ip_ver] = socket(which_domain, SOCK_RAW, which_proto)) <= 0) {
+                fprintf(stderr, "couldnt open raw socket.. are we root?\n");
+                exit(-1);
                 return -1;
+            }
 
             setsockopt(ctx->write_socket[proto][ip_ver], SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
 
@@ -296,7 +303,7 @@ int prepare_read_socket_old(AS_context *ctx) {
     int sockfd = 0;
     struct ifreq ifr;
     struct sockaddr_ll sll;
-    char network[] = "wlp2s0";
+    char *network = (char *)ctx->network_interface;
     int protocol= IPPROTO_TCP;
     int sockopt = 1;
     int flags = 0;
@@ -365,7 +372,7 @@ int prepare_read_socket(AS_context *ctx) {
     int ret = 0;
     struct ifreq ifr;
     struct sockaddr_ll sll;
-    char network[] = "wlp2s0";
+    char *network = ctx->network_interface;
     int protocol= IPPROTO_TCP;
     int sockopt = 1;
     int flags = 0;
@@ -413,7 +420,10 @@ int prepare_read_socket(AS_context *ctx) {
 
             //printf("allocating socket proto %d ip ver %d\n", proto, ip_ver);
             // initialize a new socket
-            ctx->read_socket[proto][ip_ver] = socket(which_domain, SOCK_RAW, which_proto);
+            if ((ctx->read_socket[proto][ip_ver] = socket(which_domain, SOCK_RAW, which_proto)) == -1) {
+                fprintf(stderr, "couldnt open raw socket.. are we root?\n");
+                exit(-1);
+            }
             
             setsockopt(ctx->read_socket[proto][ip_ver], SOL_SOCKET, SO_RCVBUFFORCE, &bufsize, sizeof(bufsize));
             
@@ -541,7 +551,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
     int cur_packet = 0;
     int packet_size = 0;
 
-    printf("process incomming buffer\n");
+    //printf("process incomming buffer\n");
 
     
     // lock thread so we dont attempt to read or write while another thread is
@@ -692,7 +702,6 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
                 packet_count += r;
 
                 // so we can track which protocols later for debugging purposes
-                // !!! remove later
                 nptr->packet_protocol[nptr->cur_packet - 1] = proto;
                 nptr->packet_ipversion[nptr->cur_packet - 1] = ip_ver;
 
@@ -797,7 +806,7 @@ void *thread_read_network(void *arg) {
         if (nptr == NULL) {
             pthread_mutex_lock(&ctx->network_pool_mutex);
 
-            printf("pool count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
+            //printf("pool count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
             // grab one from the pool
             nptr = ctx->incoming_pool_waiting;
             // remove from pool queue
@@ -808,7 +817,7 @@ void *thread_read_network(void *arg) {
         }
 
         if (nptr == NULL) {
-            printf("nothing from pool\n");
+            //printf("nothing from pool\n");
             if ((nptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue))) == NULL) goto end;
         }
 
@@ -820,7 +829,7 @@ void *thread_read_network(void *arg) {
 
         if (nptr->cur_packet) {
 
-            printf("packet count: %d\n", nptr->cur_packet);
+            //printf("packet count: %d\n", nptr->cur_packet);
             pthread_mutex_lock(&ctx->network_incoming_mutex);
 
             if (ctx->incoming_queue_last) {
@@ -924,7 +933,6 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, Outgoing
     CopyIPv6Address(&optr->dest_ipv6[optr->cur_packet], &iptr->destination_ipv6);
     optr->dest_port[optr->cur_packet] = iptr->destination_port;
     //optr->attack_info[optr->cur_packet] = aptr;
-    // !!! move to prior functioon
     optr->ctx = ctx;
 
     if (iptr->type & PACKET_TYPE_TCP) {

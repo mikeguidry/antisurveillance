@@ -624,11 +624,11 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
-    printf("Process ICMP4\n");
+    //printf("Process ICMP4\n");
 
     // data coming from network.. so sanity checks required
     if (pptr->size < sizeof(struct packeticmp4)) {
-        printf("size small\n");
+        //printf("size small\n");
         goto end;
     }
 
@@ -735,7 +735,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     iptr->destination_ip = p->ip.daddr;
     iptr->destination_port = ntohs(p->tcp.source);;//ntohs(p->tcp.dest);
 
-    printf("packet ports %d -> %d\n", iptr->source_port, iptr->destination_port);
+    //printf("packet ports %d -> %d\n", iptr->source_port, iptr->destination_port);
     
     // Ensure this new structure has the proper flags which were set in this packet
     iptr->flags = flags;
@@ -1230,8 +1230,8 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
         if (pptr->buf && pptr->size) {
 
             // lets check if this packet has ethernet header attached to the front  of it
-            ethhdr = (struct ether_header *)pptr->buf;
-            // !!! finish verification of which ether packeet is coming through
+            //ethhdr = (struct ether_header *)pptr->buf;
+            // *** finish verification of which ether packeet is coming through
             // either keep the original which had read all 3 on a single socket...
             // or figur eout which ones include ip, ether, etc headers
 

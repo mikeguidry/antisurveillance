@@ -260,7 +260,7 @@ void BuildPackets(AS_attacks *aptr) {
     // this mightt be possible to remove.. but i wanted to give some room for additional
     // protocols later.. so i decided to keep for now...
     ptr = aptr->packet_build_instructions;
-    printf("build packets instructions %d\n", L_count((LINK *)ptr));
+    //printf("build packets instructions %d\n", L_count((LINK *)ptr));
 
     while (ptr != NULL) {
         if ((qptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) {
@@ -942,7 +942,7 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 //https://tools.ietf.org/html/rfc1323
 // Incomplete but within 1 day it should emulate Linux, Windows, and Mac...
 // we need access to the attack structure due to the timestampp generator having a response portion from the opposide sides packets
-// !!! finish building tcp options data for the header
+// *** finish building tcp options data for the header
 int PacketTCPBuildOptions(PacketBuildInstructions *iptr) {
     // later we nede to access parameters in aptr to build correctly (os emulation)
     AS_attacks *aptr = iptr->aptr;

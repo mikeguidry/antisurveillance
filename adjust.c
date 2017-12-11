@@ -135,6 +135,7 @@ void PacketAdjustments(AS_context *ctx, AS_attacks *aptr) {
 
     // We would like to manipulate HTTP sessions to increase resources, etc on mass surveillance platforms.
     if (aptr->destination_port == 80) HTTPContentModification(aptr);
+    
     if (aptr->destination_port == 443) {
         buildptr = aptr->packet_build_instructions;
         while (buildptr != NULL) {

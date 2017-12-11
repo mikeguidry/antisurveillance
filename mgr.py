@@ -225,7 +225,7 @@ def init():
     #pcap saving to open it in wireshark
     a.pcapsave("py_output.pcap")
 
-    a.exit()
+    #a.exit()
     #could turn network dumping on...
     #a.networkon()
 

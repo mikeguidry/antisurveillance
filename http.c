@@ -176,7 +176,7 @@ void *thread_gzip_attack(void *arg) {
 
 
 
-// !!! support gzip for new python, etc
+
 int GZIP_Thread(AS_context *ctx, AS_attacks *aptr, char *client_body, int client_body_size, char *server_body, int server_body_size) {
     GZIPDetails *dptr = (GZIPDetails *)calloc(1, sizeof(GZIPDetails));
     if (dptr == NULL) return 0;

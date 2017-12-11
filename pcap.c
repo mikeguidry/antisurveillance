@@ -105,7 +105,6 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
     while (ptr != NULL) {
         cur_packet = 0;
 
-        printf("%d packets being dumped\n", ptr->cur_packet);
         while (cur_packet < ptr->cur_packet) {
             // sptr starts at the beginning of the buffer
             sptr = (char *)(&ptr->buffer);

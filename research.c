@@ -1046,7 +1046,6 @@ TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_a
 }
 
 
-
 static int icount = 0;
 // When we initialize using Traceroute_Init() it added a filter for ICMP, and set this function
 // as the receiver for any packets seen on the wire thats ICMP
@@ -1066,22 +1065,22 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     struct icmphdr *icmp = NULL;
     struct icmp6_hdr *icmp6 = NULL;
 
-    printf("Traceroute_IncomingICMP()\n");
+    //printf("Traceroute_IncomingICMP()\n");
 
     if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
-        printf("ipv4 Getting our own packets.. probably loopback\n");
+        //printf("ipv4 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     if (!iptr->source_ip && CompareIPv6Addresses(&ctx->my_addr_ipv6, &iptr->source_ipv6)) {
-        printf("ipv6 Getting our own packets.. probably loopback\n");
+        //printf("ipv6 Getting our own packets.. probably loopback\n");
         return 0;
     }
 
     
     // data isnt big enough to contain the identifier
     if (iptr->source_ip) {
-        printf("ipv4\n");
+        //printf("ipv4\n");
 
         if (iptr->data_size >= (20 + sizeof(struct udphdr))) {
 
@@ -1097,28 +1096,28 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
             }
         } else {
 
-            printf("size off\n");
+            //printf("size off\n");
 
             goto end;
  
         }
     } else {
-        printf("ICMP v6\n");
+        //printf("ICMP v6\n");
 
-        printf("type %d code %d checksum %X\n", iptr->icmp6.icmp6_type, iptr->icmp6.icmp6_code, iptr->icmp6.icmp6_cksum);
+        //printf("type %d code %d checksum %X\n", iptr->icmp6.icmp6_type, iptr->icmp6.icmp6_code, iptr->icmp6.icmp6_cksum);
 
         if (iptr->data_size >= (48 + sizeof(struct udphdr))) {
-            printf("its ok\n");
+            //printf("its ok\n");
 
             udph = ((char *)(iptr->data) + 48);
-printf("ident %d ttl %d\n", ntohs(udph->source), ntohs(udph->dest) - 1024);
+            //printf("ident %d ttl %d\n", ntohs(udph->source), ntohs(udph->dest) - 1024);
             if (ntohs(udph->dest) >= 1024) {
                 // we assume its correct if its >1024... in reality if someone screws with this by spoofing..
                 // whats it really going to accomplish?.. not much.
                 identifier = ntohs(udph->source);
                 ttl = ntohs(udph->dest) - 1024;
 
-                printf("IPv6 incoming traceroute respopnse\n");
+                //printf("IPv6 incoming traceroute respopnse\n");
             }
             
         } else {
@@ -1142,7 +1141,7 @@ printf("ident %d ttl %d\n", ntohs(udph->source), ntohs(udph->dest) - 1024);
         //printf("got from data\n");
     }
     */
-    printf("incoming icmp ttl %d identifier %u\n", ttl, identifier);
+    //printf("incoming icmp ttl %d identifier %u\n", ttl, identifier);
     // this function is mainly to process quickly.. so we will fill another structure so that it can get processed
     // later again with calculations directly regarding its query
 
@@ -1598,7 +1597,10 @@ int Spider_Save(AS_context *ctx) {
 
     // open file for writing traceroute queues...
     sprintf(fname, "traceroute.dat");
-    fd = fopen(fname, "wb");
+    if ((fd = fopen(fname, "wb")) == NULL) {
+        fprintf(stderr, "couldnt open filename %s\n", fname);
+        return -1;
+    }
 
 
     //Traceroute_FillAll(ctx);
@@ -3052,26 +3054,29 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
     char google_ipv6[] = "2607:f8b0:4000:811::200e";
     int r = 0;
     int diff = 0;
-    char *ipv6_seed_ips[] = {
-        "2607:f8b0:4000:801::2003", "2607:f8b0:4000:811::200e" ,
-
-    NULL };
+    char *ipv6_seed_ips[] = { "2607:f8b0:4000:801::2003", "2607:f8b0:4000:811::200e" , NULL };
 
     // we can use gathered ips from packet sniffing instead of static doner IPs..
     IPAddresses *iptr = IPAddressesPtr(ctx, country);
     TracerouteQueue *qptr = NULL;
 
+    // quick hack to get launchable...
+    if (iptr == NULL && ctx->ipv6_gen_any) {
+        //if we couldnt get it for a specific country... then lets get any
+        iptr = ctx->ip_list;
+        while (iptr != NULL) {
+            if (iptr->v6_count) break;
+            iptr = iptr->next;
+        }
+    }
 
     if (iptr == NULL || !iptr->v6_count) {
-        //printf("adding google\n");
         // turn ascii google ipv6 into binary prepared for network
         for (i = 0; ipv6_seed_ips[i] != NULL; i++) {
-            printf("Adding IPv6 seed: %s\n", ipv6_seed_ips[i]);
             IP_prepare(ipv6_seed_ips[i], NULL, &ipv6, NULL);
 
             // add it as a traceroute queue
-            qptr = Traceroute_Queue(ctx, 0, &ipv6);
-            if (qptr) {
+            if ((qptr = Traceroute_Queue(ctx, 0, &ipv6)) != NULL) {
                 qptr->priority = 1;
                 qptr->enabled = 1;
                 qptr->completed = 0;
@@ -3090,8 +3095,10 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
     // copy rando IPv6 from the list
     CopyIPv6Address(&doner_ipv6, &iptr->v6_addresses[r]);
 
+    // we dont wanna modify the  IP addresses TOO much
     for (i = 0; i < sizeof(struct in6_addr); i++) {
-        sptr[i] += -4 + (rand()%10);
+        if ((rand()%100) < 70)
+            sptr[i] += -4 + (rand()%10);
     }
 
     /*
@@ -3113,14 +3120,12 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
 
 
 
+    // just a debug message to present to the user the IP, and geo
     if (ctx->geoipv6_handle) {
         geo = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, ipv6);
         if (geo != NULL) {
-
             // found geo we want
             if (strcmp(geo, country)==0) {
-                
-
                 IP = (char *)IP_prepare_ascii(0, &ipv6);
 
                 if (IP != NULL) {
@@ -3493,7 +3498,7 @@ int Research_Intel_Perform(AS_context *ctx) {
 }
 
 
-// !!!
+// ***
 // write, and link to python for script
 int Research_SyslogSend(AS_context *ctx, uint32_t ip, struct in6_addr ipv6, char *data, int size) {
     int ret = -1;

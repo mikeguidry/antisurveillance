@@ -130,6 +130,8 @@ int AS_perform(AS_context *ctx) {
     // traceroute, blackhole, scripting?, timers?
     Subsystems_Perform(ctx);
 
+    ctx->free_memory = FreeMemoryMB();
+    
     return 1;
 }
 
@@ -198,10 +200,18 @@ AS_context *AS_ctx_new() {
     // allocate memory for the main context
     if ((ctx = (AS_context *)calloc(1, sizeof(AS_context))) == NULL) return NULL;
 
+
+    if ((ctx->network_interface = getgatewayandiface()) == NULL) {
+        fprintf(stderr, "error getting default network interface!\n");
+        exit(-1);
+    }
+
+
     // 25 pools waiting initially for reading packets..
     ctx->initial_pool_count = 0;
     ctx->iterations_per_loop = 5;
     ctx->http_discovery_add_always = 1;
+    ctx->ipv6_gen_any = 1;
     
     // pool mutex.. so we can ensure its separate
     pthread_mutex_init(&ctx->network_pool_mutex, NULL);
@@ -214,7 +224,7 @@ AS_context *AS_ctx_new() {
     attacks_init(ctx);
 
     // initialize traceroute filter & packet analysis function
-    //Traceroute_Init(ctx);
+    Traceroute_Init(ctx);
 
     // other things in research.c (geoip, etc) maybe move later or redo init/deinit
     Research_Init(ctx);
@@ -262,7 +272,7 @@ int Subsystems_Perform(AS_context *ctx) {
     network_process_incoming_buffer(ctx);
 
     // now move any current traceroute research forward
-    //Traceroute_Perform(ctx);
+    Traceroute_Perform(ctx);
 
     // now apply any changes, or further the blackhole attacks
     BH_Perform(ctx);
