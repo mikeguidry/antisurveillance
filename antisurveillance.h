@@ -62,6 +62,9 @@ typedef struct _traceroute_callback_queue GenericCallbackQueue;
 struct _http_observed_variables;
 typedef struct _http_observed_variables HTTPObservedVariables;
 
+struct _socket_context;
+typedef struct _socket_context SocketContext;
+
 
 
 // general attack structure...
@@ -337,6 +340,11 @@ typedef struct _antisurveillance_context {
 
     // each iteration we grab the amount of free memory.. we wont keep all packets for 3 seconds if its below 200 megabytes
     int free_memory;
+
+    // socket list for network api
+    SocketContext *socket_list;
+    // current fd
+    int socket_fd;
 } AS_context;
 
 

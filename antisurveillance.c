@@ -33,6 +33,7 @@ If this is the damage I can do alone... what do you  think will happen in the fu
 #include "packetbuilding.h"
 #include "http.h"
 #include "utils.h"
+#include "network_api.h"
 
 
 #define TEST
@@ -212,6 +213,8 @@ AS_context *AS_ctx_new() {
     ctx->iterations_per_loop = 5;
     ctx->http_discovery_add_always = 1;
     ctx->ipv6_gen_any = 1;
+    // start fd for sockets (increases  when used)
+    ctx->socket_fd = 0xdead0000;
     
     // pool mutex.. so we can ensure its separate
     pthread_mutex_init(&ctx->network_pool_mutex, NULL);
@@ -246,6 +249,9 @@ AS_context *AS_ctx_new() {
     // this is a subsystem which will get access to all packets to add IPv6 (mainly) addreses to use for generating new random-ish  addresses
     IPGather_Init(ctx);
 
+
+    NetworkAPI_Init(ctx);
+
     return ctx;
 }
 
@@ -279,6 +285,9 @@ int Subsystems_Perform(AS_context *ctx) {
 
     // perform http discovery looking for live http sessions in real time
     WebDiscover_Perform(ctx);
+
+    // our full socket implementation
+    NetworkAPI_Perform(ctx);
 
     return 1;
 }

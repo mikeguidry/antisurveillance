@@ -2404,7 +2404,7 @@ void GeoIP_lookup(AS_context *ctx, TracerouteQueue *qptr, TracerouteSpider *sptr
         } else {
             if (ctx->geoipv6_handle) {
                 qptr->country = GeoIP_country_code_by_ipnum_v6(ctx->geoipv6_handle, qptr->target_ipv6);
-                //qptr->asn_num = GEOIP_IPtoASN(ctx, qptr->target_ip);
+                qptr->asn_num = GEOIP_IPtoASN(ctx, qptr->target_ip);
             }
         }
     }

@@ -31,7 +31,6 @@ typedef struct _pkt_info {
 } PacketInfo;
 
 
-
 // This structure is used to contain analysis information after processing incoming PacketInfo packets.
 // It is also kept around to allow easy modifications to attack structures packets to ensure that they
 // are continously different, or have other adjustments.
