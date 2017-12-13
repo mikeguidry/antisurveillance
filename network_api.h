@@ -28,7 +28,8 @@ enum {
     SOCKET_UDP=16384,
     SOCKET_UDP_BOUND=32768,
     SOCKET_TCP=65536,
-    SOCKET_TCP_ACCEPT=131072
+    SOCKET_TCP_ACCEPT=131072,
+    SOCKET_TCP_CONNECTING=262144
 };
 
 
@@ -62,6 +63,7 @@ typedef struct _connection_context {
     int incoming;
     int completed;
     int noblock;
+    pthread_mutex_t mutex;
 } ConnectionContext;
 
 typedef struct _socket_context {
@@ -99,6 +101,7 @@ typedef struct _socket_context {
 
     // is this socket done?
     int completed;
+    pthread_mutex_t mutex;
 } SocketContext;
 
 

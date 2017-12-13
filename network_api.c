@@ -50,7 +50,7 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
 int my_accept4(int sockfd, struct sockaddr *addr,socklen_t *addrlen, int flags);
 int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
 int my_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);
-int my_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
 int my_getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
 int my_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
 
@@ -111,6 +111,9 @@ ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd) {
 
         sptr = sptr->next;
     }
+
+    if (cptr) pthread_mutex_lock(&cptr->mutex);
+
     return cptr;
 }
 
@@ -192,6 +195,9 @@ SocketContext *NetworkAPI_SocketNew(AS_context *ctx) {
         sptr->ts = time(0);
         sptr->identifier = rand()%0xFFFFFFFF;
         sptr->seq = rand()%0xFFFFFFFF;
+        pthread_mutex_init(&sptr->mutex, NULL);
+        //pthread_mutex_lock(&sptr->mutex);
+
     }
 
     return sptr;
@@ -208,14 +214,20 @@ ConnectionContext *ConnectionNew(SocketContext *sptr) {
     cptr->port = sptr->port;
     cptr->identifier = rand()%0xFFFFFFFF;
     cptr->seq = rand()%0xFFFFFFFF;
+    pthread_mutex_init(&cptr->mutex, NULL);
+
 
     // add the connection to the original socket context structure so it can get accepted by the appllication   
     L_link_ordered((LINK **)&sptr->connections, (LINK *)cptr);
     
+    pthread_mutex_lock(&cptr->mutex);
+
     return cptr;
 }
 
+
 int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+    int ret = -1;
     AS_context *ctx = NetworkAPI_CTX;
     SocketContext *sptr = NetworkAPI_SocketByFD(NetworkAPI_CTX, sockfd);
     SocketContext *pptr = NULL;
@@ -224,11 +236,10 @@ int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
     struct sockaddr_in6 conninfo6;
 
     // if we cannot find this socket... then return error
-    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL)
-        return -1;
+    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
 
     // cant have any connections waiting to be accepted if we didnt add it into the list
-    if ((cptr = sptr->connections) == NULL) return -1;
+    if ((cptr = sptr->connections) == NULL) goto end;
 
     while (cptr != NULL) {
 
@@ -238,7 +249,9 @@ int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
         cptr = cptr->next;
     }
 
-    if (cptr == NULL) return -1;
+    if (cptr == NULL) goto end;
+
+    pthread_mutex_lock(&cptr->mutex);
 
     // its no longer waiting...
     cptr->state |= ~SOCKET_TCP_ACCEPT;
@@ -265,7 +278,11 @@ int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
         }
     }
 
-    return cptr->socket_fd;
+    ret = cptr->socket_fd;
+
+    end:;
+    if (cptr) pthread_mutex_unlock(&cptr->mutex);
+    return ret;
 }
 
 
@@ -386,10 +403,17 @@ void NetworkAPI_FreeBuffers(IOBuf **ioptr) {
 
 void ConnectionsCleanup(ConnectionContext **connections) {
     ConnectionContext *cptr = NULL, *cnext = NULL, *clast = NULL;
+    int ts = time(0);
 
     cptr = *connections;
 
     while (cptr != NULL) {
+
+        pthread_mutex_lock(&cptr->mutex);
+
+        //timeout = 5 min.. (we can probably remove this for ourselves.. it could be infinite)
+        if ((ts - cptr->last_ts) > 300) cptr->completed = 1;
+
         if (cptr->completed) {
 
             NetworkAPI_FreeBuffers(&cptr->in_buf);
@@ -403,6 +427,8 @@ void ConnectionsCleanup(ConnectionContext **connections) {
             } else {
                 clast->next = cnext;
             }
+
+            pthread_mutex_unlock(&cptr->mutex);
 
             free(cptr);
 
@@ -426,7 +452,7 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
     sptr = ctx->socket_list;
     while (sptr != NULL) {
 
-        // first cleanup connections..
+        // first cleanup connections.. we need a timeout on these.. (if connecctions are idle for 5 minutes?)
         ConnectionsCleanup(&sptr->connections);
 
         // we can only cleanup this socket context if all connections are over (they are linked directly)
@@ -607,7 +633,9 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
     if (!cptr) goto end;
 
-    
+    pthread_mutex_lock(&cptr->mutex);
+
+    cptr->last_ts = time(0);
 
     // verify ACK/SEQ here...we will add last .. its irrelevant right now. things happen in serial
 
@@ -655,6 +683,8 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
     ret = 1;
 
     end:;
+    if (cptr) pthread_mutex_unlock(&cptr->mutex);
+
     return ret;
 }
 
@@ -728,12 +758,22 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
     IOBuf *ioptr = NULL;
 
-    if ((ioptr = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) return NULL;
+    if (cptr == NULL) goto end;
 
-    PtrDuplicate(buf, len, &ioptr->buf, &ioptr->size);
+    cptr->last_ts = time(0);
+
+    if ((ioptr = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
+
+    if (!PtrDuplicate(buf, len, &ioptr->buf, &ioptr->size)) {
+        free(ioptr);
+        goto end;
+    }
 
     // FIFO for connection
     L_link_ordered((LINK **)&cptr->out_buf, (LINK *)ioptr);
+
+end:;
+    if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
     return ioptr;
 }
@@ -770,12 +810,18 @@ IOBuf *NetworkAPI_BufferIncoming(int sockfd) {
     AS_context *ctx = NetworkAPI_CTX;
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
     IOBuf *ioptr = NULL;
+
+    if (cptr == NULL) goto end;
     
+    cptr->last_ts = time(0);
+
     // FIFO... pop from beginning
     if (cptr->in_buf) {
         ioptr = cptr->in_buf;
         cptr->in_buf = ioptr->next;
     }
+end:;
+    if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
     return ioptr;
 }
@@ -799,13 +845,13 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
     }
 
     // if nothing there.. we are done
-    if (!size) return NULL;
+    if (!size) goto end;
     // now build a single buffer to handle everything
-    if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) return NULL;
+    if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
 
     if ((ret->buf = malloc(size)) == NULL) {
         free(ret);
-        return NULL;
+        goto end;
     }
 
     ret->size = size;
@@ -828,16 +874,22 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
     // we consolidated all of the buffers
     cptr->in_buf = ret;
 
+end:;
+    if (cptr) pthread_mutex_unlock(&cptr->mutex);
+
     return ret;
 }
 
 int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
+    int ret = 0;
     AS_context *ctx = NetworkAPI_CTX;
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
     // consolidate first...
     IOBuf *ioptr = NetworkAPI_ConsolidateIncoming(sockfd);
 
-    if (!ioptr) return 0;
+    if (!ioptr) goto end;
+
+    cptr->last_ts = time(0);
 
     // now lets read as much as possible...
     if (len > ioptr->size) len = ioptr->size;
@@ -852,6 +904,9 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
         // we are done with the single buffer we consolidated.. so its empty.
         cptr->in_buf = NULL;
     }
+
+end:;
+    if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
     return len;
 }
@@ -881,13 +936,119 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
 
     ssize_t ret = NetworkAPI_ReadSocket(sockfd, buf, len);
 
-    
+    if (cptr) {
+        pthread_mutex_unlock(&cptr->mutex);
+    }
+
     return ret;
 }
 
 
-int my_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+// !!! support ipv4 (sockaddr to sockaddr6), etc
+int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
     AS_context *ctx = NetworkAPI_CTX;
+    SocketContext *sptr = NetworkAPI_SocketByFD(ctx, sockfd);
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
+    PacketBuildInstructions *bptr = NULL;
+    int start = 0;
+    int state = 0;
+    int r = 0;
+    int ret = 0;
 
+    if (sptr == NULL) return -1;
+
+    if (cptr == NULL) {
+        if ((cptr = (ConnectionContext *)calloc(1, sizeof(ConnectionContext))) == NULL) {
+            return -1;
+        } else {
+            pthread_mutex_init(&cptr->mutex);
+
+            // init mutex here...
+            L_link_ordered((LINK **)&sptr->connections, (LINK *)cptr);
+        }
+    }
+
+    pthread_mutex_lock(&cptr->mutex);
+
+    if (addrlen == sizeof(struct sockaddr)) {
+        memcpy(&cptr->address_ipv4, addr, addrlen);
+    }
+
+    cptr->ts = time(0);
+    cptr->port = sptr->port;
+    cptr->identifier = rand()%0xFFFFFFFF;
+    cptr->seq = rand()%0xFFFFFFFF;
+
+    // generate SYN packet
+    if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) {
+        pthread_mutex_unlock(&cptr->mutex);
+        return NULL;
+    }
+
+    bptr->flags = TCP_FLAG_SYN|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW;
+    bptr->ttl = sptr->ttl ? sptr->ttl : 64;
+
+    // ipv4?
+    //if (iptr->source_ip) {   
+        bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4 | PACKET_TYPE_TCP;
+
+        bptr->source_ip = get_local_ipv4();
+        bptr->destination_ip = addr->sin_addr.s_addr;
+    //}
+    /* else {
+        // or ipv6?
+        bptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6 | PACKET_TYPE_TCP;
+
+        CopyIPv6Address(&bptr->source_ipv6, &iptr->destination_ipv6);
+        CopyIPv6Address(&bptr->destination_ipv6, &iptr->source_ipv6);
+    }*/
+
+    bptr->source_port = 1024+(rand()%(65536-1024));
+    bptr->destination_port = ntohs(addr->sin_port);
+    bptr->header_identifier = cptr->identifier++;
+
+    cptr->socket_fd = sockfd;
+    bptr->ack = 0;
+    bptr->seq = cptr->seq++;
+
+    cptr->state = SOCKET_TCP|SOCKET_TCP_CONNECTING;
+
+    L_link_ordered((LINK **)&cptr->out_instructions, (LINK *)bptr);
+    
+    pthread_mutex_unlock(&cptr->mutex);
+
+    // if we ARE blocking.. give 3 seconds, and monitor for state changes
+    if (!sptr->noblock) {
+        start = time(0);
+        state = cptr->state;
+        while ((start - time(0) < 30) && !r) {
+            sleep(1);
+
+            pthread_mutex_lock(&cptr->mutex);
+            // check to see if conneccted.. or change...
+            if (cptr->state != state)
+                r = 1;
+
+            pthread_mutex_unlock(&cptr->mutex);
+        }
+
+        pthread_mutex_lock(&cptr->mutex);
+
+        if (cptr->state == state) {
+            cptr->state = SOCKET_IDLE;
+            ret = ECONNREFUSED;
+        } else {
+            if (cptr->state & SOCKET_TCP_CONNECTED) {
+                ret = 0;
+            }
+        }
+        pthread_mutex_unlock(&cptr->mutex);
+
+        goto end;
+
+    } else
+        ret = EINPROGRESS;
+
+end:;
+    return ret;
 }
