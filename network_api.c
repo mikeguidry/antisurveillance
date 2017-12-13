@@ -35,6 +35,7 @@ It should be possible to slim down the entire binary to <200-300kb without pytho
 #include "identities.h"
 #include "scripting.h"
 #include "network_api.h"
+#include "instructions.h"
 #include <math.h>
 
 AS_context *NetworkAPI_CTX = NULL;
@@ -544,7 +545,7 @@ void NetworkAPI_TransmitICMP(AS_context *ctx, ConnectionContext *cptr, IOBuf *io
 
         // build final packet for wire..
         if (iptr->type & PACKET_TYPE_ICMP_6)
-            i = BuildSingleICMP 6Packet(iptr);
+            i = BuildSingleICMP6Packet(iptr);
         else if (iptr->type & PACKET_TYPE_ICMP_4)
             i = BuildSingleICMP4Packet(iptr);
 
@@ -559,11 +560,6 @@ void NetworkAPI_TransmitICMP(AS_context *ctx, ConnectionContext *cptr, IOBuf *io
     end:;
 }
 
-// verify the incoming ACK against recent packet SEQs + log the SEQ as the remote SEQ for the next packet..
-void NetworkAPI_SequenceVerify(AS_context *ctx, ConnectionContext *cptr, PacketBuildInstructions *iptr) {
-
-}
-
 
 
 void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *ioptr, OutgoingPacketQueue *optr) {
@@ -572,24 +568,24 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
    
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
-        iptr->ttl = cptr->socket->ttl;
-    
         iptr->type = PACKET_TYPE_TCP_4|PACKET_TYPE_TCP;
-
+        // !!! maybe disable PSH
+        iptr->flags = TCP_FLAG_PSH|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
+        iptr->ttl = cptr->socket->ttl;
+        iptr->tcp_window_size = 1500 - (20*2+12);
         iptr->destination_ip = ioptr->addr.sin_addr.s_addr;
         iptr->source_ip = ctx->my_addr_ipv4;
-
         iptr->source_port = cptr->port;
         iptr->destination_port = ntohs(ioptr->addr.sin_port);
-
-        iptr->data_size = ioptr->size;
         iptr->header_identifier = cptr->identifier++;
 
-        iptr->seq = cptr->seq++;
+        iptr->seq = cptr->seq;
+        iptr->ack = cptr->remote_seq;
 
         //log seq to ioptr structure for verification (in case we have  to retransmit)
         ioptr->seq = iptr->seq;
 
+        iptr->data_size = ioptr->size;
         if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
             memcpy(iptr->data, ioptr->buf, ioptr->size);    
         }
@@ -818,9 +814,47 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
                     cptr->out_buf->verified = 1;
                     // log remote SEQ for next packet transmission
                     cptr->remote_seq = iptr->seq;
+
+                    // increase seq by size of the verified packet
+                    cptr->seq += cptr->out_buf->size;
                 }
             } else {
                 // probably for an outgoing connection
+                if (cptr->state & SOCKET_TCP_CONNECTING) {
+
+                    // log remote sides sequence.. and increase ours by 1
+                    cptr->remote_seq = iptr->seq;
+                    cptr->seq++;
+
+                    // mark as connected now
+                    cptr->state |= ~SOCKET_TCP_CONNECTING;
+                    cptr->state |= SOCKET_TCP_CONNECTED;
+
+
+                    // generate ACK packet to finalize TCP/IP connection opening
+                    if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
+
+                    bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4 | PACKET_TYPE_TCP;                    
+                    bptr->flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
+
+                    bptr->ttl = sptr->ttl ? sptr->ttl : 64;
+
+
+                    bptr->source_ip = get_local_ipv4();
+                    bptr->destination_ip = cptr->address_ipv4;
+
+                    bptr->source_port = cptr->port;
+                    bptr->destination_port = cptr->remote_port;
+
+                    bptr->header_identifier = cptr->identifier++;
+
+                    cptr->socket_fd = cptr->socket_fd;
+                    bptr->ack = cptr->remote_seq;
+                    bptr->seq = cptr->seq;
+
+                    L_link_ordered((LINK **)&cptr->out_instructions, (LINK *)bptr);
+
+                }
             }
         }
 
@@ -972,24 +1006,36 @@ int SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstruct
 }
 
 // appends an outgoing buffer into a connection
+// it has to break it up by the window size....
 IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
     AS_context *ctx = NetworkAPI_CTX;
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
     IOBuf *ioptr = NULL;
+    int size = 0;
+    char *sptr = buf;
 
     if (cptr == NULL) goto end;
 
     cptr->last_ts = time(0);
 
-    if ((ioptr = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
+    // loop adding all data at max to the tcp window...
+    while (len > 0) {
+        size = min((1500 - (20*2+12)), len);
 
-    if (!PtrDuplicate(buf, len, &ioptr->buf, &ioptr->size)) {
-        free(ioptr);
-        goto end;
+        if ((ioptr = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
+
+        if (!PtrDuplicate(sptr, size, &ioptr->buf, &ioptr->size)) {
+            free(ioptr);
+            goto end;
+        }
+
+        sptr += size;
+
+        // FIFO for connection
+        L_link_ordered((LINK **)&cptr->out_buf, (LINK *)ioptr);
+
+        len -= size;
     }
-
-    // FIFO for connection
-    L_link_ordered((LINK **)&cptr->out_buf, (LINK *)ioptr);
 
 end:;
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
@@ -1194,12 +1240,16 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
 
     pthread_mutex_lock(&cptr->mutex);
 
+    // !!! 
     if (addrlen == sizeof(struct sockaddr)) {
-        memcpy(&cptr->address_ipv4, addr, addrlen);
+        //memcpy(&cptr->address_ipv4, addr, addrlen);
+        cptr->address_ipv4 = addr->sin_addr.s_addr;
+        cptr->remote_port = ntohs(addr->sin_port);
     }
 
     cptr->ts = time(0);
-    cptr->port = sptr->port;
+    // pick random source port
+    cptr->port = 1024+(rand()%(65536-1024));
     cptr->identifier = rand()%0xFFFFFFFF;
     cptr->seq = rand()%0xFFFFFFFF;
     cptr->socket = sptr;
@@ -1228,8 +1278,8 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
         CopyIPv6Address(&bptr->destination_ipv6, &iptr->source_ipv6);
     }*/
 
-    bptr->source_port = 1024+(rand()%(65536-1024));
-    bptr->destination_port = ntohs(addr->sin_port);
+    bptr->source_port = cptr->port;
+    bptr->destination_port = cptr->remote_port;
     bptr->header_identifier = cptr->identifier++;
 
     cptr->socket_fd = sockfd;
