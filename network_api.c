@@ -195,9 +195,9 @@ SocketContext *NetworkAPI_SocketNew(AS_context *ctx) {
         sptr->ts = time(0);
         sptr->identifier = rand()%0xFFFFFFFF;
         sptr->seq = rand()%0xFFFFFFFF;
+
         pthread_mutex_init(&sptr->mutex, NULL);
         //pthread_mutex_lock(&sptr->mutex);
-
     }
 
     return sptr;
@@ -214,6 +214,8 @@ ConnectionContext *ConnectionNew(SocketContext *sptr) {
     cptr->port = sptr->port;
     cptr->identifier = rand()%0xFFFFFFFF;
     cptr->seq = rand()%0xFFFFFFFF;
+    cptr->socket = sptr;
+
     pthread_mutex_init(&cptr->mutex, NULL);
 
 
@@ -479,22 +481,217 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
     }
 }
 
+void NetworkAPI_TransmitUDP(AS_context *ctx, ConnectionContext *cptr, IOBuf *ioptr, OutgoingPacketQueue *optr) {
+    int i = 0, ret = 0;
+    PacketBuildInstructions *iptr = NULL;
+   
+    // create instruction packet for the ICMP(4/6) packet building functions
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+        iptr->ttl = cptr->socket->ttl;
+    
+        iptr->type = PACKET_TYPE_UDP_4|PACKET_TYPE_UDP;
+        iptr->destination_ip = ioptr->addr.sin_addr.s_addr;
+        iptr->source_ip = ctx->my_addr_ipv4;
+
+        iptr->source_port = cptr->port;
+        iptr->destination_port = ntohs(ioptr->addr.sin_port);
+
+        iptr->data_size = ioptr->size;
+        iptr->header_identifier = cptr->identifier++;
+
+        if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
+            memcpy(iptr->data, ioptr->buf, ioptr->size);    
+        }
+
+        // build final packet for wire..
+        if (iptr->type & PACKET_TYPE_UDP_6)
+            i = BuildSingleUDP6Packet(iptr);
+        else if (iptr->type & PACKET_TYPE_UDP_4)
+            i = BuildSingleUDP4Packet(iptr);
+
+        // prepare it into final structure for wire for calling function
+        if (i == 1)
+            NetworkQueueAddBest(ctx, iptr, optr);
+    }
+
+    // we can free the temporary instruction structure we used to have the packet built
+    PacketBuildInstructionsFree(&iptr);
+   
+    end:;
+}
+
+
+
+
+void NetworkAPI_TransmitICMP(AS_context *ctx, ConnectionContext *cptr, IOBuf *ioptr, OutgoingPacketQueue *optr) {
+    int i = 0, ret = 0;
+    PacketBuildInstructions *iptr = NULL;
+   
+    // create instruction packet for the ICMP(4/6) packet building functions
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+        iptr->ttl = cptr->socket->ttl;
+    
+        iptr->type = PACKET_TYPE_ICMP_4|PACKET_TYPE_ICMP;
+        iptr->destination_ip = ioptr->addr.sin_addr.s_addr;
+        iptr->source_ip = ctx->my_addr_ipv4;
+
+        iptr->data_size = ioptr->size;
+        iptr->header_identifier = cptr->identifier++;
+
+        if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
+            memcpy(iptr->data, ioptr->buf, ioptr->size);    
+        }
+
+        // build final packet for wire..
+        if (iptr->type & PACKET_TYPE_ICMP_6)
+            i = BuildSingleICMP 6Packet(iptr);
+        else if (iptr->type & PACKET_TYPE_ICMP_4)
+            i = BuildSingleICMP4Packet(iptr);
+
+        // prepare it into final structure for wire for calling function
+        if (i == 1)
+            NetworkQueueAddBest(ctx, iptr, optr);
+    }
+
+    // we can free the temporary instruction structure we used to have the packet built
+    PacketBuildInstructionsFree(&iptr);
+   
+    end:;
+}
+
+// verify the incoming ACK against recent packet SEQs + log the SEQ as the remote SEQ for the next packet..
+void NetworkAPI_SequenceVerify(AS_context *ctx, ConnectionContext *cptr, PacketBuildInstructions *iptr) {
+
+}
+
+
+
+void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *ioptr, OutgoingPacketQueue *optr) {
+    int i = 0, ret = 0;
+    PacketBuildInstructions *iptr = NULL;
+   
+    // create instruction packet for the ICMP(4/6) packet building functions
+    if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
+        iptr->ttl = cptr->socket->ttl;
+    
+        iptr->type = PACKET_TYPE_TCP_4|PACKET_TYPE_TCP;
+
+        iptr->destination_ip = ioptr->addr.sin_addr.s_addr;
+        iptr->source_ip = ctx->my_addr_ipv4;
+
+        iptr->source_port = cptr->port;
+        iptr->destination_port = ntohs(ioptr->addr.sin_port);
+
+        iptr->data_size = ioptr->size;
+        iptr->header_identifier = cptr->identifier++;
+
+        iptr->seq = cptr->seq++;
+
+        //log seq to ioptr structure for verification (in case we have  to retransmit)
+        ioptr->seq = iptr->seq;
+
+        if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
+            memcpy(iptr->data, ioptr->buf, ioptr->size);    
+        }
+
+        // build final packet for wire..
+        if (iptr->type & PACKET_TYPE_TCP_6)
+            i = BuildSingleTCP6Packet(iptr);
+        else if (iptr->type & PACKET_TYPE_TCP_4)
+            i = BuildSingleTCP4Packet(iptr);
+
+        // prepare it into final structure for wire for calling function
+        if (i == 1)
+            NetworkQueueAddBest(ctx, iptr, optr);
+    }
+
+    // we can free the temporary instruction structure we used to have the packet built
+    PacketBuildInstructionsFree(&iptr);
+   
+    end:;
+}
+
+
+
+
+
+void NetworkAPI_TransmitPacket(AS_context *ctx, ConnectionContext *cptr, IOBuf *ioptr, OutgoingPacketQueue *optr) {
+    if (cptr->state & SOCKET_TCP) {
+
+        NetworkAPI_TransmitTCP(ctx, cptr, ioptr, optr);
+
+    } else if (cptr->state & SOCKET_UDP) {
+
+        NetworkAPI_TransmitUDP(ctx, cptr, ioptr, optr);
+
+        // UDP auto verified.. apps take care of that...
+        ioptr->verified = 1;
+
+    } else if (cptr->state & SOCKET_ICMP) {
+
+        NetworkAPI_TransmitICMP(ctx, cptr, ioptr, optr);
+
+        // ICMP is also auto verified...
+        ioptr->verified = 1;
+    }
+}
+
 // regular loop for performing duties with our network stack
 // timeouts, packet retransmitting (if we didnt receieve an ACK), etc....
+// this mainly deals with outgoing buffers, and packet retries...
+// incoming buffers are pushed inn by another function.. and just have to wait for the application to read
 int NetworkAPI_Perform(AS_context *ctx) {
     SocketContext *sptr = NULL;
+    ConnectionContext *cptr = NULL;
+    int ts = time(0);
+    IOBuf *ioptr = NULL;
+    OutgoingPacketQueue *optr = NULL;
 
     sptr = ctx->socket_list;
     while (sptr != NULL) {
-        if (!sptr->completed) {
+
+        cptr = sptr->connections;
+        while (cptr != NULL) {
+            pthread_mutex_lock(&cptr->mutex);
+
+            //loop to see if we are prepared to distribute another packet (either first time, timeout, or next)
+            ioptr = cptr->out_buf;
+            while (ioptr != NULL) {
+                // either packet hasn't been transmitted.... or we will retransmit
+                if (!ioptr->verified && (!ioptr->transmit_ts || ((ts - ioptr->transmit_ts) > 3))) {
+                    ioptr->transmit_ts = time(0);
+
+                    // call correct packet building for this outgoing buffer
+                    NetworkAPI_TransmitPacket(ctx, cptr, ioptr, &optr);
+
+                    break;
+                }
+
+                ioptr = ioptr->next;
+            }
+
+            pthread_mutex_unlock(&cptr->mutex);
+            cptr = cptr->next;
+        }
 
             // check if we didnt receieve ack for some data we sent.. we need to resend if so.. verify against outbuf and its seq/ack
 
             // check if any connections are timmed out (5min)
+        sptr = sptr->next;
+    }
 
+    // if we have some outgoing packets from somewhere...
+    if (optr) {
+        pthread_mutex_lock(&ctx->network_queue_mutex);
+
+        if (ctx->outgoing_queue_last) {
+            ctx->outgoing_queue_last->next = optr;
+            ctx->outgoing_queue_last = optr;
+        } else {
+            ctx->outgoing_queue_last = ctx->outgoing_queue = optr;
         }
 
-        sptr = sptr->next;
+        pthread_mutex_unlock(&ctx->network_queue_mutex);
     }
 
     // socket cleanup for completed sockets
@@ -512,7 +709,8 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     sptr = ctx->socket_list;
     while (sptr != NULL) {
         if (!sptr->completed) {
-            // if filter is enabled.. verify it...
+            // if filter is enabled.. verify it... sockets can prepare this to help with the rest of the system..
+            // whenever listen() hits, or connect() can prepare that structure to only get packets designated for it
             if (FilterCheck(ctx, &sptr->flt, iptr)) {
                 // be sure both are same types (ipv4/6, and TCP/UDP/ICMP)
                 if (((sptr->state & PACKET_TYPE_IPV4) && (iptr->type & PACKET_TYPE_IPV4)) ||
@@ -610,6 +808,21 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
     // is this an ACK to some packet we sent?
     if (iptr->flags & TCP_FLAG_ACK) {
         // we need to determine if we were waiting for this ACK to push more data, or otherwise (open connection)
+        // ack for a connection could be a connecting finished being established, or a packet data being delivered
+        if (cptr) {
+            // !!! maybe check by state...we are locked anyways shrug, this kinda kills 2 birds 1 stone (instead of 2 logic checks)
+            // if there is an outgoing buffer.. its probably for an established connection
+            if (cptr->out_buf) {
+                if (iptr->ack == cptr->out_buf->seq) {
+                    // verify the packet as being delivered so we transmit the next packet.
+                    cptr->out_buf->verified = 1;
+                    // log remote SEQ for next packet transmission
+                    cptr->remote_seq = iptr->seq;
+                }
+            } else {
+                // probably for an outgoing connection
+            }
+        }
 
     }
 
@@ -643,7 +856,7 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
     cptr->last_ts = time(0);
 
-    // verify ACK/SEQ here...we will add last .. its irrelevant right now. things happen in serial
+    // !!! verify ACK/SEQ here...we will add last .. its irrelevant right now. things happen in serial
 
 
     // get the remote sides sequence for the next packet going out
@@ -939,7 +1152,7 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
     if (cptr == NULL) return -1;
     
     pthread_mutex_lock(&cptr->mutex);
-    
+
     if ((ioptr = cptr->in_buf) != NULL) {   
         // copy over the other properties used in this API
         if (*addrlen == sizeof(struct sockaddr) && src_addr)
@@ -989,6 +1202,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
     cptr->port = sptr->port;
     cptr->identifier = rand()%0xFFFFFFFF;
     cptr->seq = rand()%0xFFFFFFFF;
+    cptr->socket = sptr;
 
     // generate SYN packet
     if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) {

@@ -12,8 +12,16 @@ typedef struct _io_buf {
     int max_size;
     PacketBuildInstructions *iptr;
 
+    // transmission time.. so we can retransmit if it doesnt get an ACK
+    int transmit_ts;
+    // and the sequence of it (so we can verify against the ACK)
+    uint32_t seq;
+
+    // did we verify it? (means its done and we can free)
+    int verified;
+
     // src or dest addr...
-    struct sockaddr addr;
+    struct sockaddr_in addr;
     socklen_t addrlen;
     
 } IOBuf;
@@ -31,6 +39,10 @@ enum {
     SOCKET_TCP_ACCEPT=131072,
     SOCKET_TCP_CONNECTING=262144
 };
+
+
+struct _socket_context;
+typedef struct _socket_context SocketContext;
 
 
 typedef struct _connection_context {
@@ -62,6 +74,11 @@ typedef struct _connection_context {
     int state;
     int incoming;
     int completed;
+
+    SocketContext *socket;
+
+    // mutex is for whenever apps are performing BLOCKING actions like connect()..
+    // go figure.. non blocking is actually EASIER to support...
     int noblock;
     pthread_mutex_t mutex;
 } ConnectionContext;
@@ -118,10 +135,10 @@ ConnectionContext *ConnectionNew(SocketContext *sptr);
 void NetworkAPI_FreeBuffers(IOBuf **ioptr);
 void ConnectionsCleanup(ConnectionContext **connections);
 int NetworkAPI_Cleanup(AS_context *ctx);
-int NetworkAPI_Perform(AS_context *ctx);
 int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 PacketBuildInstructions *BuildBasePacket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr, int flags);
 int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 int SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 int SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 
+int NetworkAPI_Perform(AS_context *);
