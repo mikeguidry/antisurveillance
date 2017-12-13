@@ -512,12 +512,15 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
 
 
+    printf("processing packet\n");
+    
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
         //printf("%s:%d -> %s:%d\n", Asrc_ip, iptr->source_port, Adst_ip, iptr->destination_port);
 
         // if the packet passes the filter then call its processing function
         if (FilterCheck(ctx, nptr->flt, iptr)) {
+            printf("Filter matches.. calling custom incoming function\n");
             // maybe verify respoonse, and break the loop inn some case
             r = nptr->incoming_function(ctx, iptr);
             
@@ -917,11 +920,19 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, Outgoing
     int which_proto = 0;
     char *sptr = NULL;
     int which_protocol = 0;
+    int i = 0;
 
     if (((optr = *_optr)) == NULL) {
         *_optr = optr = OutgoingPoolGet(ctx);
-        if (optr == NULL) return -1;
+        if (optr == NULL) {
+            return -1;
+        }
     }
+
+    if (iptr->packet == NULL)
+        BuildPacketInstructions(iptr);
+
+    if (iptr->packet == NULL) return -1;
 
     // copy packet into outgoing packet queue structure (many together)
     // for speed and to not use many threads, or malloc, etc

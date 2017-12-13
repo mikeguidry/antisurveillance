@@ -275,6 +275,7 @@ typedef struct _antisurveillance_context {
 
     struct ifreq if_mac;
 
+    int traceroute_enabled;
 
     // active traceroutes
     TracerouteQueue *traceroute_queue;

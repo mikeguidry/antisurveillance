@@ -51,6 +51,8 @@ int main(int argc, char *argv[]) {
     AS_scripts *sctx = NULL;    
     int z = 0;
 
+    ctx->traceroute_enabled = 1;
+    
     // allow ctrl-c to stop script (if can you loop forever)
     signal(SIGINT, ctrlc_exit); 
 

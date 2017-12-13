@@ -73,10 +73,18 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     int ret = -1;
     int TCPHSIZE = 20;
 
-    if (PacketTCPBuildOptions(iptr) != 1) return -1;
+    //printf("build tcp4\n");
+
+    if (PacketTCPBuildOptions(iptr) != 1) {
+        //printf("failed build options\n");
+        return -1;
+    }
 
     // this is only for ipv4 tcp
-    if (!(iptr->type & PACKET_TYPE_TCP_4)) return ret;
+    if (!(iptr->type & PACKET_TYPE_TCP_4)) {
+        //printf("wrong type\n");
+        return ret;
+    }
 
     // increase the heaader by the size of the TCP options
     if (iptr->options_size) TCPHSIZE += iptr->options_size;
@@ -87,7 +95,10 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     struct packet *p = (struct packet *)final_packet;
 
     // ensure the final packet was allocated correctly
-    if (final_packet == NULL) return ret;
+    if (final_packet == NULL) {
+        //printf("couldnt alloc packet\n");
+        return ret;
+    }
     
     // IP header below
     p->ip.version 	= 4;
@@ -153,7 +164,10 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
         struct pseudo_tcp4 *p_tcp = NULL;
         char *checkbuf = (char *)calloc(1,sizeof(struct pseudo_tcp4) + TCPHSIZE + iptr->data_size);
 
-        if (checkbuf == NULL) return -1;
+        if (checkbuf == NULL) {
+            //printf("couldnt alloc for checkbuf\n");
+            return -1;
+        }
 
         p_tcp = (struct pseudo_tcp4 *)checkbuf;
 
@@ -191,9 +205,62 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     iptr->packet = (char *)final_packet;
     iptr->packet_size = final_packet_size;
 
+    //printf("ret =1\n", ret);
+
     // returning 1 here will mark it as GOOD
     return (ret = 1);
 }
+
+
+int BuildPacketInstructions(PacketBuildInstructions *ptr) {
+    PacketInfo *qptr = NULL;
+    int i = 0;
+    int n = 0;
+    int ret = 1;
+
+    // Structure containing each packet type, and their functions for building
+    // The type must diretly correlate to the  enum {} list.. in order
+    struct _packet_builders {
+        int type;
+        int (*func)(PacketBuildInstructions *);
+    } PacketBuilders[] = {
+        { PACKET_TYPE_TCP_4,    &BuildSingleTCP4Packet },
+        { PACKET_TYPE_UDP_4,    &BuildSingleUDP4Packet },
+        { PACKET_TYPE_ICMP_4,   &BuildSingleICMP4Packet },
+        { PACKET_TYPE_TCP_6,    &BuildSingleTCP6Packet },
+        { PACKET_TYPE_UDP_6,    &BuildSingleUDP6Packet },
+        { PACKET_TYPE_ICMP_6,   &BuildSingleICMP6Packet },
+        { 0, NULL }
+    };
+
+    // process each packet using its particular function for building
+    while (ptr != NULL) {
+        // find the correct function.. no longer a jump table because of ipv6 bitmask checking
+        while (PacketBuilders[n].func != NULL) {
+            if (ptr->type & PacketBuilders[n].type) {
+
+                // if building this packet fails.. lets mark this attack for deletion
+                i = PacketBuilders[n].func(ptr);
+
+                if (i != 1) {
+                    ret = 0;
+                    goto end;
+                }
+
+                break;
+            }
+            n++;
+        }
+
+        ptr->ok = 1;
+
+        ptr = ptr->next;
+    }
+end:;
+
+    return ret;
+}
+
 
 
 
@@ -224,42 +291,16 @@ void BuildPackets(AS_attacks *aptr) {
     //printf("1 build packets aptr %d completed %d\n", aptr->id, aptr->completed);
     //printf("1 count: %d\n", L_count((LINK *)aptr->packet_build_instructions));
 
-    if (ptr == NULL) {
+    if ((ptr == NULL) || (BuildPacketInstructions(ptr) != 1)) {
         aptr->completed = 1;
         return;
     }
-
-    // process each packet using its particular function for building
-    while (ptr != NULL) {
-        // find the correct function.. no longer a jump table because of ipv6 bitmask checking
-        while (PacketBuilders[n].func != NULL) {
-            if (ptr->type & PacketBuilders[n].type) {
-
-                // if building this packet fails.. lets mark this attack for deletion
-                i = PacketBuilders[n].func(ptr);
-
-                if (i != 1) {
-                    aptr->completed = 1;
-
-                    return;
-                }
-
-                break;
-            }
-            n++;
-        }
-
-        ptr->ok = 1;
-
-        ptr = ptr->next;
-    }
-
 
     // All packets were successful.. lets move them to a different structure..
     // PacketInfo is the structure used to put into the outgoing network buffer..
     // this mightt be possible to remove.. but i wanted to give some room for additional
     // protocols later.. so i decided to keep for now...
-    ptr = aptr->packet_build_instructions;
+    //ptr = aptr->packet_build_instructions;
     //printf("build packets instructions %d\n", L_count((LINK *)ptr));
 
     while (ptr != NULL) {

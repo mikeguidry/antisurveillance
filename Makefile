@@ -8,7 +8,7 @@ LIBS=-lz -lpthread -ggdb -lpython2.7_d -lpthread -ldl  -lutil -lm   -L/usr/lib -
 
 
 
-_OBJ = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o  identities.o macro.o network_api.o
+_OBJ = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o  identities.o macro.o network_api.o network_api.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
 
@@ -26,6 +26,9 @@ anti: $(OBJ)
 
 anti_static: $(OBJ) cmdline.o
 	gcc -static -o $@ $^ $(CFLAGS) $(LIBS)
+
+connecttest: $(OBJ) connecttest.o
+	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 clean:
 	rm -f anti $(ODIR)/*.o *~ core $(INCDIR)/*~ 

@@ -285,6 +285,7 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr);
 int BuildSingleTCP6Packet(PacketBuildInstructions *iptr);
 int BuildSingleUDP6Packet(PacketBuildInstructions *iptr);
 int BuildSingleICMP6Packet(PacketBuildInstructions *iptr);
+int BuildPacketInstructions(PacketBuildInstructions *iptr);
 
 unsigned short in_cksum(unsigned short *addr,int len);
 

@@ -278,8 +278,10 @@ int Subsystems_Perform(AS_context *ctx) {
     // first we process any incoming packets.. do this BEFORE traceroute since it awaits data
     network_process_incoming_buffer(ctx);
 
-    // now move any current traceroute research forward
-    Traceroute_Perform(ctx);
+    if (ctx->traceroute_enabled) {
+        // now move any current traceroute research forward
+        Traceroute_Perform(ctx);
+    }
 
     // now apply any changes, or further the blackhole attacks
     BH_Perform(ctx);

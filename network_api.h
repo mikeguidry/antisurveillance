@@ -100,6 +100,7 @@ typedef struct _socket_context {
     uint32_t remote_seq;
     uint32_t identifier;
 
+    int window;
     int ttl;
     int ts;
     int last_ts;
@@ -144,3 +145,26 @@ int SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 int SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 
 int NetworkAPI_Perform(AS_context *);
+
+
+
+ssize_t my_send(int sockfd, const void *buf, size_t len, int flags);
+ssize_t my_recv(int sockfd, void *buf, size_t len, int flags);
+ssize_t my_sendmsg(int sockfd, const struct msghdr *msg, int flags);
+ssize_t my_recvmsg(int sockfd, struct msghdr *msg, int flags);
+ssize_t my_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
+ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
+int my_accept4(int sockfd, struct sockaddr *addr,socklen_t *addrlen, int flags);
+int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
+int my_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);
+int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
+int my_getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
+int my_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
+
+// ----
+// done
+int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+int my_socket(int domain, int type, int protocol);
+int my_listen(int sockfd, int backlog);
+int my_close(int fd);
+// ----

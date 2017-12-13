@@ -729,11 +729,11 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 
     // source IP, and port from the IP/TCP headers
     iptr->source_ip = p->ip.saddr;
-    iptr->source_port = ntohs(p->tcp.dest);;//ntohs(p->tcp.source);
+    iptr->source_port = ntohs(p->tcp.source);//ntohs(p->tcp.source);
     
     // destination IP, and port from the TCP/IP headers
     iptr->destination_ip = p->ip.daddr;
-    iptr->destination_port = ntohs(p->tcp.source);;//ntohs(p->tcp.dest);
+    iptr->destination_port = ntohs(p->tcp.dest);//ntohs(p->tcp.dest);
 
     //printf("packet ports %d -> %d\n", iptr->source_port, iptr->destination_port);
     
