@@ -655,10 +655,18 @@ int NetworkAPI_Perform(AS_context *ctx) {
             while (ioptr != NULL) {
                 // either packet hasn't been transmitted.... or we will retransmit
                 if (!ioptr->verified && (!ioptr->transmit_ts || ((ts - ioptr->transmit_ts) > 3))) {
-                    ioptr->transmit_ts = time(0);
 
-                    // call correct packet building for this outgoing buffer
-                    NetworkAPI_TransmitPacket(ctx, cptr, ioptr, &optr);
+                    if (ioptr->retry++ < 5) {
+                        ioptr->transmit_ts = time(0);
+
+                        // call correct packet building for this outgoing buffer
+                        NetworkAPI_TransmitPacket(ctx, cptr, ioptr, &optr);
+                    } else {
+                        // bad.. 5*3 = 15.. in 15 seconds of nothing.. itll disconnect the connection
+                        // lets just mark connection as closed
+                        // !!! send back RST/FIN
+                        cptr->completed = 1;
+                    }
 
                     break;
                 }
@@ -770,6 +778,12 @@ PacketBuildInstructions *BuildBasePacket(AS_context *ctx, SocketContext *sptr, P
 
 
 
+/*
+notes:
+seq gets increased on validation of a packet being delivered from the ACK. this makes it simple for retransmission.. and
+the way the platform uses loops for *_Perform() its perfect...
+
+*/
 
 
 // a packet arrives here if its protocol, and type matches.. this function should determine the rest..
@@ -838,14 +852,10 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
                     bptr->flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
 
                     bptr->ttl = sptr->ttl ? sptr->ttl : 64;
-
-
                     bptr->source_ip = get_local_ipv4();
                     bptr->destination_ip = cptr->address_ipv4;
-
                     bptr->source_port = cptr->port;
                     bptr->destination_port = cptr->remote_port;
-
                     bptr->header_identifier = cptr->identifier++;
 
                     cptr->socket_fd = cptr->socket_fd;

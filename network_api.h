@@ -20,6 +20,8 @@ typedef struct _io_buf {
     // did we verify it? (means its done and we can free)
     int verified;
 
+    int retry;
+
     // src or dest addr...
     struct sockaddr_in addr;
     socklen_t addrlen;
