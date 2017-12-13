@@ -7,9 +7,15 @@ typedef struct _packet_instructions PacketBuildInstructions;
 typedef struct _io_buf {
     struct _io_buf *next;
     char *buf;
+    int ptr;
     int size;
     int max_size;
     PacketBuildInstructions *iptr;
+
+    // src or dest addr...
+    struct sockaddr addr;
+    socklen_t addrlen;
+    
 } IOBuf;
 
 #define DEF_MAX_BACKLOG 256
@@ -55,6 +61,7 @@ typedef struct _connection_context {
     int state;
     int incoming;
     int completed;
+    int noblock;
 } ConnectionContext;
 
 typedef struct _socket_context {
@@ -86,6 +93,7 @@ typedef struct _socket_context {
     int domain;
     int type;
     int protocol;
+    int noblock;
 
     FilterInformation flt;
 
@@ -98,3 +106,19 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 int NetworkAPI_Init(AS_context *ctx);
 int NetworkAPI_Perform(AS_context *ctx);
 int SocketIncoming(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
+ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd);
+SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd);
+SocketContext *NetworkAPI_SocketByStatePort(AS_context *ctx, int state, int port);
+int NetworkAPI_NewFD(AS_context *ctx);
+SocketContext *NetworkAPI_SocketNew(AS_context *ctx);
+ConnectionContext *ConnectionNew(SocketContext *sptr);
+void NetworkAPI_FreeBuffers(IOBuf **ioptr);
+void ConnectionsCleanup(ConnectionContext **connections);
+int NetworkAPI_Cleanup(AS_context *ctx);
+int NetworkAPI_Perform(AS_context *ctx);
+int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
+PacketBuildInstructions *BuildBasePacket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr, int flags);
+int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
+int SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
+int SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
+

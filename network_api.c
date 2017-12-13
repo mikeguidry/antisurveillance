@@ -39,25 +39,28 @@ It should be possible to slim down the entire binary to <200-300kb without pytho
 
 AS_context *NetworkAPI_CTX = NULL;
 
-ssize_t my_recv(int sockfd, void *buf, size_t len, int flags);
-ssize_t my_recvmsg(int sockfd, struct msghdr *msg, int flags);
-ssize_t my_send(int sockfd, const void *buf, size_t len, int flags);
-ssize_t my_sendmsg(int sockfd, const struct msghdr *msg, int flags);
 
+
+ssize_t my_send(int sockfd, const void *buf, size_t len, int flags);
+ssize_t my_recv(int sockfd, void *buf, size_t len, int flags);
+ssize_t my_sendmsg(int sockfd, const struct msghdr *msg, int flags);
+ssize_t my_recvmsg(int sockfd, struct msghdr *msg, int flags);
 ssize_t my_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
 ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
-
-int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 int my_accept4(int sockfd, struct sockaddr *addr,socklen_t *addrlen, int flags);
-
-int my_socket(int domain, int type, int protocol);
 int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
 int my_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);
 int my_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
-int my_listen(int sockfd, int backlog);
-int my_close(int fd);
 int my_getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
 int my_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
+
+// ----
+// done
+int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+int my_socket(int domain, int type, int protocol);
+int my_listen(int sockfd, int backlog);
+int my_close(int fd);
+// ----
 
 
 
@@ -86,7 +89,29 @@ int NetworkAPI_Init(AS_context *ctx) {
 
     end:;
     return ret;
+}
 
+
+// find a socket context by its file descriptor (our own virtual fds)
+ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd) {
+    SocketContext *sptr = ctx->socket_list;
+    ConnectionContext *cptr = NULL;
+
+    while (sptr != NULL) {
+        if ((cptr = sptr->connections) != NULL) {
+
+            while (cptr != NULL) {
+                if (cptr->socket_fd == fd)
+                    break;
+            
+                cptr = cptr->next;
+            }
+
+        }
+
+        sptr = sptr->next;
+    }
+    return cptr;
 }
 
 
@@ -114,6 +139,8 @@ SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd) {
     }
     return sptr;
 }
+
+
 
 // find a context by a state AND a port (or just port).. or just state
 SocketContext *NetworkAPI_SocketByStatePort(AS_context *ctx, int state, int port) {
@@ -182,7 +209,7 @@ ConnectionContext *ConnectionNew(SocketContext *sptr) {
     cptr->identifier = rand()%0xFFFFFFFF;
     cptr->seq = rand()%0xFFFFFFFF;
 
-    // add the connection to the original socket context structure so it can get accepted by the appllication
+    // add the connection to the original socket context structure so it can get accepted by the appllication   
     L_link_ordered((LINK **)&sptr->connections, (LINK *)cptr);
     
     return cptr;
@@ -230,7 +257,7 @@ int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
         } else if (*addrlen == sizeof(struct sockaddr_in6)) {
             memset(&conninfo6, 0, sizeof(struct sockaddr_in6));
 
-            conninfo6.sin6_len = sizeof(struct sockaddr_in6);
+            //conninfo6.sin6_len = sizeof(struct sockaddr_in6);
             conninfo6.sin6_family = AF_INET6;
             conninfo6.sin6_port = htons(sptr->remote_port);
 
@@ -357,12 +384,53 @@ void NetworkAPI_FreeBuffers(IOBuf **ioptr) {
     return;
 }
 
+void ConnectionsCleanup(ConnectionContext **connections) {
+    ConnectionContext *cptr = NULL, *cnext = NULL, *clast = NULL;
+
+    cptr = *connections;
+
+    while (cptr != NULL) {
+        if (cptr->completed) {
+
+            NetworkAPI_FreeBuffers(&cptr->in_buf);
+            NetworkAPI_FreeBuffers(&cptr->out_buf);
+            PacketBuildInstructionsFree(&cptr->out_instructions);
+
+            cnext = cptr->next;
+
+            if (clast == NULL) {
+                *connections = clast = cnext;
+            } else {
+                clast->next = cnext;
+            }
+
+            free(cptr);
+
+            cptr = cnext;
+
+            continue;            
+        }
+
+        clast = cptr;
+        cptr = cptr->next;
+    }
+}
+
+
+
+
 int NetworkAPI_Cleanup(AS_context *ctx) {
     SocketContext *sptr = NULL, *snext = NULL, *slast = NULL;
+    
 
     sptr = ctx->socket_list;
     while (sptr != NULL) {
-        if (sptr->completed) {
+
+        // first cleanup connections..
+        ConnectionsCleanup(&sptr->connections);
+
+        // we can only cleanup this socket context if all connections are over (they are linked directly)
+        if (sptr->completed && !L_count((LINK *)sptr->connections)) {
             snext = sptr->next;
 
             if (slast == NULL) {
@@ -444,6 +512,10 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     return ret;
 }
 
+
+
+
+
 PacketBuildInstructions *BuildBasePacket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr, int flags) {
     PacketBuildInstructions *bptr = NULL;
 
@@ -472,6 +544,9 @@ PacketBuildInstructions *BuildBasePacket(AS_context *ctx, SocketContext *sptr, P
 
     return bptr;
 }
+
+
+
 
 
 // a packet arrives here if its protocol, and type matches.. this function should determine the rest..
@@ -645,4 +720,174 @@ int SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstruct
 
     end:;
     return ret;
+}
+
+// appends an outgoing buffer into a connection
+IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
+    AS_context *ctx = NetworkAPI_CTX;
+    ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
+    IOBuf *ioptr = NULL;
+
+    if ((ioptr = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) return NULL;
+
+    PtrDuplicate(buf, len, &ioptr->buf, &ioptr->size);
+
+    // FIFO for connection
+    L_link_ordered((LINK **)&cptr->out_buf, (LINK *)ioptr);
+
+    return ioptr;
+}
+
+
+ssize_t my_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen) {
+    IOBuf *ioptr = NetworkAPI_BufferOutgoing(sockfd, (char *)buf, (int)len);
+    if (ioptr == NULL) return -1;
+
+    // copy over the other properties used in this API
+    if (addrlen == sizeof(struct sockaddr))
+        memcpy(&ioptr->addr, dest_addr, addrlen);
+
+    return ioptr->size;
+}
+
+
+
+// call sendto()
+ssize_t my_send(int sockfd, const void *buf, size_t len, int flags) {
+    return my_sendto(sockfd, buf, len, flags, NULL, 0);
+}
+
+ssize_t my_sendmsg(int sockfd, const struct msghdr *msg, int flags) {
+    //IOBuf *ioptr = NetworkAPI_BufferOutgoing(sockfd, (char *)buf, (int)len);
+    //if (ioptr == NULL) return -1;
+    //return ioptr->size;
+    return 0;
+}
+
+
+// pops the first (longest lasting) iobuf.. FIFO
+IOBuf *NetworkAPI_BufferIncoming(int sockfd) {
+    AS_context *ctx = NetworkAPI_CTX;
+    ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
+    IOBuf *ioptr = NULL;
+    
+    // FIFO... pop from beginning
+    if (cptr->in_buf) {
+        ioptr = cptr->in_buf;
+        cptr->in_buf = ioptr->next;
+    }
+
+    return ioptr;
+}
+
+
+// takes multiple IOBufs and puts them together into a single one
+IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
+    AS_context *ctx = NetworkAPI_CTX;
+    ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
+    IOBuf *ioptr = NULL, *ionext = NULL;
+    IOBuf *ret = NULL;
+    int size = 0;
+    char *sptr = NULL;
+    char *iptr = NULL;
+
+    // first get the full size
+    ioptr = cptr->in_buf;
+    while (ioptr != NULL) {
+        size += (ioptr->size - ioptr->ptr);
+        ioptr = ioptr->next;
+    }
+
+    // if nothing there.. we are done
+    if (!size) return NULL;
+    // now build a single buffer to handle everything
+    if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) return NULL;
+
+    if ((ret->buf = malloc(size)) == NULL) {
+        free(ret);
+        return NULL;
+    }
+
+    ret->size = size;
+    sptr = ret->buf;
+
+    // copy all data into the  new one now..
+    ioptr = cptr->in_buf;
+    while (ioptr != NULL) {
+        iptr = ioptr->buf + ioptr->ptr;
+
+        memcpy(sptr, iptr, ioptr->size - ioptr->ptr);
+
+        sptr += (ioptr->size - ioptr->ptr);
+
+        ionext = ioptr->next;
+        free(ioptr);
+        ioptr = ionext;
+    }
+    
+    // we consolidated all of the buffers
+    cptr->in_buf = ret;
+
+    return ret;
+}
+
+int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
+    AS_context *ctx = NetworkAPI_CTX;
+    ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
+    // consolidate first...
+    IOBuf *ioptr = NetworkAPI_ConsolidateIncoming(sockfd);
+
+    if (!ioptr) return 0;
+
+    // now lets read as much as possible...
+    if (len > ioptr->size) len = ioptr->size;
+
+    // this should be fresh at 0 since we consolidated... which set ptr to 0
+    memcpy(buf, ioptr->buf, len);
+
+    ioptr->ptr += len;
+
+    if ((ioptr->size - ioptr->ptr) == 0) {
+        free(ioptr);
+        // we are done with the single buffer we consolidated.. so its empty.
+        cptr->in_buf = NULL;
+    }
+
+    return len;
+}
+
+
+ssize_t my_recv(int sockfd, void *buf, size_t len, int flags) {
+    return NetworkAPI_ReadSocket(sockfd, buf, len);
+}
+
+
+ssize_t my_recvmsg(int sockfd, struct msghdr *msg, int flags) {
+    //NetworkAPI_ReadSocket(sockfd, buf, len);
+}
+
+
+
+ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen) {
+    AS_context *ctx = NetworkAPI_CTX;
+    ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
+    IOBuf *ioptr = NULL;
+
+    if ((ioptr = cptr->in_buf) != NULL) {   
+        // copy over the other properties used in this API
+        if (*addrlen == sizeof(struct sockaddr) && src_addr)
+            memcpy(src_addr, &ioptr->addr, *addrlen);
+    }
+
+    ssize_t ret = NetworkAPI_ReadSocket(sockfd, buf, len);
+
+    
+    return ret;
+}
+
+
+int my_connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    AS_context *ctx = NetworkAPI_CTX;
+    ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
+
 }
