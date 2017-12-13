@@ -448,7 +448,6 @@ void ConnectionsCleanup(ConnectionContext **connections) {
 int NetworkAPI_Cleanup(AS_context *ctx) {
     SocketContext *sptr = NULL, *snext = NULL, *slast = NULL;
     
-
     sptr = ctx->socket_list;
     while (sptr != NULL) {
 
@@ -488,6 +487,10 @@ int NetworkAPI_Perform(AS_context *ctx) {
     sptr = ctx->socket_list;
     while (sptr != NULL) {
         if (!sptr->completed) {
+
+            // check if we didnt receieve ack for some data we sent.. we need to resend if so.. verify against outbuf and its seq/ack
+
+            // check if any connections are timmed out (5min)
 
         }
 
@@ -600,6 +603,10 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
         cptr = cptr->next;
     }
 
+    if (cptr)
+        pthread_mutex_lock(&cptr->mutex);
+
+
     // is this an ACK to some packet we sent?
     if (iptr->flags & TCP_FLAG_ACK) {
         // we need to determine if we were waiting for this ACK to push more data, or otherwise (open connection)
@@ -613,7 +620,7 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
             if ((new_fd = NetworkAPI_NewFD(ctx)) == -1) goto end;
 
-            if ((cptr = ConnectionNew(sptr)) == NULL) goto end;
+            if (!cptr && (cptr = ConnectionNew(sptr)) == NULL) goto end;
 
             if ((bptr = (PacketBuildInstructions *)BuildBasePacket(ctx, sptr, iptr, TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW)) == NULL)
                 goto end;
@@ -629,7 +636,6 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
         goto end;
     }
-
 
     if (!cptr) goto end;
 
@@ -820,6 +826,7 @@ IOBuf *NetworkAPI_BufferIncoming(int sockfd) {
         ioptr = cptr->in_buf;
         cptr->in_buf = ioptr->next;
     }
+
 end:;
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
@@ -886,6 +893,7 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
     // consolidate first...
     IOBuf *ioptr = NetworkAPI_ConsolidateIncoming(sockfd);
+    char *sptr = NULL;
 
     if (!ioptr) goto end;
 
@@ -894,8 +902,8 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
     // now lets read as much as possible...
     if (len > ioptr->size) len = ioptr->size;
 
-    // this should be fresh at 0 since we consolidated... which set ptr to 0
-    memcpy(buf, ioptr->buf, len);
+    sptr = ioptr->buf + ioptr->ptr;
+    memcpy(buf, sptr, len);
 
     ioptr->ptr += len;
 
@@ -928,17 +936,20 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
     IOBuf *ioptr = NULL;
 
+    if (cptr == NULL) return -1;
+    
+    pthread_mutex_lock(&cptr->mutex);
+    
     if ((ioptr = cptr->in_buf) != NULL) {   
         // copy over the other properties used in this API
         if (*addrlen == sizeof(struct sockaddr) && src_addr)
             memcpy(src_addr, &ioptr->addr, *addrlen);
     }
 
-    ssize_t ret = NetworkAPI_ReadSocket(sockfd, buf, len);
 
-    if (cptr) {
-        pthread_mutex_unlock(&cptr->mutex);
-    }
+    pthread_mutex_unlock(&cptr->mutex);
+
+    ssize_t ret = NetworkAPI_ReadSocket(sockfd, buf, len);
 
     return ret;
 }
@@ -961,7 +972,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
         if ((cptr = (ConnectionContext *)calloc(1, sizeof(ConnectionContext))) == NULL) {
             return -1;
         } else {
-            pthread_mutex_init(&cptr->mutex);
+            pthread_mutex_init(&cptr->mutex, NULL);
 
             // init mutex here...
             L_link_ordered((LINK **)&sptr->connections, (LINK *)cptr);
@@ -1034,14 +1045,8 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
 
         pthread_mutex_lock(&cptr->mutex);
 
-        if (cptr->state == state) {
-            cptr->state = SOCKET_IDLE;
-            ret = ECONNREFUSED;
-        } else {
-            if (cptr->state & SOCKET_TCP_CONNECTED) {
-                ret = 0;
-            }
-        }
+        ret = (cptr->state & SOCKET_TCP_CONNECTED) ? 0 : ECONNREFUSED;
+
         pthread_mutex_unlock(&cptr->mutex);
 
         goto end;
