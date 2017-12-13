@@ -213,8 +213,9 @@ AS_context *AS_ctx_new() {
     ctx->iterations_per_loop = 5;
     ctx->http_discovery_add_always = 1;
     ctx->ipv6_gen_any = 1;
-    // start fd for sockets (increases  when used)
-    ctx->socket_fd = 0xdead0000;
+
+    // need a strategy for fds here to finish select() support for the 
+    ctx->socket_fd = 50;
     
     // pool mutex.. so we can ensure its separate
     pthread_mutex_init(&ctx->network_pool_mutex, NULL);

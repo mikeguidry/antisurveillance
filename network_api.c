@@ -3,7 +3,7 @@
 Full network stack making use of my framework.. It's needed for a few things to come shortly.  It is 'emulated' in a way where regular applications
 can use it without requiring any code changes.  This will allow LD_PRELOAD, or other manipulations to activate, and use it.
 
-I need it for a 0day, backdoors w out ports, custom VPN, etc...
+I need it for a 0day, backdoors without ports, custom VPN, etc...
 
 It should be possible to slim down the entire binary to <200-300kb without python for usage in many real world scenarios w pure C code.
 
@@ -113,6 +113,7 @@ ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd) {
         sptr = sptr->next;
     }
 
+    // always return a locked mutex.. this is for BLOCKING activites (connect, etc)
     if (cptr) pthread_mutex_lock(&cptr->mutex);
 
     return cptr;
@@ -414,6 +415,7 @@ void ConnectionsCleanup(ConnectionContext **connections) {
 
         pthread_mutex_lock(&cptr->mutex);
 
+        // !!! keep alive?
         //timeout = 5 min.. (we can probably remove this for ourselves.. it could be infinite)
         if ((ts - cptr->last_ts) > 300) cptr->completed = 1;
 
@@ -650,28 +652,41 @@ int NetworkAPI_Perform(AS_context *ctx) {
         while (cptr != NULL) {
             pthread_mutex_lock(&cptr->mutex);
 
-            //loop to see if we are prepared to distribute another packet (either first time, timeout, or next)
-            ioptr = cptr->out_buf;
-            while (ioptr != NULL) {
-                // either packet hasn't been transmitted.... or we will retransmit
-                if (!ioptr->verified && (!ioptr->transmit_ts || ((ts - ioptr->transmit_ts) > 3))) {
+            // outgoing instructions go first.. always the most important
+            if (cptr->out_instructions) {
+                // pop first instruction
+                iptr = cptr->out_instructions;
+                // fix list to the next
+                cptr->out_instructions = iptr->next;
+                // unchain this one
+                iptr->next = NULL;
+                // add into outgoing queue
+                NetworkQueueAddBest(ctx, iptr, optr); // !!! move retry to connection instead of single packet
+            } else {
 
-                    if (ioptr->retry++ < 5) {
-                        ioptr->transmit_ts = time(0);
+                //loop to see if we are prepared to distribute another packet (either first time, timeout, or next)
+                ioptr = cptr->out_buf;
+                while (ioptr != NULL) {
+                    // either packet hasn't been transmitted.... or we will retransmit
+                    if (!ioptr->verified && (!ioptr->transmit_ts || ((ts - ioptr->transmit_ts) > 3))) {
 
-                        // call correct packet building for this outgoing buffer
-                        NetworkAPI_TransmitPacket(ctx, cptr, ioptr, &optr);
-                    } else {
-                        // bad.. 5*3 = 15.. in 15 seconds of nothing.. itll disconnect the connection
-                        // lets just mark connection as closed
-                        // !!! send back RST/FIN
-                        cptr->completed = 1;
+                        if (ioptr->retry++ < 5) {
+                            ioptr->transmit_ts = time(0);
+
+                            // call correct packet building for this outgoing buffer
+                            NetworkAPI_TransmitPacket(ctx, cptr, ioptr, &optr);
+                        } else {
+                            // bad.. 5*3 = 15.. in 15 seconds of nothing.. itll disconnect the connection
+                            // lets just mark connection as closed
+                            // !!! send back RST/FIN
+                            cptr->completed = 1;
+                        }
+
+                        break;
                     }
 
-                    break;
+                    ioptr = ioptr->next;
                 }
-
-                ioptr = ioptr->next;
             }
 
             pthread_mutex_unlock(&cptr->mutex);
@@ -882,12 +897,22 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
             if ((bptr = (PacketBuildInstructions *)BuildBasePacket(ctx, sptr, iptr, TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW)) == NULL)
                 goto end;
 
-            cptr->socket_fd = new_fd;
+            bptr->ttl = sptr->ttl ? sptr->ttl : 64;
+            bptr->flags = TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
+            bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4 | PACKET_TYPE_TCP;
             bptr->ack = iptr->seq;
             bptr->seq = cptr->seq++;
+            bptr->header_identifier = cptr->identifier++;
+            bptr->source_ip = get_local_ipv4();
+            bptr->destination_ip = cptr->address_ipv4;
+            bptr->source_port = cptr->port;
+            bptr->destination_port = cptr->remote_port;
 
+            cptr->socket_fd = new_fd;
             cptr->state |= SOCKET_TCP_ACCEPT;
 
+            L_link_ordered((LINK **)&cptr->out_instructions, (LINK *)bptr);
+            
             ret = 1;
         }
 
@@ -1251,7 +1276,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
     pthread_mutex_lock(&cptr->mutex);
 
     // !!! 
-    if (addrlen == sizeof(struct sockaddr)) {
+    if ((addrlen == sizeof(struct sockaddr)) && (addr->sin_family == AF_INET)) {
         //memcpy(&cptr->address_ipv4, addr, addrlen);
         cptr->address_ipv4 = addr->sin_addr.s_addr;
         cptr->remote_port = ntohs(addr->sin_port);
@@ -1302,7 +1327,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
     
     pthread_mutex_unlock(&cptr->mutex);
 
-    // if we ARE blocking.. give 3 seconds, and monitor for state changes
+    // if we ARE blocking.. give 30 seconds, and monitor for state changes (linux timeout is somemthing like 22-25 seconds?)
     if (!sptr->noblock) {
         start = time(0);
         state = cptr->state;
@@ -1311,13 +1336,15 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
 
             pthread_mutex_lock(&cptr->mutex);
             // check to see if conneccted.. or change...
-            if (cptr->state != state)
+            if (cptr->state != state) {
                 r = 1;
+                break;
+            }
 
             pthread_mutex_unlock(&cptr->mutex);
         }
 
-        pthread_mutex_lock(&cptr->mutex);
+        //pthread_mutex_lock(&cptr->mutex);
 
         ret = (cptr->state & SOCKET_TCP_CONNECTED) ? 0 : ECONNREFUSED;
 
