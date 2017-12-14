@@ -35,6 +35,7 @@ int network_code_start(AS_context *ctx) {
     char req[] = "GET / HTTP/1.0\r\n\r\n"; // obciousslt adding headers/etc is a must
     char buf[16384];
     int retry = 2;
+    int start = time(0);
 
     // open new socket...
     if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;
@@ -72,12 +73,15 @@ int network_code_start(AS_context *ctx) {
             r = my_recv(sock, buf, sizeof(buf), 0);
 
             printf("recv: %d\ndata: \"%s\"\n", r, buf);
+            if (strstr(buf, "</html>")) break;
             //if (!r) sleep(3);
         } while (r != -1);// || retry--);
     }
 
     // close socket
     my_close(sock);
+
+    printf("%d seconds to execute\n", time(0) - start);
 
     return (r != 0);
 }
@@ -128,7 +132,7 @@ int main(int argc, char *argv[]) {
     while (1) {
         AS_perform(ctx);
         // sleep half a second.. for testing this is OK.. packet retransmit is 3 seconds for tcp/ip stack
-        //usleep(5000);
+        //usleep(1000);
     }
 
 

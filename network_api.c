@@ -839,34 +839,6 @@ IOBuf *FindIOBySeq(IOBuf *list, uint32_t seq) {
 }
 
 
-PacketBuildInstructions *BuildBasePacket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr, int flags) {
-    PacketBuildInstructions *bptr = NULL;
-
-    if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) return NULL;
-
-    bptr->flags = flags;
-    bptr->ttl = sptr->ttl ? sptr->ttl : 64;
-
-    // ipv4?
-    if (iptr->source_ip) {   
-        bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4 | PACKET_TYPE_TCP;
-
-        bptr->source_ip = iptr->destination_ip;
-        bptr->destination_ip = iptr->source_ip;
-    } else {
-        // or ipv6?
-        bptr->type = PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6 | PACKET_TYPE_TCP;
-
-        CopyIPv6Address(&bptr->source_ipv6, &iptr->destination_ipv6);
-        CopyIPv6Address(&bptr->destination_ipv6, &iptr->source_ipv6);
-    }
-
-    bptr->source_port = iptr->destination_port;
-    bptr->destination_port = iptr->source_port;
-    bptr->header_identifier = sptr->identifier++;
-
-    return bptr;
-}
 
 
 void pthread_mutex_lock2(pthread_mutex_t *mutex, int line) {
@@ -1202,6 +1174,16 @@ int SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstruct
     return ret;
 }
 
+int Count_Outgoing_Queue(IOBuf *ioptr) {
+    int count = 0;
+
+    while (ioptr != NULL) {
+        if (ioptr->verified == 0) count++;
+        ioptr = ioptr->next;
+    }
+    return count;
+}
+
 // appends an outgoing buffer into a connection
 // it has to break it up by the window size....
 IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
@@ -1210,10 +1192,27 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
     IOBuf *ioptr = NULL;
     int size = 0;
     char *sptr = buf;
+    int count = 0;
 
     if (cptr == NULL) {
         //printf("!!! no connecction\n");
         goto end;
+    }
+
+    // if there are too many unvalidated outgoing buffered packets in queue and this connection is blocking..
+    // lets wait for at least 1 more to validate before we continue
+    // some apps may break, or transmit too much data if this doesnt take plaace
+    if (!cptr->noblock) {
+        if ((count = Count_Outgoing_Queue(cptr->out_buf)) > 0) {
+            while (1) {
+                pthread_mutex_unlock(&cptr->mutex);
+                usleep(50000);
+                pthread_mutex_lock(&cptr->mutex);
+
+                // if count of validated (sent successful) changed.. then we are ready to move on
+                if (count != Count_Outgoing_Queue(cptr->out_buf))break;
+            }
+        }
     }
 
     //printf("!!! Buffer outgoing len %d\n", len);
@@ -1439,7 +1438,7 @@ end:;
 }
 
 
-ssize_t my_recv(int sockfd, void *buf, size_t len, int flags) {
+ssize_t RecvBlocking(int sockfd, void *buf, size_t len) {
     AS_context *ctx = NetworkAPI_CTX;
     ConnectionContext *cptr = NULL;
     ssize_t ret = 0;
@@ -1448,6 +1447,8 @@ ssize_t my_recv(int sockfd, void *buf, size_t len, int flags) {
         goto end;
 
     if ((cptr = NetworkAPI_ConnectionByFD(ctx, sockfd)) == NULL) goto end;
+
+    // if no data left, and completed...
     if (cptr->completed) {
         ret = -1;
         goto end;
@@ -1457,7 +1458,7 @@ ssize_t my_recv(int sockfd, void *buf, size_t len, int flags) {
         pthread_mutex_unlock(&cptr->mutex);
         cptr = NULL;
         while(1) {
-            usleep(5000);
+            usleep(50000);
 
             if ((ret = NetworkAPI_ReadSocket(sockfd, buf, len)) > 0)
                 goto end;
@@ -1471,6 +1472,10 @@ ssize_t my_recv(int sockfd, void *buf, size_t len, int flags) {
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
     return ret;
+}
+
+ssize_t my_recv(int sockfd, void *buf, size_t len, int flags) {
+    return RecvBlocking(sockfd, buf, len);
 }
 
 
@@ -1498,7 +1503,7 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
 
     pthread_mutex_unlock(&cptr->mutex);
 
-    ssize_t ret = NetworkAPI_ReadSocket(sockfd, buf, len);
+    ssize_t ret = RecvBlocking(sockfd, buf, len);
 
     return ret;
 }
@@ -1585,7 +1590,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
         state = cptr->state;
         while (((start - time(0)) < 30) && !r) {
             //printf("loop waiting for state change\n");
-            usleep(10000);
+            usleep(50000);
 
             pthread_mutex_lock(&cptr->mutex);
             // check to see if conneccted.. or change...
