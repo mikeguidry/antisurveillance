@@ -874,4 +874,13 @@ int MergeAttacks(AS_attacks *dst, AS_attacks *src) {
 // there is no way to block, filter, or slow down these types of attacks due to the core tcp/ip protocols being
 // turned on themselves
 // mass surveillance round 3.  good luck surviving... any ISP which allows ANY nation state access to this extent
-// is purely stupid
+// is purely stupid.. pretty much everyone knows NSA/US gov attaCks whomever they want.. why wouldnt they reuse
+// these networks and access to have the biggest attacks possible?  how long would it take other countrries
+// to weaponize their own IP ranges?.. anyone could technically do these attacks by rerouting BGP of a range
+// they wish to attack from through their routers, and monitoring for the portion of the connection  required to
+// reacch the TCP/IP state  required to open the  connections.. theres no way to prepare filtering it, and it
+// would destroy any web services, or TCP/IP services (which is essentially everything profitable)
+
+// so step 1 would be using surveillance manipulation to find the boxes in networks, gaining access (either by software,
+// or hardware), reusing that information to access more worldwide.. and then using technologies/softwqare like this
+// to prepare/perform attacks using those same networks

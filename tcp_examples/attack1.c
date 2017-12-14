@@ -32,7 +32,7 @@ int network_code_start() {
     int sock = 0;
     struct sockaddr_in dest;
     int r = 0;
-    char req[] = "GET / HTTP/1.0\r\n\r\n"; // obciousslt adding headers/etc is a must
+    char req[] = "GET / HTTP/1.0\r\n\r\n";
     char buf[1024];
 
     if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
@@ -62,7 +62,7 @@ int network_code_start() {
     // w load balancers, and other things in most companies this can easily be expanded
     // IF using some type of passive monitoring, or system whic can control many other IPs
     // then it can be increased substantially
-
+    
     sleep(100);
     
     //r = my_recv(sock, buf, sizeof(buf), 0);

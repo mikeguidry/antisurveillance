@@ -130,10 +130,9 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     p->tcp.ack_seq	= htonl(iptr->ack);
 
     // The TCP window relates to operating system emulation
-    //iptr->tcp_window_size = 1500 - (20*2+12);
     p->tcp.window	= htons(iptr->tcp_window_size);
 
-    //printf("tcp window: %d\n", iptr->tcp_window_size);
+    printf("tcp window: %d\n", iptr->tcp_window_size);
     
     // syn/ack used the most
     p->tcp.syn  	= (iptr->flags & TCP_FLAG_SYN) ? 1 : 0;
@@ -238,7 +237,7 @@ int BuildPacketInstructions(PacketBuildInstructions *ptr) {
 
     // process each packet using its particular function for building
     while (ptr != NULL) {
-        //printf("window szie: %d\n", ptr->tcp_window_size);
+        printf("window szie: %d\n", ptr->tcp_window_size);
         // find the correct function.. no longer a jump table because of ipv6 bitmask checking
         while (PacketBuilders[n].func != NULL) {
             if (ptr->type & PacketBuilders[n].type) {
