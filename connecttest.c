@@ -63,15 +63,16 @@ int network_code_start(AS_context *ctx) {
         // IF using some type of passive monitoring, or system whic can control many other IPs
         // then it can be increased substantially
 
-        //sleep(3);
+        sleep(6);
 
         do {
+            memset(buf,0,sizeof(buf)-1);
             //ctx->socket_list->connections->noblock=1;
             r = my_recv(sock, buf, sizeof(buf), 0);
 
             printf("recv: %d\ndata: \"%s\"\n", r, buf);
-
-            sleep(3);
+            if (!r)
+                sleep(3);
         } while (r>0);
     }
 

@@ -390,7 +390,7 @@ int my_close(int fd) {
         return -1;
 
     sptr->state = 0;
-    sptr->completed = 1;
+    sptr->completed = 2;
 
     return 0;
 }
@@ -449,7 +449,7 @@ void ConnectionsCleanup(ConnectionContext **connections) {
                 cptr->completed = 1;
             }
 
-            if (cptr->completed) {
+            if (cptr->completed == 2) {
                 printf("cleaning up a connection %p\n", cptr);
 
                 NetworkAPI_FreeBuffers(&cptr->in_buf);
@@ -635,13 +635,16 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
 
         // increase seq by size here.. instead of waiting for validation because if validation is slow and other server sends
         // more data itll respond with the wrong sequence (it wont contain the value of this packet)
-        cptr->seq += ioptr->size;
+        cptr->seq += (ioptr->size);
+
+        
 
         //log seq to ioptr structure for verification (in case we have  to retransmit)
-        ioptr->seq = iptr->seq;
+        ioptr->seq = cptr->seq;
+
 
         iptr->data_size = ioptr->size;
-        printf("\n\n!!!! buf size: %d\n", iptr->data_size);
+        //printf("\n\n!!!! buf size: %d\n", iptr->data_size);
         if ((iptr->data = (char *)calloc(1, iptr->data_size)) != NULL) {
             memcpy(iptr->data, ioptr->buf, ioptr->size);    
         }
@@ -652,7 +655,7 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
         else if (iptr->type & PACKET_TYPE_TCP_4)
             i = BuildSingleTCP4Packet(iptr);
 
-        printf("build %d\n", i);
+        //printf("build %d\n", i);
 
         // prepare it into final structure for wire for calling function
         if (i == 1)
@@ -906,7 +909,7 @@ PacketBuildInstructions *NetworkAPI_GenerateResponse(AS_context *ctx, SocketCont
 }
 
 ConnectionContext *NetworkAPI_ConnFindByRemotePort(AS_context *ctx, SocketContext *sptr, int port) {
-    ConnectionContext *cptr = sptr->connections;
+        ConnectionContext *cptr = sptr->connections;
 
     while (cptr != NULL) {
         if (!cptr->completed && (cptr->remote_port == port)) break;
@@ -979,7 +982,6 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
     // if this packet is an ACK.. we can check first to see if its some packet we sent which needs to be validated to move to the next packet
     if (iptr->flags & TCP_FLAG_ACK) {
-
         // is it a new outgoing connection?
         if (cptr->state & SOCKET_TCP_CONNECTING) {
             // log remote sides sequence.. and increase ours by 1
@@ -1017,10 +1019,11 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
         // if there is an outgoing buffer.. its probably for an established connection
         if (cptr->out_buf != NULL) {
             // does this ACK match the most recently transmitted packet? if so.. its verified
+            printf("verify %p %p\n", iptr->ack, cptr->out_buf->seq);
             if (iptr->ack == cptr->out_buf->seq) {
                 // verify the packet as being delivered so we transmit the next packet.
                 // disabled so we can remove it all here
-                //cptr->out_buf->verified = 1;
+                cptr->out_buf->verified = 1;
 
                 // free the buffer of this packet since its validated then we wont be using it for retransmission
                 free(cptr->out_buf->buf);
@@ -1046,10 +1049,6 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
     }
 
 
-    // !!! fix what happens if uint32_t overflows
-    if (iptr->seq > cptr->remote_seq) 
-        // get the remote sides sequence for the next packet going out
-        cptr->remote_seq = iptr->seq;
 
     // is this attempting to close the connection? 
     /*if ((iptr->flags & TCP_FLAG_RST) || (iptr->flags & TCP_FLAG_FIN)) {
@@ -1066,15 +1065,14 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
     }
 
     // if we have data, and we didnt find it in our buffer already.. then its new data (tcp options SACK support)
-    if (iptr->data_size && ioptr != NULL) {
-
+    if (iptr->data_size && ioptr == NULL && iptr->seq >= cptr->remote_seq) {
         // !!! we wanna verify ACK/SEQ here BEFORE allowing the data later.. for proper TCP/IP security
 
         // put data into incoming buffer for processing by calling app/functions
         if ((ioptr = (IOBuf *)calloc(1,sizeof(IOBuf))) == NULL) {
             // not enough memory to process connection data.. its done. its established so we cannot deal w that
             // !!! later we can allow tcp resuming, or whatever..
-            sptr->completed = 1;
+            sptr->completed = 2;
 
             // we dont want any other sockets processing
             ret = 1;
@@ -1088,6 +1086,7 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
         if (rseq > cptr->remote_seq) cptr->remote_seq = rseq;
 
         // we use the same data pointer...
+        
         ioptr->size = iptr->data_size;
         ioptr->buf = iptr->data;
 
@@ -1316,7 +1315,10 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
     char *iptr = NULL;
 
     // did we get a connection from this socket?
-    if (cptr == NULL) return NULL;
+    if (cptr == NULL) {
+        printf("no connection context\n");
+        return NULL;
+    }
 
     // first get the full size
     ioptr = cptr->in_buf;
@@ -1327,10 +1329,16 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
     }
 
     // if nothing there.. we are done
-    if (!size) goto end;
+    if (!size) {
+        printf("no size to consolidate\n");
+        goto end;
+    }
 
     // now build a single buffer to handle everything
-    if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
+    if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) {
+        printf("cannot allocate space for the  new buffer\n");
+        goto end;
+    }
 
     if ((ret->buf = malloc(size)) == NULL) {
         free(ret);
@@ -1349,13 +1357,17 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
 
         sptr += (ioptr->size - ioptr->ptr);
 
+        ioptr->ptr += (ioptr->size - ioptr->ptr);
+
         ionext = ioptr->next;
 
-        free(ioptr);
+        //free(ioptr->buf);
+        //free(ioptr);
 
         ioptr = ionext;
     }
     
+    ret->next = cptr->in_buf;
     // we consolidated all of the buffers
     cptr->in_buf = ret;
 
@@ -1397,6 +1409,7 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
 
     if ((ioptr->size - ioptr->ptr) == 0) {
         printf("N_RS: buffer empty\n");
+        free(ioptr->buf);
         free(ioptr);
         // we are done with the single buffer we consolidated.. so its empty.
         cptr->in_buf = NULL;
