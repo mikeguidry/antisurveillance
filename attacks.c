@@ -853,3 +853,25 @@ int MergeAttacks(AS_attacks *dst, AS_attacks *src) {
     
     return 1;
 }
+
+
+// fully open tcp connection attacks (forcing retransmissions many seconds after moving on to new connections)
+// small HTTP requests can force many more bytes returned (and continue even after opening more connections)
+// small local footprint, can use many more connections than regular stack.. and our stack can use tricks to opening
+// lots more without requiring any  RAM usage whatsoever.. or any context (syn cookie concepts turned around)
+// but can be done even further requiring no static information
+
+// these attacks from a single passive network monitoring system would allow using IP ranges in millions to attack
+// so systems which monitor passive internets can forward enough information that quantum insert requires
+// but effectively allowing it to perform massive DDoS without intrusions into single machines
+// so any network with a single intrusion, or monitoring system could  be reused into bigger attack networks
+// just another reason why massive passive monitoring is opening critical holes into the internet
+
+// all passive monitoring companies such as endace can be targetted to gain access to these networks that their
+// admins probably have access to jusst preparing to pull off bigger attacks which can shutdown anything on the web
+// fairly simply... a small app on just 1 of these systems can perform unlimited connections across (FROM) all ranges
+// that it has access to which esssentially means it can DoS any network online with these abilities immediately
+// there is no way to block, filter, or slow down these types of attacks due to the core tcp/ip protocols being
+// turned on themselves
+// mass surveillance round 3.  good luck surviving... any ISP which allows ANY nation state access to this extent
+// is purely stupid

@@ -951,6 +951,11 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 */
                 
             } else {
+
+                // need to suppor tcp window options here, or just remove SACK for real connections we are worried about, or error
+                // https://osqa-ask.wireshark.org/questions/1389/what-are-sre-and-sle
+                // it shouldnt be too difficult to support using IOBufs
+                // and also need to finish tcp packet option building.. its been awhile and its been on my list
                 
                 // probably for an outgoing connection
                 if (cptr->state & SOCKET_TCP_CONNECTING) {
@@ -1114,15 +1119,15 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
     }
     
     
-   /*  else {
-        if (iptr->flags & TCP_FLAG_ACK) {
+    else {
+        if (iptr->flags & TCP_FLAG_ACK && cptr) {
             // anything after we sent ACK+FIN from ACK... would be the last ACK coming in
             if (cptr->state & SOCKET_TCP_CLOSING) {
                 printf("closing\n");
                 cptr->completed = 1;
             }
         }
-    } */
+    } 
 
     ret = 1;
 
