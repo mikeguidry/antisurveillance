@@ -15,6 +15,7 @@ typedef struct _io_buf {
     // transmission time.. so we can retransmit if it doesnt get an ACK
     int transmit_ts;
     // and the sequence of it (so we can verify against the ACK)
+    // and SACK perm code.. seq tells us if we have the packet already
     uint32_t seq;
 
     // did we verify it? (means its done and we can free)
