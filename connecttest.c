@@ -35,43 +35,50 @@ int network_code_start(AS_context *ctx) {
     char req[] = "GET / HTTP/1.0\r\n\r\n"; // obciousslt adding headers/etc is a must
     char buf[1024];
 
-    if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
-        return -1;
-    }
+    // open new socket...
+    if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;
 
     printf("sock: %d\n", sock);
 
-    // prepare structure for our outgoing connection
+    // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
     dest.sin_addr.s_addr = inet_addr("216.58.192.143");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
 
-    // time to connect...
+    // connect to google.com port 80
     r = my_connect((int)sock, (const struct sockaddr_in *)&dest, (socklen_t)sizeof(struct sockaddr_in));
+    // did it work out? whats response..
     printf("connect: %d\n", r);
 
+    // if it worked  out.. 
     if (r == 0) {
         printf("connection established\n");
+
+        r = my_send(sock, req, sizeof(req)-1, 0);
+        printf("send: %d\n", r);
+
+        // at this stage.. 83 bytes just received 15,851 bytes in a SINGLE connection
+        // w load balancers, and other things in most companies this can easily be expanded
+        // IF using some type of passive monitoring, or system whic can control many other IPs
+        // then it can be increased substantially
+
+        //sleep(3);
+
+        do {
+            //ctx->socket_list->connections->noblock=1;
+            r = my_recv(sock, buf, sizeof(buf), 0);
+
+            printf("recv: %d\ndata: \"%s\"\n", r, buf);
+
+            sleep(3);
+        } while (r>0);
     }
 
-    r = my_send(sock, req, sizeof(req)-1, 0);
-    printf("send: %d\n", r);
-
-    // at this stage.. 83 bytes just received 15,851 bytes in a SINGLE connection
-    // w load balancers, and other things in most companies this can easily be expanded
-    // IF using some type of passive monitoring, or system whic can control many other IPs
-    // then it can be increased substantially
-
-    sleep(100);
-    
-    //r = my_recv(sock, buf, sizeof(buf), 0);
-    //printf("recv: %d\n", r);
-
-
+    // close socket
+    my_close(sock);
 
     return (r != 0);
-
 }
 
 

@@ -1113,13 +1113,8 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
         // calculate always since our connection structure may be in the 'future' compared to this retransmitted packet
         bptr->ack = iptr->seq + iptr->data_size;
 
-        if (iptr->flags & TCP_FLAG_PSH) printf("f PSH\n");
-        if (iptr->flags & TCP_FLAG_SYN) printf("f SYN\n");
-    
         // if its a FIN packet.. lets send back FIN with this ACK, and  mark as closing (so we cut it after the  next packet which will be ACK)
         if (iptr->flags & TCP_FLAG_FIN) {
-            printf("f FIN\n");
-
             bptr->ack++;
             // add FIN to the packet that is about to go out
             // !!! this FIN is always going out.. sommetimes i see PSH|FIN|ACK and it waits for retransmission???
@@ -1288,7 +1283,7 @@ ssize_t my_sendmsg(int sockfd, const struct msghdr *msg, int flags) {
 
 
 // pops the first (longest lasting) iobuf.. FIFO
-IOBuf *NetworkAPI_BufferIncoming(int sockfd) {
+IOBuf *NetworkAPI_BufferGetIncoming(int sockfd) {
     AS_context *ctx = NetworkAPI_CTX;
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
     IOBuf *ioptr = NULL;
@@ -1320,6 +1315,7 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
     char *sptr = NULL;
     char *iptr = NULL;
 
+    // did we get a connection from this socket?
     if (cptr == NULL) return NULL;
 
     // first get the full size
@@ -1363,11 +1359,15 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
     // we consolidated all of the buffers
     cptr->in_buf = ret;
 
+    printf("Consolidated incoming buffer of %d size\n", size);
+
 end:;
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
     return ret;
 }
+
+
 
 int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
     int ret = 0;
@@ -1378,7 +1378,10 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
     ConnectionContext *cptr = NetworkAPI_ConnectionByFD(ctx, sockfd);
     char *sptr = NULL;
 
-    if (!ioptr) goto end;
+    if (!ioptr) {
+        printf("N_RS: No buffer\n");
+        goto end;
+    }
 
     cptr->last_ts = time(0);
 
@@ -1390,7 +1393,10 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
 
     ioptr->ptr += len;
 
+    ret = len;
+
     if ((ioptr->size - ioptr->ptr) == 0) {
+        printf("N_RS: buffer empty\n");
         free(ioptr);
         // we are done with the single buffer we consolidated.. so its empty.
         cptr->in_buf = NULL;
@@ -1399,7 +1405,9 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
 end:;
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
-    return len;
+    printf("N_RS: returning after copying %d bytes\n", ret);
+
+    return ret;
 }
 
 
