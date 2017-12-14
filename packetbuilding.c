@@ -130,6 +130,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     p->tcp.ack_seq	= htonl(iptr->ack);
 
     // The TCP window relates to operating system emulation
+    //iptr->tcp_window_size = 1500 - (20*2+12);
     p->tcp.window	= htons(iptr->tcp_window_size);
 
     //printf("tcp window: %d\n", iptr->tcp_window_size);

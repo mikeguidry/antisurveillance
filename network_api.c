@@ -633,6 +633,10 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
         iptr->seq = cptr->seq;
         iptr->ack = cptr->remote_seq;
 
+        // increase seq by size here.. instead of waiting for validation because if validation is slow and other server sends
+        // more data itll respond with the wrong sequence (it wont contain the value of this packet)
+        cptr->seq += ioptr->size;
+
         //log seq to ioptr structure for verification (in case we have  to retransmit)
         ioptr->seq = iptr->seq;
 
@@ -924,7 +928,7 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
                     ioptr = cptr->out_buf->next;
 
                     // increase  our seq by the size of that packet
-                    cptr->seq += cptr->out_buf->size;
+                    //cptr->seq += cptr->out_buf->size;
 
                     free(cptr->out_buf);
 
@@ -1035,13 +1039,13 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
     cptr->remote_seq = iptr->seq;
 
     // is this attempting to close the connection? 
-    if ((iptr->flags & TCP_FLAG_RST) || (iptr->flags & TCP_FLAG_FIN)) {
+    /*if ((iptr->flags & TCP_FLAG_RST) || (iptr->flags & TCP_FLAG_FIN)) {
         // !!! send back ACK, and our FIN here...
         cptr->completed = 1;
 
         ret = 1;
         goto end;
-    }
+    }*/
 
 
     // put data into incoming buffer for processing by calling app/functions
@@ -1083,7 +1087,14 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
             if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
 
             bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4 | PACKET_TYPE_TCP;                    
+            
             bptr->flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
+
+            if (iptr->flags & TCP_FLAG_FIN) {
+                bptr->flags |= TCP_FLAG_FIN;
+
+                //cptr->state |= SOCKET_TCP_CLOSING;
+            }
 
             bptr->tcp_window_size = sptr->window_size;
             bptr->ttl = sptr->ttl ? sptr->ttl : 64;
@@ -1100,9 +1111,18 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
             L_link_ordered((LINK **)&cptr->out_instructions, (LINK *)bptr);
         }
-   
-
     }
+    
+    
+   /*  else {
+        if (iptr->flags & TCP_FLAG_ACK) {
+            // anything after we sent ACK+FIN from ACK... would be the last ACK coming in
+            if (cptr->state & SOCKET_TCP_CLOSING) {
+                printf("closing\n");
+                cptr->completed = 1;
+            }
+        }
+    } */
 
     ret = 1;
 
