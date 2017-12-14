@@ -446,7 +446,7 @@ void ConnectionsCleanup(ConnectionContext **connections) {
             // !!! keep alive?
             //timeout = 5 min.. (we can probably remove this for ourselves.. it could be infinite)
             if ((ts - cptr->last_ts) > 300) {
-                cptr->completed = 1;
+                cptr->completed = 2;
             }
 
             if (cptr->completed == 2) {
@@ -635,13 +635,10 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
 
         // increase seq by size here.. instead of waiting for validation because if validation is slow and other server sends
         // more data itll respond with the wrong sequence (it wont contain the value of this packet)
-        cptr->seq += (ioptr->size);
-
-        
+        //cptr->seq += (ioptr->size);
 
         //log seq to ioptr structure for verification (in case we have  to retransmit)
-        ioptr->seq = cptr->seq;
-
+        ioptr->seq = cptr->seq + ioptr->size;
 
         iptr->data_size = ioptr->size;
         //printf("\n\n!!!! buf size: %d\n", iptr->data_size);
@@ -755,8 +752,6 @@ int NetworkAPI_Perform(AS_context *ctx) {
             }
             cptr = cptr->next;
         }
-
-        // check if we didnt receieve ack for some data we sent.. we need to resend if so.. verify against outbuf and its seq/ack
 
         // check if any connections are timmed out (5min)
         sptr = sptr->next;
@@ -1025,6 +1020,8 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
                 // disabled so we can remove it all here
                 cptr->out_buf->verified = 1;
 
+                cptr->seq += cptr->out_buf->size;
+
                 // free the buffer of this packet since its validated then we wont be using it for retransmission
                 free(cptr->out_buf->buf);
 
@@ -1042,6 +1039,8 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
                 // log remote SEQ for next packet transmission
                 cptr->remote_seq = iptr->seq;
+
+                
 
                 goto end;
             }
