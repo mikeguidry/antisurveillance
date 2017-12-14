@@ -1351,22 +1351,31 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
     // copy all data into the  new one now..
     ioptr = cptr->in_buf;
     while (ioptr != NULL) {
-        iptr = ioptr->buf + ioptr->ptr;
 
-        memcpy(sptr, iptr, ioptr->size - ioptr->ptr);
+        if (ioptr->buf) {
+            iptr = ioptr->buf + ioptr->ptr;
 
-        sptr += (ioptr->size - ioptr->ptr);
+            memcpy(sptr, iptr, ioptr->size - ioptr->ptr);
 
-        ioptr->ptr += (ioptr->size - ioptr->ptr);
+            sptr += (ioptr->size - ioptr->ptr);
+
+            ioptr->ptr += (ioptr->size - ioptr->ptr);
+        }
 
         ionext = ioptr->next;
 
-        //free(ioptr->buf);
-        //free(ioptr);
+        if (ioptr->buf) {
+            // we wont reuse the data.. mainly just the sequence identifiers
+            free(ioptr->buf);
+
+            ioptr->buf = NULL;
+            //free(ioptr);
+        }
 
         ioptr = ionext;
     }
     
+    // put the older structures behind the consolidated (so that we dont keep accepting the same data by not finding their SEQs)
     ret->next = cptr->in_buf;
     // we consolidated all of the buffers
     cptr->in_buf = ret;
