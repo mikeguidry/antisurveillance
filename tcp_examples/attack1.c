@@ -1,3 +1,15 @@
+/* syn floods are one thing.. i dont think anyone put any smarter attacks into mass usage..
+   ddos 2.0
+
+   phantomJS, or other programs can be used to find the biggest resources (URLs) and then attacks such as this can be performed
+
+   right now this requires dropping outgoing RST packets... 
+
+   ICMP & RST are something I'm going to visit soon to be able to manipulate mass amounts of IPs... coming shortly.. its the last final way
+   for mass surveillance to have ANY chance of filtering, or even detecting SOME of the sessions... good luck when this is done.
+
+*/
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,10 +70,16 @@ int network_code_start() {
     r = my_send(sock, req, sizeof(req)-1, 0);
     printf("send: %d\n", r);
 
+    // right here we want to begin denying anything to do with these sockets...
+    my_close(sock);
+
     // at this stage.. 83 bytes just received 15,851 bytes in a SINGLE connection
     // w load balancers, and other things in most companies this can easily be expanded
     // IF using some type of passive monitoring, or system whic can control many other IPs
     // then it can be increased substantially
+
+    // 360 more bytees came in afterwards...
+    
     
     sleep(100);
     

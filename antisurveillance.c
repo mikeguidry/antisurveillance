@@ -279,19 +279,25 @@ int Subsystems_Perform(AS_context *ctx) {
     // first we process any incoming packets.. do this BEFORE traceroute since it awaits data
     network_process_incoming_buffer(ctx);
 
-    if (ctx->traceroute_enabled) {
+    if (ctx->traceroute_enabled && L_count((LINK *)ctx->traceroute_queue)) {
         // now move any current traceroute research forward
         Traceroute_Perform(ctx);
     }
 
-    // now apply any changes, or further the blackhole attacks
-    //BH_Perform(ctx);
+    if (L_count((LINK *)ctx->blackhole_queue)) {
+        // now apply any changes, or further the blackhole attacks
+        BH_Perform(ctx);
+    }
 
-    // perform http discovery looking for live http sessions in real time
-    //WebDiscover_Perform(ctx);
+    if (ctx->http_discovery_enabled) {
+        // perform http discovery looking for live http sessions in real time
+        WebDiscover_Perform(ctx);
+    }
 
-    // our full socket implementation
-    NetworkAPI_Perform(ctx);
+    if (L_count((LINK *)ctx->socket_list)) {
+        // our full socket implementation
+        NetworkAPI_Perform(ctx);
+    }
 
     return 1;
 }
