@@ -33,7 +33,7 @@ int network_code_start(AS_context *ctx) {
     struct sockaddr_in dest;
     int r = 0;
     char req[] = "GET / HTTP/1.0\r\n\r\n"; // obciousslt adding headers/etc is a must
-    char buf[1024];
+    char buf[16384];
 
     // open new socket...
     if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;

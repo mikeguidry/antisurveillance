@@ -612,7 +612,7 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
     int i = 0, ret = 0;
     PacketBuildInstructions *iptr = NULL;
    
-   printf("transmit tcp\n");
+   //printf("transmit tcp\n");
 
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
@@ -672,7 +672,7 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
 void NetworkAPI_TransmitPacket(AS_context *ctx, ConnectionContext *cptr, IOBuf *ioptr, OutgoingPacketQueue *optr) {
     if (cptr->state & SOCKET_TCP) {
 
-        printf("transmit packet tcp\n");
+        //printf("transmit packet tcp\n");
         NetworkAPI_TransmitTCP(ctx, cptr, ioptr, optr);
 
     } else if (cptr->state & SOCKET_UDP) {
@@ -730,7 +730,7 @@ int NetworkAPI_Perform(AS_context *ctx) {
                         //printf("found outgoing buf\n");
                         // either packet hasn't been transmitted.... or we will retransmit
                         if (!ioptr->verified && (!ioptr->transmit_ts || ((ts - ioptr->transmit_ts) > 3))) {
-                            printf("new packet to transmit\n");
+                            //printf("new packet to transmit\n");
                             if (ioptr->retry++ < 5) {
                                 ioptr->transmit_ts = time(0);
 
@@ -740,7 +740,7 @@ int NetworkAPI_Perform(AS_context *ctx) {
                                 // bad.. 5*3 = 15.. in 15 seconds of nothing.. itll disconnect the connection
                                 // lets just mark connection as closed
                                 // !!! send back RST/FIN
-                                printf("marking as completed? cptr %p\n", cptr);
+                                //printf("marking as completed? cptr %p\n", cptr);
                                 cptr->completed = 1;
                             }
                             break;
@@ -1014,7 +1014,7 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
         // if there is an outgoing buffer.. its probably for an established connection
         if (cptr->out_buf != NULL) {
             // does this ACK match the most recently transmitted packet? if so.. its verified
-            printf("verify %p %p\n", iptr->ack, cptr->out_buf->seq);
+            //printf("verify %p %p\n", iptr->ack, cptr->out_buf->seq);
             if (iptr->ack == cptr->out_buf->seq) {
                 // verify the packet as being delivered so we transmit the next packet.
                 // disabled so we can remove it all here
@@ -1212,11 +1212,11 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
     char *sptr = buf;
 
     if (cptr == NULL) {
-        printf("!!! no connecction\n");
+        //printf("!!! no connecction\n");
         goto end;
     }
 
-    printf("!!! Buffer outgoing len %d\n", len);
+    //printf("!!! Buffer outgoing len %d\n", len);
 
     cptr->last_ts = time(0);
 
@@ -1225,24 +1225,24 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
         size = min((1500 - (20*2+12)), len);
 
         if ((ioptr = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) {
-            printf("!!! couldnt allocate space\n");
+            //printf("!!! couldnt allocate space\n");
             goto end;
         }
 
         if (!PtrDuplicate(sptr, size, &ioptr->buf, &ioptr->size)) {
-            printf("!!! couldnt duplicate buffer\n");
+            //printf("!!! couldnt duplicate buffer\n");
             free(ioptr);
             goto end;
         }
 
         sptr += size;
 
-        printf("!!! appendingppending buffer before: %p\n", cptr->out_buf);
+        //printf("!!! appendingppending buffer before: %p\n", cptr->out_buf);
 
         // FIFO for connection
         L_link_ordered((LINK **)&cptr->out_buf, (LINK *)ioptr);
 
-        printf("after %p\n", cptr->out_buf);
+        //printf("after %p\n", cptr->out_buf);
 
         len -= size;
     }
@@ -1315,7 +1315,7 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
 
     // did we get a connection from this socket?
     if (cptr == NULL) {
-        printf("no connection context\n");
+        //printf("no connection context\n");
         return NULL;
     }
 
@@ -1329,13 +1329,13 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
 
     // if nothing there.. we are done
     if (!size) {
-        printf("no size to consolidate\n");
+        //printf("no size to consolidate\n");
         goto end;
     }
 
     // now build a single buffer to handle everything
     if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) {
-        printf("cannot allocate space for the  new buffer\n");
+        //printf("cannot allocate space for the  new buffer\n");
         goto end;
     }
 
@@ -1382,7 +1382,7 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
     // we consolidated all of the buffers
     cptr->in_buf = ret;
 
-    printf("Consolidated incoming buffer of %d size\n", size);
+    //printf("Consolidated incoming buffer of %d size\n", size);
 
 end:;
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
@@ -1402,7 +1402,7 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
     char *sptr = NULL;
 
     if (!ioptr) {
-        printf("N_RS: No buffer\n");
+        //printf("N_RS: No buffer\n");
         goto end;
     }
 
@@ -1419,7 +1419,7 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
     ret = len;
 
     if ((ioptr->size - ioptr->ptr) == 0) {
-        printf("N_RS: buffer empty\n");
+        //printf("N_RS: buffer empty\n");
         free(ioptr->buf);
         free(ioptr);
         // we are done with the single buffer we consolidated.. so its empty.
@@ -1429,7 +1429,7 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
 end:;
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
-    printf("N_RS: returning after copying %d bytes\n", ret);
+    //printf("N_RS: returning after copying %d bytes\n", ret);
 
     return ret;
 }
@@ -1546,11 +1546,11 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
 
     // if we ARE blocking.. give 30 seconds, and monitor for state changes (linux timeout is somemthing like 22-25 seconds?)
     if (!sptr->noblock) {
-        printf("blocking connect\n");
+        //printf("blocking connect\n");
         start = time(0);
         state = cptr->state;
         while (((start - time(0)) < 30) && !r) {
-            printf("loop waiting for state change\n");
+            //printf("loop waiting for state change\n");
             usleep(10000);
 
             pthread_mutex_lock(&cptr->mutex);
