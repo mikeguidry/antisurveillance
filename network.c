@@ -47,7 +47,7 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
     while (optr != NULL) {
 
         // if the memory is below 200 megabytes, then we do not hold it for 3 seconds...
-        if (ctx->free_memory < 200) break;
+        if (ctx->free_memory && ctx->free_memory < 200) break;
 
         // be sure its existed for at least 3 seconds...
         if ((ts - optr->ts) > 3) {

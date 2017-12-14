@@ -28,7 +28,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
 
 // everything in here for testing shoold use  my_*
 // later we will takeover all of those functions correctly
-int network_code_start() {
+int network_code_start(AS_context *ctx) {
     int sock = 0;
     struct sockaddr_in dest;
     int r = 0;
@@ -80,7 +80,7 @@ int network_code_start() {
 // it should always thread off, or start a thread for AS_perform() so that the stack can function properly
 // while executing other code.. it will depend on how its integrating (IE: LD_PRELOAD, GOT, etc)
 void thread_network_test(void  *arg) {
-    int ret = network_code_start();
+    int ret = network_code_start((AS_context *)arg);
 
     printf("network code completed\n");
 

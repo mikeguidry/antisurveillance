@@ -973,6 +973,7 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 // Incomplete but within 1 day it should emulate Linux, Windows, and Mac...
 // we need access to the attack structure due to the timestampp generator having a response portion from the opposide sides packets
 // *** finish building tcp options data for the header
+// !!!
 int PacketTCPBuildOptions(PacketBuildInstructions *iptr) {
     // later we nede to access parameters in aptr to build correctly (os emulation)
     AS_attacks *aptr = iptr->aptr;

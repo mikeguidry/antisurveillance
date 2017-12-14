@@ -70,18 +70,26 @@ int network_code_start() {
     r = my_send(sock, req, sizeof(req)-1, 0);
     printf("send: %d\n", r);
 
+
     // right here we want to begin denying anything to do with these sockets...
-    my_close(sock);
+    // my_close doesnt send any RST/etc at the moment
+    // to be safe if compiled after i complete a full stack
+    ctx->socket_list = NULL;
+    //my_close(sock);
+
+    
 
     // at this stage.. 83 bytes just received 15,851 bytes in a SINGLE connection
     // w load balancers, and other things in most companies this can easily be expanded
-    // IF using some type of passive monitoring, or system whic can control many other IPs
+    // IF using some type of passive monitoring, or system which can control many other IPs
     // then it can be increased substantially
 
-    // 360 more bytees came in afterwards...
+    // 360 more bytees came in afterwards... check pcap.. happens up to 250 seconds (nearing 5min timeout)
+    // this shows how long these connections stay in memory whenever a REAL manipulative tcp/ip stack
+    // is in charge
     
     
-    sleep(100);
+    //sleep(100);
     
     //r = my_recv(sock, buf, sizeof(buf), 0);
     //printf("recv: %d\n", r);
@@ -111,23 +119,9 @@ void thread_network_test(void  *arg) {
 
 
 int main(int argc, char *argv[]) {
-    int i = 0, done = 0;
     AS_context *ctx = Antisurveillance_Init();
-    // default script is "mgr.py"
-    char *script = "net";
-    AS_scripts *sctx = NULL;    
-    int z = 0;
-
-    // find another way to get this later...
-    sctx = ctx->scripts;
-
-    // call the init() function in the script
-    PythonLoadScript(sctx, script, "init", NULL);
-    //printf("2\n");
-
 
     ctx->http_discovery_enabled = 0;
-    ctx->http_discovery_max = 0;
 
     // at this  point we should be fine to run our network code.. it should be in another thread..
     if (pthread_create(&ctx->network_write_thread, NULL, thread_network_test, (void *)ctx) != 0) {
@@ -137,8 +131,6 @@ int main(int argc, char *argv[]) {
 
     while (1) {
         AS_perform(ctx);
-        // sleep half a second.. for testing this is OK.. packet retransmit is 3 seconds for tcp/ip stack
-        //usleep(5000);
     }
 
 

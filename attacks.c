@@ -884,3 +884,7 @@ int MergeAttacks(AS_attacks *dst, AS_attacks *src) {
 // so step 1 would be using surveillance manipulation to find the boxes in networks, gaining access (either by software,
 // or hardware), reusing that information to access more worldwide.. and then using technologies/softwqare like this
 // to prepare/perform attacks using those same networks
+
+// in the end i want this, and maybe anther thing ive been holding to be a one click way to destroy any company in todays world online
+// between research, phantomJS (or other), and public (requiring public due to internet itself) giving enough information to completely
+// rip apart any companies network without requiring much to continue these attacks in every region/geo (cloud wise)
