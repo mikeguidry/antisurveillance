@@ -43,7 +43,7 @@ int network_code_start(AS_context *ctx) {
 
     // prepare structure for our outgoing connection
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("216.58.192.141");
+    dest.sin_addr.s_addr = inet_addr("216.58.192.143");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
 

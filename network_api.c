@@ -116,7 +116,7 @@ ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd) {
     }
 
     // always return a locked mutex.. this is for BLOCKING activites (connect, etc)
-    if (cptr) pthread_mutex_lock2(&cptr->mutex,__LINE__);
+    if (cptr) pthread_mutex_lock(&cptr->mutex);
 
     return cptr;
 }
@@ -228,7 +228,7 @@ ConnectionContext *ConnectionNew(SocketContext *sptr) {
     // add the connection to the original socket context structure so it can get accepted by the appllication   
     L_link_ordered((LINK **)&sptr->connections, (LINK *)cptr);
     
-    pthread_mutex_lock2(&cptr->mutex,__LINE__);
+    pthread_mutex_lock(&cptr->mutex);
 
     return cptr;
 }
@@ -257,7 +257,7 @@ int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
         // cant have any connections waiting to be accepted if we didnt add it into the list
         while (cptr != NULL) {
             // we need to lock before verifying the state since  it could change from another thread
-            pthread_mutex_lock2(&cptr->mutex,__LINE__);
+            pthread_mutex_lock(&cptr->mutex);
 
             // we have a new connection we can offer for accept()
             if (cptr->state & SOCKET_TCP_ACCEPT) break;
@@ -784,7 +784,7 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     SocketContext *sptr = NULL;
     IOBuf *bptr = NULL;
 
-    printf("\n---------------------\nIncoming packet from raw network stack\n");
+    //printf("\n---------------------\nIncoming packet from raw network stack\n");
 
     // lets see if we have any connections which want this packet
     sptr = ctx->socket_list;
@@ -794,14 +794,14 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
             // whenever listen() hits, or connect() can prepare that structure to only get packets designated for it
             if (FilterCheck(ctx, &sptr->flt, iptr)) {
 
-                printf("1 socket ipv4 %d packet ipv4 %d\n",(sptr->state & PACKET_TYPE_IPV4) , (iptr->type & PACKET_TYPE_IPV4));
-                printf("2 socket ipv6 %d packet ipv6 %d\n",(sptr->state & PACKET_TYPE_IPV6) , (iptr->type & PACKET_TYPE_IPV6));
+                //printf("1 socket ipv4 %d packet ipv4 %d\n",(sptr->state & PACKET_TYPE_IPV4) , (iptr->type & PACKET_TYPE_IPV4));
+                //printf("2 socket ipv6 %d packet ipv6 %d\n",(sptr->state & PACKET_TYPE_IPV6) , (iptr->type & PACKET_TYPE_IPV6));
 
                 // be sure both are same types (ipv4/6, and TCP/UDP/ICMP)
                 if (((sptr->state & PACKET_TYPE_IPV4) && (iptr->type & PACKET_TYPE_IPV4)) ||
                             ((sptr->state & PACKET_TYPE_IPV6) && (iptr->type & PACKET_TYPE_IPV6))) {
 
-                            printf("socket tcp %d packet type %d\n", (sptr->state & SOCKET_TCP), (iptr->type & PACKET_TYPE_TCP));
+                            //printf("socket tcp %d packet type %d\n", (sptr->state & SOCKET_TCP), (iptr->type & PACKET_TYPE_TCP));
 
                             // if its TCP then call the tcp processor
                             if ((sptr->state & SOCKET_TCP) && (iptr->type & PACKET_TYPE_TCP))
@@ -876,12 +876,6 @@ void pthread_mutex_lock2(pthread_mutex_t *mutex, int line) {
     pthread_mutex_lock(mutex);
 }
 
-/*
-notes:
-seq gets increased on validation of a packet being delivered from the ACK. this makes it simple for retransmission.. and
-the way the platform uses loops for *_Perform() its perfect...
-
-*/
 
 PacketBuildInstructions *NetworkAPI_GenerateResponse(AS_context *ctx, SocketContext *sptr, ConnectionContext *cptr, int flags) {
     PacketBuildInstructions *bptr = NULL;
@@ -911,6 +905,19 @@ PacketBuildInstructions *NetworkAPI_GenerateResponse(AS_context *ctx, SocketCont
 
 }
 
+ConnectionContext *NetworkAPI_ConnFindByRemotePort(AS_context *ctx, SocketContext *sptr, int port) {
+    ConnectionContext *cptr = sptr->connections;
+
+    while (cptr != NULL) {
+        if (!cptr->completed && (cptr->remote_port == port)) break;
+
+        cptr = cptr->next;
+    }
+
+    return cptr;
+}
+
+
 // a packet arrives here if its protocol, and type matches.. this function should determine the rest..
 int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr) {
     int ret = 0;
@@ -921,100 +928,22 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
     ConnectionContext *cptr = NULL;
     uint32_t rseq = 0;
 
-    printf("Incoming TCP packet\n");
+    //printf("Incoming TCP packet\n");
 
     // be sure both are same IP protocol ipv4 vs ipv6
     if (sptr->address_ipv4 && !iptr->source_ip)
         goto end;
 
     // verify ports equal to easily disqualify
-    if (sptr->port && (iptr->destination_port != sptr->port))// && (iptr->source_port != sptr->port))
+    if (sptr->port && (iptr->destination_port != sptr->port)) {
+        // it might be related to another socket somehow so lets just return
         goto end;
-
-    // find this connection if it exists in the list
-    cptr = sptr->connections;
-    while (cptr != NULL) {
-        if (!cptr->completed && (cptr->remote_port == iptr->source_port)) break;
-
-        cptr = cptr->next;
     }
 
-    if (cptr) {
-        pthread_mutex_lock2(&cptr->mutex,__LINE__);
-
-        printf("got connection structure\n");
-    }
-
-
-    // if this packet is an ACK.. we can check first to see if its some packet we sent which needs to be validated to move to the next packet
-    if (iptr->flags & TCP_FLAG_ACK) {
-        // we need to determine if we were waiting for this ACK to push more data, or otherwise (open connection)
-        // ack for a connection could be a connecting finished being established, or a packet data being delivered
-        if (cptr) {
-            // !!! maybe check by state...we are locked anyways shrug, this kinda kills 2 birds 1 stone (instead of 2 logic checks)
-            // if there is an outgoing buffer.. its probably for an established connection
-            if (cptr->out_buf) {
-                if (iptr->ack == cptr->out_buf->seq) {
-                    // verify the packet as being delivered so we transmit the next packet.
-                    // disabled so we can remove it all here
-                    //cptr->out_buf->verified = 1;
-
-                    // free the buffer of this packet since its validated then we wont be using it for retransmission
-                    free(cptr->out_buf->buf);
-
-                    // use as temporary value so we can free the current packet information
-                    ioptr = cptr->out_buf->next;
-
-                    // free the actual packet we were awaiting validation for
-                    free(cptr->out_buf);
-
-                    // if we had some packet instructions attached to this.. lets ensure they are free
-                    PacketBuildInstructionsFree(&cptr->out_buf->iptr);
-
-                    // move pointer in outgoing buffer to the next in our outgoing list of packets
-                    cptr->out_buf = ioptr;
-
-                    // log remote SEQ for next packet transmission
-                    cptr->remote_seq = iptr->seq;
-
-                    goto end;
-                }
-                // done with validating our packets being transmitted out...
-            } else {
-
-                // if we had no out bufs then we should check if its a new connection being connected
-
-                // SACK should be working very soon if  not now using IO buf down a bit in another portion of logic
-                // need to suppor tcp window options here, or just remove SACK for real connections we are worried about, or error
-                // https://osqa-ask.wireshark.org/questions/1389/what-are-sre-and-sle
-                // it shouldnt be too difficult to support using IOBufs
-                // and also need to finish tcp packet option building.. its been awhile and its been on my list
-                
-                // probably for an outgoing connection
-                if (cptr->state & SOCKET_TCP_CONNECTING) {
-                    // log remote sides sequence.. and increase ours by 1
-                    cptr->remote_seq = iptr->seq;
-
-                    // mark as connected now
-                    cptr->state &= ~SOCKET_TCP_CONNECTING;
-                    cptr->state |= SOCKET_TCP_CONNECTED;
-
-                    // send back ACK for this incoming ACK
-                    if ((bptr = NetworkAPI_GenerateResponse(ctx, sptr, cptr, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP)) == NULL) goto end;
-                    // this packet for connecting requires +1 for remote seq as ack
-                    bptr->ack = ++cptr->remote_seq;
-
-                    goto end;
-                }
-            }
-        }
-    }
-
-    // SYN = new  connection.. see if we are listening
-    if (iptr->flags & TCP_FLAG_SYN) {
-        // ensure the state is listening
-        if (sptr->state & SOCKET_TCP_LISTEN) {
-
+    // lets check if this is for a listening socket
+    if (sptr->state & SOCKET_TCP_LISTEN) {
+        // SYN = new  connection.. see if we are listening
+        if (iptr->flags & TCP_FLAG_SYN) {
             // allocate new file descriptor
             if ((new_fd = NetworkAPI_NewFD(ctx)) == -1) goto end;
 
@@ -1030,31 +959,94 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
             cptr->state |= SOCKET_TCP_ACCEPT;
             cptr->last_ts = time(0);
 
+            // no neeed to allow anythiing else to process this packet
             ret = 1;
-        }
 
-        goto end;
+            goto end;
+        }
     }
 
-    if (!cptr) goto end;
 
+    // anything else we expect it to be related to a connection structure
+    // if we dont have a connection structure yet then we are done.. listening sockets were already verified
+    if ((cptr = NetworkAPI_ConnFindByRemotePort(ctx, sptr, iptr->source_port)) == NULL) goto end;
+
+    // lock mutex
+    pthread_mutex_lock(&cptr->mutex);
+
+    // mark timestamp for timeout purposes
     cptr->last_ts = time(0);
 
-    // !!! verify ACK/SEQ here...we will add last .. its irrelevant right now. things happen in serial
-    // this is a bit weird with new packets  comming in while it could be retransmitting..
-    // ill work this ouut using either an arary, or verifying against inbuffers or dunno
+    // if this packet is an ACK.. we can check first to see if its some packet we sent which needs to be validated to move to the next packet
+    if (iptr->flags & TCP_FLAG_ACK) {
 
-    // orig data 0 + seq 1
-    // orig data 1 + seq 100
-    // orig data 2 + seq 200
-    // ....
-    // retransmission data 1 (seq 100) but seq = 200
-    // orig data 8 seq 800
-    // retransmission d ata 2 (seq 200) but seq = 800
+        // is it a new outgoing connection?
+        if (cptr->state & SOCKET_TCP_CONNECTING) {
+            // log remote sides sequence.. and increase ours by 1
+            cptr->remote_seq = iptr->seq;
 
-    // keep most recent seq (highest) in connection structure
+            // remove connecting state
+            cptr->state &= ~SOCKET_TCP_CONNECTING;
+            // mark as connected now
+            cptr->state |= SOCKET_TCP_CONNECTED;
+
+            // send back ACK for this incoming ACK
+            if ((bptr = NetworkAPI_GenerateResponse(ctx, sptr, cptr, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP)) == NULL) goto end;
+            
+            // this packet for connecting requires +1 for remote seq as ack
+            bptr->ack = ++cptr->remote_seq;
+
+            // nobody else needs to process this..
+            ret = 1;
+            goto end;
+        }
+
+        // is it a connection being closed? (we sent FIN)
+        // anything after we sent ACK+FIN from ACK... would be the last ACK coming in
+        // be sure its not a retransmission
+        if (cptr->state & SOCKET_TCP_CLOSING && !iptr->data_size) {
+            // connection completed... itll get closed during cleanup
+            cptr->completed = 1;
+
+            goto end;
+        }
+
+        // we need to determine if we were waiting for this ACK to push more data, or otherwise (open connection)
+        // ack for a connection could be a connecting finished being established, or a packet data being delivered
+        // !!! maybe check by state...we are locked anyways shrug, this kinda kills 2 birds 1 stone (instead of 2 logic checks)
+        // if there is an outgoing buffer.. its probably for an established connection
+        if (cptr->out_buf != NULL) {
+            // does this ACK match the most recently transmitted packet? if so.. its verified
+            if (iptr->ack == cptr->out_buf->seq) {
+                // verify the packet as being delivered so we transmit the next packet.
+                // disabled so we can remove it all here
+                //cptr->out_buf->verified = 1;
+
+                // free the buffer of this packet since its validated then we wont be using it for retransmission
+                free(cptr->out_buf->buf);
+
+                // use as temporary value so we can free the current packet information
+                ioptr = cptr->out_buf->next;
+
+                // free the actual packet we were awaiting validation for
+                free(cptr->out_buf);
+
+                // if we had some packet instructions attached to this.. lets ensure they are free
+                PacketBuildInstructionsFree(&cptr->out_buf->iptr);
+
+                // move pointer in outgoing buffer to the next in our outgoing list of packets
+                cptr->out_buf = ioptr;
+
+                // log remote SEQ for next packet transmission
+                cptr->remote_seq = iptr->seq;
+
+                goto end;
+            }
+        }
+    }
+
+
     // !!! fix what happens if uint32_t overflows
-
     if (iptr->seq > cptr->remote_seq) 
         // get the remote sides sequence for the next packet going out
         cptr->remote_seq = iptr->seq;
@@ -1075,6 +1067,9 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
     // if we have data, and we didnt find it in our buffer already.. then its new data (tcp options SACK support)
     if (iptr->data_size && ioptr != NULL) {
+
+        // !!! we wanna verify ACK/SEQ here BEFORE allowing the data later.. for proper TCP/IP security
+
         // put data into incoming buffer for processing by calling app/functions
         if ((ioptr = (IOBuf *)calloc(1,sizeof(IOBuf))) == NULL) {
             // not enough memory to process connection data.. its done. its established so we cannot deal w that
@@ -1105,6 +1100,8 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
         // thats all...append to this connections buffer
         L_link_ordered((LINK **)&cptr->in_buf, (LINK *)ioptr);
+
+        // fall through so it can send the ACK below
     }
 
     // if we have a data size, then we ALWAYS should send an ACK back.. regardless of whether it was retransmitted or not
@@ -1116,8 +1113,14 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
         // calculate always since our connection structure may be in the 'future' compared to this retransmitted packet
         bptr->ack = iptr->seq + iptr->data_size;
 
+        if (iptr->flags & TCP_FLAG_PSH) printf("f PSH\n");
+        if (iptr->flags & TCP_FLAG_SYN) printf("f SYN\n");
+    
         // if its a FIN packet.. lets send back FIN with this ACK, and  mark as closing (so we cut it after the  next packet which will be ACK)
         if (iptr->flags & TCP_FLAG_FIN) {
+            printf("f FIN\n");
+
+            bptr->ack++;
             // add FIN to the packet that is about to go out
             // !!! this FIN is always going out.. sommetimes i see PSH|FIN|ACK and it waits for retransmission???
             bptr->flags |= TCP_FLAG_FIN;
@@ -1131,15 +1134,7 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
         goto end;
     }
     
-    // is this an ACK packet?
-    if (iptr->flags & TCP_FLAG_ACK) {
-        // anything after we sent ACK+FIN from ACK... would be the last ACK coming in
-        if (cptr->state & SOCKET_TCP_CLOSING) {
-            // connection completed... itll get closed during cleanup
-            cptr->completed = 1;
-        }
-    }
-
+    // we dont want to allow anyone else to process this packet (save CPU cycles)
     ret = 1;
 
     end:;
@@ -1147,6 +1142,8 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
     return ret;
 }
+
+
 
 // process incoming udp packet, and prepare it for calling application to retrieve the data
 int SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr) {
@@ -1424,7 +1421,7 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
 
     if (cptr == NULL) return -1;
     
-    pthread_mutex_lock2(&cptr->mutex, __LINE__);
+    pthread_mutex_lock(&cptr->mutex);
 
     if ((ioptr = cptr->in_buf) != NULL) {   
         // copy over the other properties used in this API
@@ -1466,7 +1463,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
         }
     }
 
-    pthread_mutex_lock2(&cptr->mutex,__LINE__);
+    pthread_mutex_lock(&cptr->mutex);
 
     // !!!  ipv6
     if ((addrlen == sizeof(struct sockaddr)) && (addr->sin_family == AF_INET)) {
@@ -1524,7 +1521,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen) {
             printf("loop waiting for state change\n");
             usleep(10000);
 
-            pthread_mutex_lock2(&cptr->mutex,__LINE__);
+            pthread_mutex_lock(&cptr->mutex);
             // check to see if conneccted.. or change...
             if (cptr->state != state) {
                 r = 1;

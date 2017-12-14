@@ -513,7 +513,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
 
 
-    printf("processing packet\n");
+    //printf("processing packet\n");
     
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
@@ -521,7 +521,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
         // if the packet passes the filter then call its processing function
         if (FilterCheck(ctx, nptr->flt, iptr)) {
-            printf("Filter matches.. calling custom incoming function\n");
+            //printf("Filter matches.. calling custom incoming function\n");
             // maybe verify respoonse, and break the loop inn some case
             r = nptr->incoming_function(ctx, iptr);
             
