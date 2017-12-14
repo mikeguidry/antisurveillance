@@ -1369,6 +1369,9 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd) {
             free(ioptr->buf);
 
             ioptr->buf = NULL;
+
+            ioptr->ptr = 0;
+            ioptr->size = 0;
             //free(ioptr);
         }
 
