@@ -1420,10 +1420,14 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
 
     if ((ioptr->size - ioptr->ptr) == 0) {
         //printf("N_RS: buffer empty\n");
-        free(ioptr->buf);
-        free(ioptr);
+            free(ioptr->buf);
+
+            ioptr->buf = NULL;
+
+            ioptr->ptr = 0;
+            ioptr->size = 0;
         // we are done with the single buffer we consolidated.. so its empty.
-        cptr->in_buf = NULL;
+        //cptr->in_buf = NULL;
     }
 
 end:;
@@ -1436,7 +1440,37 @@ end:;
 
 
 ssize_t my_recv(int sockfd, void *buf, size_t len, int flags) {
-    return NetworkAPI_ReadSocket(sockfd, buf, len);
+    AS_context *ctx = NetworkAPI_CTX;
+    ConnectionContext *cptr = NULL;
+    ssize_t ret = 0;
+    
+    if ((ret = NetworkAPI_ReadSocket(sockfd, buf, len)) > 0)
+        goto end;
+
+    if ((cptr = NetworkAPI_ConnectionByFD(ctx, sockfd)) == NULL) goto end;
+    if (cptr->completed) {
+        ret = -1;
+        goto end;
+    }
+
+    if (!cptr->noblock) {
+        pthread_mutex_unlock(&cptr->mutex);
+        cptr = NULL;
+        while(1) {
+            usleep(5000);
+
+            if ((ret = NetworkAPI_ReadSocket(sockfd, buf, len)) > 0)
+                goto end;
+        }
+
+    }
+
+
+    end:;
+
+    if (cptr) pthread_mutex_unlock(&cptr->mutex);
+
+    return ret;
 }
 
 

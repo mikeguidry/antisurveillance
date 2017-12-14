@@ -34,6 +34,7 @@ int network_code_start(AS_context *ctx) {
     int r = 0;
     char req[] = "GET / HTTP/1.0\r\n\r\n"; // obciousslt adding headers/etc is a must
     char buf[16384];
+    int retry = 2;
 
     // open new socket...
     if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;
@@ -63,7 +64,7 @@ int network_code_start(AS_context *ctx) {
         // IF using some type of passive monitoring, or system whic can control many other IPs
         // then it can be increased substantially
 
-        sleep(6);
+        //sleep(3);
 
         do {
             memset(buf,0,sizeof(buf)-1);
@@ -71,9 +72,8 @@ int network_code_start(AS_context *ctx) {
             r = my_recv(sock, buf, sizeof(buf), 0);
 
             printf("recv: %d\ndata: \"%s\"\n", r, buf);
-            if (!r)
-                sleep(3);
-        } while (r>0);
+            //if (!r) sleep(3);
+        } while (r != -1);// || retry--);
     }
 
     // close socket
