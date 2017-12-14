@@ -1060,6 +1060,9 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
 
         printf("receiving data\n");
 
+        // append size to remote seq for ACK
+        cptr->remote_seq += iptr->data_size;
+
         // we use the same data pointer...
         ioptr->size = iptr->data_size;
         ioptr->buf = iptr->data;
@@ -1091,6 +1094,7 @@ int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructi
             bptr->header_identifier = cptr->identifier++;
 
             cptr->socket_fd = cptr->socket_fd;
+            
             bptr->ack = cptr->remote_seq;
             bptr->seq = cptr->seq;
 
