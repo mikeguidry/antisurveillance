@@ -131,6 +131,8 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
     // The TCP window relates to operating system emulation
     p->tcp.window	= htons(iptr->tcp_window_size);
+
+    //printf("tcp window: %d\n", iptr->tcp_window_size);
     
     // syn/ack used the most
     p->tcp.syn  	= (iptr->flags & TCP_FLAG_SYN) ? 1 : 0;
@@ -235,6 +237,7 @@ int BuildPacketInstructions(PacketBuildInstructions *ptr) {
 
     // process each packet using its particular function for building
     while (ptr != NULL) {
+        //printf("window szie: %d\n", ptr->tcp_window_size);
         // find the correct function.. no longer a jump table because of ipv6 bitmask checking
         while (PacketBuilders[n].func != NULL) {
             if (ptr->type & PacketBuilders[n].type) {
@@ -273,20 +276,6 @@ void BuildPackets(AS_attacks *aptr) {
     int i = 0;
     int n = 0;
 
-    // Structure containing each packet type, and their functions for building
-    // The type must diretly correlate to the  enum {} list.. in order
-    struct _packet_builders {
-        int type;
-        int (*func)(PacketBuildInstructions *);
-    } PacketBuilders[] = {
-        { PACKET_TYPE_TCP_4,    &BuildSingleTCP4Packet },
-        { PACKET_TYPE_UDP_4,    &BuildSingleUDP4Packet },
-        { PACKET_TYPE_ICMP_4,   &BuildSingleICMP4Packet },
-        { PACKET_TYPE_TCP_6,    &BuildSingleTCP6Packet },
-        { PACKET_TYPE_UDP_6,    &BuildSingleUDP6Packet },
-        { PACKET_TYPE_ICMP_6,   &BuildSingleICMP6Packet },
-        { 0, NULL }
-    };
 
     //printf("1 build packets aptr %d completed %d\n", aptr->id, aptr->completed);
     //printf("1 count: %d\n", L_count((LINK *)aptr->packet_build_instructions));

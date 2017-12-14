@@ -223,16 +223,17 @@ void *thread_network_flush(void *arg) {
         // if none.. then lets sleep..  
         if (!count) {
             //printf("didnt push any\n");
-            sleep(1);
+            //sleep(1);
+            usleep(5000);
         } else {
             
             //i = (1000000 / 4) - (i * 25000);
             
             
             //i /= 4;
-            i = 50000;
+            i = 5000;
             //printf("usleep %d\n", i);
-            if (i > 0 && (i <= 1000000))usleep(i);
+            if (i > 0 && (i <= 1000000) )usleep(i);
         }
     }
 }
@@ -856,7 +857,7 @@ void *thread_read_network(void *arg) {
 
         // if paused.. lets sleep for 1/10th a second each time we end up here..
         if (paused) {
-            usleep(100000);
+            usleep(1000);
         } else {
             
             //sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
@@ -864,7 +865,7 @@ void *thread_read_network(void *arg) {
             //if (sleep_interval > 0)
                 // timing change w aggressive-ness
               //  usleep(sleep_interval);
-              usleep(1000000);
+              usleep(1000);
               //sleep(1);
             
         }
@@ -929,8 +930,11 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, Outgoing
         }
     }
 
-    if (iptr->packet == NULL)
+    //printf("iptr window %d\n", iptr->tcp_window_size);
+
+    if (iptr->packet == NULL) {
         BuildPacketInstructions(iptr);
+    }
 
     if (iptr->packet == NULL) return -1;
 

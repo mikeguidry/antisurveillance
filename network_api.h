@@ -100,7 +100,7 @@ typedef struct _socket_context {
     uint32_t remote_seq;
     uint32_t identifier;
 
-    int window;
+    int window_size;
     int ttl;
     int ts;
     int last_ts;

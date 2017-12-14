@@ -131,7 +131,7 @@ int AS_perform(AS_context *ctx) {
     // traceroute, blackhole, scripting?, timers?
     Subsystems_Perform(ctx);
 
-    ctx->free_memory = FreeMemoryMB();
+    //ctx->free_memory = FreeMemoryMB();
     
     return 1;
 }
@@ -273,6 +273,7 @@ int Threads_Start(AS_context *ctx) {
     return ret;
 }
 
+// !!! call subsystems which are active at the moment
 // perform iterations of other subsystems...
 int Subsystems_Perform(AS_context *ctx) {
     // first we process any incoming packets.. do this BEFORE traceroute since it awaits data
@@ -284,10 +285,10 @@ int Subsystems_Perform(AS_context *ctx) {
     }
 
     // now apply any changes, or further the blackhole attacks
-    BH_Perform(ctx);
+    //BH_Perform(ctx);
 
     // perform http discovery looking for live http sessions in real time
-    WebDiscover_Perform(ctx);
+    //WebDiscover_Perform(ctx);
 
     // our full socket implementation
     NetworkAPI_Perform(ctx);
