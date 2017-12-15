@@ -44,7 +44,8 @@ int network_code_start(AS_context *ctx) {
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("216.58.192.143");
+    dest.sin_addr.s_addr = inet_addr("216.58.192.130");
+    //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
 
@@ -82,6 +83,9 @@ int network_code_start(AS_context *ctx) {
     my_close(sock);
 
     printf("%d seconds to execute\n", time(0) - start);
+
+    sleep(1);
+    
 
     return (r != 0);
 }

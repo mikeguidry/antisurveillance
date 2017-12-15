@@ -207,6 +207,7 @@ AS_context *AS_ctx_new() {
         exit(-1);
     }
 
+    ctx->network_interface = strdup("docker0");
 
     // 25 pools waiting initially for reading packets..
     ctx->initial_pool_count = 0;

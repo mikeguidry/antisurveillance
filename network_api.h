@@ -130,23 +130,26 @@ typedef struct _socket_context {
 int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 int NetworkAPI_Init(AS_context *ctx);
 int NetworkAPI_Perform(AS_context *ctx);
-int SocketIncoming(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
+int NetworkAPI_SocketIncoming(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd);
 SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd);
 SocketContext *NetworkAPI_SocketByStatePort(AS_context *ctx, int state, int port);
 int NetworkAPI_NewFD(AS_context *ctx);
 SocketContext *NetworkAPI_SocketNew(AS_context *ctx);
-ConnectionContext *ConnectionNew(SocketContext *sptr);
+ConnectionContext *NetworkAPI_ConnectionNew(SocketContext *sptr);
 void NetworkAPI_FreeBuffers(IOBuf **ioptr);
-void ConnectionsCleanup(ConnectionContext **connections);
+void NetworkAPI_ConnectionsCleanup(ConnectionContext **connections);
 int NetworkAPI_Cleanup(AS_context *ctx);
 int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
-PacketBuildInstructions *BuildBasePacket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr, int flags);
-int SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
-int SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
-int SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
+PacketBuildInstructions *NetworkAPI_BuildBasePacket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr, int flags);
+int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
+int NetworkAPI_SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
+int NetworkAPI_SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 
 int NetworkAPI_Perform(AS_context *);
+
+
+PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContext *sptr, ConnectionContext *cptr, int flags);
 
 
 
