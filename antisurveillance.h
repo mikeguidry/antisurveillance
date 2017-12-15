@@ -346,6 +346,7 @@ typedef struct _antisurveillance_context {
     SocketContext *socket_list;
     // current fd
     int socket_fd;
+    pthread_t socket_list_mutex;
 
     // ignore incoming data...
     int attack_mode;

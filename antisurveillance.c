@@ -207,7 +207,7 @@ AS_context *AS_ctx_new() {
         exit(-1);
     }
 
-    ctx->network_interface = strdup("docker0");
+    ctx->network_interface = strdup("vmnet8");
 
     // 25 pools waiting initially for reading packets..
     ctx->initial_pool_count = 0;
@@ -251,6 +251,7 @@ AS_context *AS_ctx_new() {
     // this is a subsystem which will get access to all packets to add IPv6 (mainly) addreses to use for generating new random-ish  addresses
     IPGather_Init(ctx);
 
+    pthread_mutex_init(&ctx->socket_list_mutex, NULL);
 
     NetworkAPI_Init(ctx);
 

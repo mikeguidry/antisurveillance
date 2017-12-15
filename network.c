@@ -100,6 +100,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     }
 
     while (optr != NULL) {
+        cur_packet = 0;
         // be sure it wasnt marked to get ignored
         if (!optr->ignore) {
             while (cur_packet < optr->cur_packet) {

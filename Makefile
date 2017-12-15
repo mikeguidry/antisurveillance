@@ -15,6 +15,9 @@ OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 $(ODIR)/%.o: %.c $(DEPS) scriptmain.o 
 	$(CC) -static -c -o $@ $< $(CFLAGS)
 
+connecttest: $(OBJ) connecttest.o
+	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+
 pyanti: $(OBJ) obj/scriptmain.o 
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
@@ -26,9 +29,6 @@ anti: $(OBJ)
 
 anti_static: $(OBJ) cmdline.o
 	gcc -static -o $@ $^ $(CFLAGS) $(LIBS)
-
-connecttest: $(OBJ) connecttest.o
-	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 clean:
 	rm -f anti $(ODIR)/*.o *~ core $(INCDIR)/*~ 

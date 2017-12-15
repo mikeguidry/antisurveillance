@@ -137,12 +137,6 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     // syn/ack used the most
     p->tcp.syn  	= (iptr->flags & TCP_FLAG_SYN) ? 1 : 0;
     p->tcp.ack	    = (iptr->flags & TCP_FLAG_ACK) ? 1 : 0;
-    
-
-    if (p->tcp.fin) {
-        printf("setting fin\n");
-
-    }
     p->tcp.rst	    = (iptr->flags & TCP_FLAG_RST) ? 1 : 0;
     p->tcp.psh  	= (iptr->flags & TCP_FLAG_PSH) ? 1 : 0;
     p->tcp.fin  	= (iptr->flags & TCP_FLAG_FIN) ? 1 : 0;
@@ -453,10 +447,7 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
         // Is it too soon to send this packet? (we check its milliseconds)
         timeval_subtract(&time_diff, &aptr->ts, &tv);
 
-        if (pkt->wait_time && time_diff.tv_usec < pkt->wait_time) {
-            //printf("delaying\n");
-            return;
-        }
+        if (pkt->wait_time && time_diff.tv_usec < pkt->wait_time) return;
     }
 
     if (optr == NULL)
@@ -477,13 +468,12 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
     optr->attack_info[optr->cur_packet] = aptr;
     optr->ctx = ctx;
 
-    if (pkt->type & PACKET_TYPE_TCP) {
+    if (pkt->type & PACKET_TYPE_TCP)
         which_protocol = PROTO_TCP;
-    } else if (pkt->type & IPPROTO_UDP) {
+    else if (pkt->type & IPPROTO_UDP)
         which_protocol = PROTO_UDP;
-    } else if (pkt->type & IPPROTO_ICMP) {
+    else if (pkt->type & IPPROTO_ICMP)
         which_protocol = PROTO_ICMP;
-    }
 
     // mark protocol
     optr->packet_protocol[optr->cur_packet] = which_protocol;
@@ -641,10 +631,7 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     p->ip.ttl = iptr->ttl;
 
     p->ip.id = htons(iptr->header_identifier);
-
-    // *** verify ID strategies in OS
-    if (p->ip.id == 0)
-        p->ip.id = rand()%0xFFFFFFFF;
+    if (p->ip.id == 0) p->ip.id = rand()%0xFFFFFFFF;
 
     p->ip.frag_off = 0;
     p->ip.protocol = IPPROTO_ICMP;
