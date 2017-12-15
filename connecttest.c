@@ -24,6 +24,8 @@
 #include "scripting.h"
 #include "network_api.h"
 
+AS_context *Gctx = NULL;
+
 int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
 
 // everything in here for testing shoold use  my_*
@@ -36,8 +38,9 @@ int network_code_start(AS_context *ctx) {
     char buf[16384];
     int retry = 2;
     int start = 0;
+    int ret = 0;
 
-    sleep(1);
+    //sleep(1);
 
     start = time(0);
 
@@ -79,7 +82,8 @@ int network_code_start(AS_context *ctx) {
 
             //printf("recv: %d\ndata: \"%s\"\n", r, buf);
             if (strstr(buf, "</html>")) {
-                printf("FULL SUCCESS\n");
+                //printf("FULL SUCCESS\n");
+                ret = 1;
                 break;
             }
             //if (!r) sleep(3);
@@ -91,12 +95,13 @@ int network_code_start(AS_context *ctx) {
 
     //printf("%d seconds to execute\n", time(0) - start);
 
+    sleep(3);
 
     my_close(sock);
     
     //pthread_exit(0);
 
-    return (r != 0);
+    return ret;
 }
 
 
@@ -105,9 +110,25 @@ int network_code_start(AS_context *ctx) {
 // it should always thread off, or start a thread for AS_perform() so that the stack can function properly
 // while executing other code.. it will depend on how its integrating (IE: LD_PRELOAD, GOT, etc)
 void thread_network_test(void  *arg) {
-    int ret = network_code_start((AS_context *)arg);
+    int ret = 0;
+    int c = 0;
+    int tid = (int)arg;
+    
+    while (1) {
+        ret = network_code_start((AS_context *)Gctx);
+        if (ret) {
+            printf("tid %d c %d success\n", tid, ++c);
+        }
+        if (tid == 0) {
+            printf("tid 0 ret %d\n", ret);
+            break;
+        }
+    }
 
-    //printf("network code completed\n");
+    
+    printf("network code completed\n");
+
+    sleep(10);
 
     //exit(0);
     pthread_exit(0);
@@ -130,29 +151,33 @@ int main(int argc, char *argv[]) {
     sctx = ctx->scripts;
 
     // call the init() function in the script
-    PythonLoadScript(sctx, script, "init", NULL);
+    //PythonLoadScript(sctx, script, "init", NULL);
     //printf("2\n");
 
-if (argc == 2) {
-    count = atoi(argv[1]);
-    printf("Using %d connections\n", count);
-}
+    Gctx = ctx;
+
+
+    if (argc == 2) {
+        count = atoi(argv[1]);
+        printf("Using %d connections\n", count);
+    }
+    
 
     ctx->http_discovery_enabled = 0;
     ctx->http_discovery_max = 0;
 
     for (i = 0; i < count; i++) {
-    // at this  point we should be fine to run our network code.. it should be in another thread..
-    if (pthread_create(&ctx->network_write_thread, NULL, thread_network_test, (void *)ctx) != 0) {
-        fprintf(stderr, "couldnt start network thread..\n");
-     //   exit(-1);
-    }
+        // at this  point we should be fine to run our network code.. it should be in another thread..
+        if (pthread_create(&ctx->network_write_thread, NULL, thread_network_test, (void *)i) != 0) {
+            fprintf(stderr, "couldnt start network thread..\n");
+        //   exit(-1);
+        }
     }
 
     while (1) {
         AS_perform(ctx);
         // sleep half a second.. for testing this is OK.. packet retransmit is 3 seconds for tcp/ip stack
-        //usleep(1000);
+        usleep(5000);
     }
 
 

@@ -22,15 +22,9 @@ typedef struct _filter_information FilterInformation;
 typedef struct _outgoing_packet_queue {
     struct _outgoing_packet_queue *next;
 
-
     AS_context *ctx;
 
-
-
     pthread_t thread;
-#ifdef TESTING_DONT_FREE_OUTGOING
-    int submitted;
-#endif
     int ignore;
     int failed;
     int type;
@@ -100,9 +94,10 @@ void ClearPackets(AS_context *ctx);
 int process_packet(AS_context *ctx, char *packet, int size);
 void *thread_read_network(void *arg);
 int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_function);
-int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, OutgoingPacketQueue **);
+int NetworkQueueInstructions(AS_context *ctx, PacketBuildInstructions *iptr, OutgoingPacketQueue **_optr);
 int NetworkAllocateReadPools(AS_context *ctx);
 int NetworkAllocateWritePools(AS_context *ctx);
+void OutgoingQueueLink(AS_context *ctx, OutgoingPacketQueue *optr);
 
 
 

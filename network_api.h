@@ -138,7 +138,7 @@ int NetworkAPI_NewFD(AS_context *ctx);
 SocketContext *NetworkAPI_SocketNew(AS_context *ctx);
 ConnectionContext *NetworkAPI_ConnectionNew(SocketContext *sptr);
 void NetworkAPI_FreeBuffers(IOBuf **ioptr);
-void NetworkAPI_ConnectionsCleanup(AS_context *, ConnectionContext **connections);
+void NetworkAPI_ConnectionsCleanup(AS_context *, SocketContext *sptr);
 int NetworkAPI_Cleanup(AS_context *ctx);
 int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 PacketBuildInstructions *NetworkAPI_BuildBasePacket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr, int flags);

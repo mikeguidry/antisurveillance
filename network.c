@@ -33,7 +33,7 @@ protection to be developed, and this can become the 'third party server' for hun
 
 
 OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
-    OutgoingPacketQueue *optr = NULL;
+    OutgoingPacketQueue *optr = NULL, *olast = NULL;
     int ts = time(0);
 
     // get outgoing packet queue structure from buffer
@@ -55,20 +55,37 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
             break;
         }
 
+        olast = optr;
         optr = optr->next;
     }
 
     if (optr != NULL) {
-        // if we did obtain a structure, then we need to push the main pool to the next for the next call
-        ctx->outgoing_pool_waiting = optr->next;
-        memset(optr, 0, sizeof(OutgoingPacketQueue));
+        if (olast != NULL) {
+            olast->next = optr->next;
+        } else {
+            // if we did obtain a structure, then we need to push the main pool to the next for the next call
+            ctx->outgoing_pool_waiting = optr->next;
+        }
     }
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
     
     // if we didnt then will allocate a new  one which will go to the pool whenever are complete
-    if (optr == NULL)
-        if ((optr = (OutgoingPacketQueue *)calloc(1, sizeof(OutgoingPacketQueue))) == NULL) return NULL;    
+    if (optr == NULL) {
+        if ((optr = (OutgoingPacketQueue *)malloc(sizeof(OutgoingPacketQueue))) == NULL) return NULL;
+    }
+
+    //memset(optr, 0, sizeof(OutgoingPacketQueue));
+    optr->max_buf_size = MAX_BUF_SIZE;
+    optr->cur_packet = 0;
+    optr->size = 0;
+    optr->ignore = 0;
+    optr->failed = 0;
+    optr->type = 0;
+    optr->proto = 0;
+    optr->ctx = NULL;
+    optr->next = NULL;
+    //optr->ts = time(0);
 
     return optr;
 }
@@ -148,9 +165,10 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     
         onext = optr->next;
 
+        free(optr);
         // put into local stack pool to get moved to global pool at end of the function
-        optr->next = pool;
-        pool = optr;
+        /*optr->next = pool;
+        pool = optr; */
 
         optr = onext;
     }
@@ -211,13 +229,11 @@ void *thread_network_flush(void *arg) {
     pthread_t this_thread = pthread_self();
     OutgoingPacketQueue *optr = NULL;
 
-
+    // prioritize this pthread as high
     params.sched_priority = sched_get_priority_max(SCHED_FIFO);
     pthread_setschedparam(this_thread, SCHED_FIFO, &params);
 
-
     while (1) {
-
         count = OutgoingQueueProcess(ctx);
         
         //if (count)printf("Network Thread Outgoing count flushed: %d\n", count);
@@ -225,16 +241,16 @@ void *thread_network_flush(void *arg) {
         if (!count) {
             //printf("didnt push any\n");
             //sleep(1);
-            usleep(5000);
+            usleep(50000);
         } else {
             
             //i = (1000000 / 4) - (i * 25000);
             
             
             //i /= 4;
-            i = 5000;
+            i = 1000;
             //printf("usleep %d\n", i);
-            if (i > 0 && (i <= 1000000) )usleep(i);
+            if (i > 0 && (i <= 1000000)) usleep(i);
         }
     }
 }
@@ -468,61 +484,28 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     if (size == 0) goto end;
 
     // if we dont have any subsystems waiting for packets.. no point
-    if (nptr == NULL) {
-        //printf("NULL pointer\n");
-        goto end;
-    }
+    if (nptr == NULL) goto end;
 
-    ////sprintf(fname, "packets/pkt_%d_%d.bin", getpid(), rand()%0xFFFFFFFF);
-
-    //packet += sizeof(struct ether_header);
-    //size -= sizeof(struct ether_header);
-
-    if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
+    /*if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
         fclose(fd);
-    } 
-
-    /*if (size < 40) {
-        printf("small pkt?\n");
-        goto end;
     }*/
-
     
     // packet needs to be in this structure to get analyzed.. reusing pcap loading routines
-    if ((pptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) {
-        //printf("couldnt alloc memory for processinng packet\n");
-        return -1;
-    }
+    if ((pptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) return -1;
 
     // duplicate the packet data.. putting it into this packet structure
-    if (PtrDuplicate(packet, size, &pptr->buf, &pptr->size) == 0) {
-        //printf("couldnt duplicate data required for processing\n");
-        goto end;
-    }
+    if (PtrDuplicate(packet, size, &pptr->buf, &pptr->size) == 0) goto end;
 
     // analyze that packet, and turn it into a instructions structure
-    if ((iptr = PacketsToInstructions(pptr)) == NULL) {
-        //printf("couldnt convert to instructions pptr->buf %p pptr->size %d\n", pptr->buf, pptr->size);
-        /*    if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
-        fwrite(packet, size, 1, fd);
-        fclose(fd); } */
-
-        goto end;
-    }
-
-
-
+    if ((iptr = PacketsToInstructions(pptr)) == NULL) goto end;
 
     //printf("processing packet\n");
     
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
-        //printf("%s:%d -> %s:%d\n", Asrc_ip, iptr->source_port, Adst_ip, iptr->destination_port);
-
         // if the packet passes the filter then call its processing function
         if (FilterCheck(ctx, nptr->flt, iptr)) {
-            //printf("Filter matches.. calling custom incoming function\n");
             // maybe verify respoonse, and break the loop inn some case
             r = nptr->incoming_function(ctx, iptr);
             
@@ -547,6 +530,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     return ret;
 }
 
+
 // this will process the incoming buffers
 int network_process_incoming_buffer(AS_context *ctx) {
     IncomingPacketQueue *nptr = NULL, *nnext = NULL;
@@ -557,7 +541,6 @@ int network_process_incoming_buffer(AS_context *ctx) {
     int packet_size = 0;
 
     //printf("process incomming buffer\n");
-
     
     // lock thread so we dont attempt to read or write while another thread is
     pthread_mutex_lock(&ctx->network_incoming_mutex);
@@ -619,7 +602,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
     // lets the empty queue 
     pthread_mutex_lock(&ctx->network_pool_mutex);
 
-//printf("1 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
+    //printf("1 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
     // put back into waiting pool so we dont allocate over and over
     L_link_ordered((LINK **)&ctx->incoming_pool_waiting, (LINK *)pool);
 
@@ -649,11 +632,6 @@ int NetworkReadSocket(IncomingPacketQueue *nptr, int socket, int proto, int ip_v
 
     r = recvfrom(socket, sptr, nptr->max_buf_size - nptr->size, MSG_DONTWAIT, NULL, NULL);
     
-    //if (r <= 0) perror("recvfrom");
-    //printf("recvfrom(%d) = %d\n", socket, r);
-    //if (r > 0) { sprintf(fname, "net/net_%d_%d_%d_%d.dat", proto, ip_ver, getpid(), ncount++);
-    //FileWrite(fname, sptr, r); }
-
     // if no more packets.. lets break and send it off for processing
     if (r > 0) {
         // set where this packet begins, and  ends
@@ -713,7 +691,7 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
                 // if we have used 90% of the buffer size...
                 if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) goto too_much;
 
-                // we only have positions for a max of 1024 packets with this buffer
+                // we only have positions for a max of X packets with this buffer
                 if (nptr->cur_packet >= MAX_PACKETS) goto too_much;
             }
 
@@ -756,6 +734,8 @@ int NetworkAllocateReadPools(AS_context *ctx) {
 
     return 1;
 }
+
+
 
 int NetworkAllocateWritePools(AS_context *ctx) {
     int i = 0;
@@ -811,7 +791,6 @@ void *thread_read_network(void *arg) {
         if (nptr == NULL) {
             pthread_mutex_lock(&ctx->network_pool_mutex);
 
-            //printf("pool count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
             // grab one from the pool
             nptr = ctx->incoming_pool_waiting;
             // remove from pool queue
@@ -821,10 +800,8 @@ void *thread_read_network(void *arg) {
             pthread_mutex_unlock(&ctx->network_pool_mutex);
         }
 
-        if (nptr == NULL) {
-            //printf("nothing from pool\n");
+        if (nptr == NULL)
             if ((nptr = (IncomingPacketQueue *)calloc(1, sizeof(IncomingPacketQueue))) == NULL) goto end;
-        }
 
         nptr->max_buf_size = MAX_BUF_SIZE;
         // so its not still linked to the  pool
@@ -833,8 +810,6 @@ void *thread_read_network(void *arg) {
         network_fill_incoming_buffer(ctx, nptr);
 
         if (nptr->cur_packet) {
-
-            //printf("packet count: %d\n", nptr->cur_packet);
             pthread_mutex_lock(&ctx->network_incoming_mutex);
 
             if (ctx->incoming_queue_last) {
@@ -858,15 +833,14 @@ void *thread_read_network(void *arg) {
 
         // if paused.. lets sleep for 1/10th a second each time we end up here..
         if (paused) {
-            usleep(1000);
-        } else {
-            
+            usleep(500000);
+        } else {            
             //sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
             //sleep_interval /= 2;
             //if (sleep_interval > 0)
                 // timing change w aggressive-ness
               //  usleep(sleep_interval);
-              usleep(1000);
+              usleep(5000);
               //sleep(1);
             
         }
@@ -914,9 +888,24 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
     return 1;
 }
 
+void OutgoingQueueLink(AS_context *ctx, OutgoingPacketQueue *optr) {
+
+    pthread_mutex_lock(&ctx->network_queue_mutex);
+
+    if (ctx->outgoing_queue_last) {
+        ctx->outgoing_queue_last->next = optr;
+        ctx->outgoing_queue_last = optr;
+    } else {
+        ctx->outgoing_queue_last = ctx->outgoing_queue = optr;
+    }
+    
+    pthread_mutex_unlock(&ctx->network_queue_mutex);
+}
+
+
 
 // merge this with the other attackqueueadd.. and make 2 smaller functions for each input type..
-int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, OutgoingPacketQueue **_optr) {
+int NetworkQueueInstructions(AS_context *ctx, PacketBuildInstructions *iptr, OutgoingPacketQueue **_optr) {
     int ret = 0;
     OutgoingPacketQueue *optr = NULL;
     int which_proto = 0;
@@ -924,20 +913,27 @@ int NetworkQueueAddBest(AS_context *ctx, PacketBuildInstructions *iptr, Outgoing
     int which_protocol = 0;
     int i = 0;
 
+    if (iptr->packet == NULL)
+        BuildPacketInstructions(iptr);
+
+    if (iptr->packet == NULL) return -1;
+
     if (((optr = *_optr)) == NULL) {
         *_optr = optr = OutgoingPoolGet(ctx);
         if (optr == NULL) {
             return -1;
         }
     }
+    
+    // if this packet queue doesn't have enough space for the  entire packet.. we need to allocate a new one
+    if ((iptr->packet_size > (optr->max_buf_size - optr->size) || (optr->cur_packet >= MAX_PACKETS))) {
+        // it needs to get moved into the outgoing buffer first
+        OutgoingQueueLink(ctx, optr);
 
-    //printf("iptr window %d\n", iptr->tcp_window_size);
-
-    if (iptr->packet == NULL) {
-        BuildPacketInstructions(iptr);
+        // now allocate a new buffer
+        if ((optr = OutgoingPoolGet(ctx)) == NULL)
+            return -1;
     }
-
-    if (iptr->packet == NULL) return -1;
 
     // copy packet into outgoing packet queue structure (many together)
     // for speed and to not use many threads, or malloc, etc

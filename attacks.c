@@ -888,3 +888,6 @@ int MergeAttacks(AS_attacks *dst, AS_attacks *src) {
 // in the end i want this, and maybe anther thing ive been holding to be a one click way to destroy any company in todays world online
 // between research, phantomJS (or other), and public (requiring public due to internet itself) giving enough information to completely
 // rip apart any companies network without requiring much to continue these attacks in every region/geo (cloud wise)
+
+// but essentially with a custom tcp/ip stack like this has now.. research such as phantom JS, etc isnt really REQUIRED
+// but will allow less machines/IP ranges to be used

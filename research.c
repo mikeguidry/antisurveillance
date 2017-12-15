@@ -1247,7 +1247,7 @@ int Traceroute_SendUDP(AS_context *ctx, TracerouteQueue *tptr, OutgoingPacketQue
         
         // if the packet building was successful
         if (i == 1)
-            NetworkQueueAddBest(ctx, iptr, optr);
+            NetworkQueueInstructions(ctx, iptr, optr);
 
     }
 
@@ -1329,7 +1329,7 @@ int Traceroute_SendICMP(AS_context *ctx, TracerouteQueue *tptr) {
 
         // if the packet building was successful
         if (i == 1)
-            NetworkQueueAddBest(ctx, iptr, 0);
+            NetworkQueueInstructions(ctx, iptr, 0);
     }
 
     PacketBuildInstructionsFree(&iptr);
@@ -1502,18 +1502,7 @@ int Traceroute_Perform(AS_context *ctx) {
     //printf("optr %p\n", optr);
 
     // if we had any packets to send.. push to outgoing network queue
-    if (optr) {
-        pthread_mutex_lock(&ctx->network_queue_mutex);
-
-        if (ctx->outgoing_queue_last) {
-            ctx->outgoing_queue_last->next = optr;
-            ctx->outgoing_queue_last = optr;
-        } else {
-            ctx->outgoing_queue_last = ctx->outgoing_queue = optr;
-        }
-
-        pthread_mutex_unlock(&ctx->network_queue_mutex);
-    }
+    if (optr) OutgoingQueueLink(ctx, optr);
 
     // analyze all queued responses from the network thread
     Traceroute_AnalyzeResponses(ctx);
@@ -3783,7 +3772,7 @@ int ICMP_Send(AS_context *ctx, int type) {
 
         // if the packet building was successful
         if (i == 1)
-            NetworkQueueAddBest(ctx, iptr, 0);
+            NetworkQueueInstructions(ctx, iptr, 0);
     }
 
     PacketBuildInstructionsFree(&iptr);

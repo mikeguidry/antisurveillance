@@ -112,19 +112,8 @@ int AS_perform(AS_context *ctx) {
     // to increase speed at times.. depending on queue, etc
     AS_remove_completed(ctx);
 
-    if (optr) {
-        pthread_mutex_lock(&ctx->network_queue_mutex);
-
-        if (ctx->outgoing_queue_last) {
-            ctx->outgoing_queue_last->next = optr;
-            ctx->outgoing_queue_last = optr;
-        } else {
-            ctx->outgoing_queue_last = ctx->outgoing_queue = optr;
-        }
-
-        pthread_mutex_unlock(&ctx->network_queue_mutex);
-    }
-
+    if (optr)
+        OutgoingQueueLink(ctx, optr);
 
     if (!ctx->network_write_threaded) { OutgoingQueueProcess(ctx); }
 
