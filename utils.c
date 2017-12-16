@@ -453,3 +453,25 @@ int FreeMemoryMB() {
     
     return ret;
 }
+
+
+// allows us to use various IPv4 addresses which we receieve data for
+// this needs to obviously be redone.. 
+uint32_t get_source_ipv4() {
+    char ip[16];
+    int r = 1+rand()%250;
+    
+    sprintf(ip, "192.168.72.%d",r);
+
+    return inet_addr(ip);
+}
+
+// allows us to use random/various IPv6 addresses which we receive packets for
+// this needs to obviously be redone..
+void get_source_ipv6(struct in6_addr *addr6) {
+    struct in6_addr our_ipv6;
+    get_local_ipv6(&our_ipv6);
+    // now for here to modify IPv6 if we are performing massive attacks
+    // mangle the IP, etc... but ensure its within our ranges
+
+}

@@ -891,3 +891,5 @@ int MergeAttacks(AS_attacks *dst, AS_attacks *src) {
 
 // but essentially with a custom tcp/ip stack like this has now.. research such as phantom JS, etc isnt really REQUIRED
 // but will allow less machines/IP ranges to be used
+
+// TODO: create a simple router version, or version that an ISP can run through amachine to grab the data  required and supply it to the software to perform its  attacks

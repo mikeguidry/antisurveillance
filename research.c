@@ -1901,7 +1901,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
 //http://www.binarytides.com/get-local-ip-c-linux/
 uint32_t get_local_ipv4() {
     //const char* google_dns_server = "8.8.8.8";
-    const char *google_dns_server = "192.168.72.134";
+    const char *google_dns_server = "192.168.72.135";
     int dns_port = 53;
     uint32_t ret = 0;
     struct sockaddr_in serv;     

@@ -30,7 +30,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
 
 // everything in here for testing shoold use  my_*
 // later we will takeover all of those functions correctly
-int network_code_start(AS_context *ctx) {
+int network_code_start(AS_context *ctx, int tid) {
     int sock = 0;
     struct sockaddr_in dest;
     int r = 0;
@@ -39,6 +39,9 @@ int network_code_start(AS_context *ctx) {
     int retry = 2;
     int start = 0;
     int ret = 0;
+    
+    SocketContext *sptr = NULL;
+    char ip[16];
 
     //sleep(1);
 
@@ -47,11 +50,14 @@ int network_code_start(AS_context *ctx) {
     // open new socket...
     if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;
 
+    if ((sptr = NetworkAPI_SocketByFD(ctx, sock)) == NULL) return -1;
+    sprintf(ip, "192.168.72.%d", (tid == 135) ? 134 : tid);
+    sptr->our_ipv4 = inet_addr(ip);
     //printf("sock: %d\n", sock);
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.134");
+    dest.sin_addr.s_addr = inet_addr("192.168.72.135");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
@@ -115,7 +121,7 @@ void thread_network_test(void  *arg) {
     int tid = (int)arg;
     
     while (1) {
-        ret = network_code_start((AS_context *)Gctx);
+        ret = network_code_start((AS_context *)Gctx, tid);
         if (ret) {
             printf("tid %d c %d success\n", tid, ++c);
         }
@@ -123,6 +129,8 @@ void thread_network_test(void  *arg) {
             printf("tid 0 ret %d\n", ret);
             break;
         }
+
+        if (c == 20) exit(0);
     }
 
     

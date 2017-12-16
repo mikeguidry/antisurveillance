@@ -7,6 +7,27 @@ I need it for a 0day, backdoors without ports, custom VPN, etc...
 
 It should be possible to slim down the entire binary to <200-300kb without python for usage in many real world scenarios w pure C code.
 
+
+todo:
+to support millions of connections simultaneously without having tons of context, and linked lists etc..
+we can start to generate source ports, and other information to embed information directly into the connection
+even initial ACK/SEQ, ttl, etc.... all of this can help us embed information directly into the
+connection itself so we can respond immediately whenever a packet comes back without even having to deal with all of the lists
+etc... this is how we can perform these actions on routers handling millions, or billions of ranges simultaneously
+
+IPv6 embedding will even go further because we can embed moore data into the packets...
+and considering IPv6 addresses are far and wide.. these boxes online arent even prepared to filter/block IPv6 connecctions like ipv4
+... which means ANY simple network worldwide can destroy a networks IPv6.. with a few IPv6 tunnels worldwide.... free and poossibly even
+through VPN/TOR can damage systems..
+remember.. most attacks can be replayed except waiting for ACk/SEQ fromm the server side (having a small stub just responding to ACKs, etc)
+this system can get turned into a stub for this pretty fast with most of the packet information pregenerated
+
+
+
+i will even create a simple library/firewall code to perform actions on embedded data...
+this wont be for first release.. ill finish it up next week after i distribute the first version to all UN
+ countries
+
 */
 
 
@@ -103,7 +124,7 @@ ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd) {
     ConnectionContext *ret = NULL;
 
     pthread_mutex_lock(&ctx->socket_list_mutex);
-
+    
     sptr = ctx->socket_list;
     while (sptr != NULL) {
         if ((cptr = sptr->connections) != NULL) {
@@ -226,7 +247,11 @@ SocketContext *NetworkAPI_SocketNew(AS_context *ctx) {
         sptr->ts = time(0);
         sptr->identifier = rand()%0xFFFFFFFF;
         sptr->seq = rand()%0xFFFFFFFF;
+        // 1500 window size - IP header size - TCP header size + static IP options size
         sptr->window_size = 1500 - (20*2+12);
+
+        sptr->our_ipv4 = get_source_ipv4();
+        get_source_ipv6(&sptr->our_ipv6);
 
         pthread_mutex_init(&sptr->mutex, NULL);
 
@@ -315,6 +340,8 @@ void NetworkAPI_ConnectionsCleanup(AS_context *ctx, SocketContext *sptr) {
     ConnectionContext *cptr = NULL, *cnext = NULL, *clast = NULL;
     int ts = time(0);
 
+    pthread_mutex_lock(&sptr->mutex);
+
     // get the first connection in the list of connections that was passed to us
     cptr = sptr->connections;
 
@@ -328,9 +355,10 @@ void NetworkAPI_ConnectionsCleanup(AS_context *ctx, SocketContext *sptr) {
                 if (NetworkAPI_GeneratePacket(ctx, cptr->socket, cptr, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP) != NULL)
                     cptr->last_ts = ts;
             }
-
             //timeout = 5 min.. (we can probably remove this for ourselves.. it could be infinite)
-            if ((ts - cptr->last_ts) > 300) cptr->completed = 2;
+            if ((ts - cptr->last_ts) > 300) cptr->completed = 1;
+
+            if (sptr->completed) cptr->completed = 1;
 
             // if completed is 2 it means we can remove all buffers... and its ready to close for good
             if (cptr->completed == 2) {
@@ -350,7 +378,6 @@ void NetworkAPI_ConnectionsCleanup(AS_context *ctx, SocketContext *sptr) {
 
                 free(cptr);
                 cptr = cnext;
-
                 continue;            
             }
             pthread_mutex_unlock(&cptr->mutex);
@@ -359,6 +386,8 @@ void NetworkAPI_ConnectionsCleanup(AS_context *ctx, SocketContext *sptr) {
         clast = cptr;
         cptr = cptr->next;
     }
+
+    pthread_mutex_unlock(&sptr->mutex);
 }
 
 
@@ -413,11 +442,19 @@ void NetworkAPI_TransmitUDP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
    
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
-        iptr->type = PACKET_TYPE_UDP_4|PACKET_TYPE_UDP;
+        iptr->type = PACKET_TYPE_UDP;
 
         iptr->ttl = cptr->socket->ttl;
-        iptr->destination_ip = ioptr->addr.sin_addr.s_addr;
-        iptr->source_ip = ctx->my_addr_ipv4;
+        if (iptr->source_ip) {
+            iptr->type |= PACKET_TYPE_UDP_4;
+            iptr->source_ip = cptr->socket->our_ipv4;
+            iptr->destination_ip = cptr->address_ipv4;
+        } else {
+            iptr->type |= PACKET_TYPE_UDP_6;
+            CopyIPv6Address(&iptr->source_ipv6, &cptr->socket->our_ipv6);
+            CopyIPv6Address(&iptr->destination_ipv6, &cptr->socket->our_ipv6);
+        }
+        
         iptr->source_port = cptr->port;
         iptr->destination_port = ntohs(ioptr->addr.sin_port);
         iptr->header_identifier = cptr->identifier++;
@@ -453,11 +490,21 @@ void NetworkAPI_TransmitICMP(AS_context *ctx, ConnectionContext *cptr, IOBuf *io
    
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
-        iptr->type = PACKET_TYPE_ICMP_4|PACKET_TYPE_ICMP;
+        iptr->type = PACKET_TYPE_ICMP;
 
         iptr->ttl = cptr->socket->ttl;
-        iptr->destination_ip = ioptr->addr.sin_addr.s_addr;
-        iptr->source_ip = ctx->my_addr_ipv4;
+
+        if (iptr->source_ip) {
+            iptr->type |= PACKET_TYPE_ICMP_4;
+            iptr->source_ip = cptr->socket->our_ipv4;
+            iptr->destination_ip = cptr->address_ipv4;
+        } else {
+            iptr->type |= PACKET_TYPE_ICMP_6;
+            CopyIPv6Address(&iptr->source_ipv6, &cptr->socket->our_ipv6);
+            CopyIPv6Address(&iptr->destination_ipv6, &cptr->address_ipv6);
+        }
+
+        
         iptr->header_identifier = cptr->identifier++;
 
         if ((iptr->data = (char *)calloc(1, ioptr->size)) != NULL) {
@@ -488,7 +535,7 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
 
     // create instruction packet for the ICMP(4/6) packet building functions
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
-        iptr->type = PACKET_TYPE_TCP_4|PACKET_TYPE_TCP;
+        iptr->type = PACKET_TYPE_TCP;
 
         // !!! maybe disable PSH or fully support with fragmented outgoing packets (by sending only on the last,
         // and pushing all packets out quickly)
@@ -498,10 +545,17 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
         iptr->tcp_window_size = cptr->socket->window_size;
         iptr->header_identifier = cptr->identifier++;
 
-        iptr->source_ip = ctx->my_addr_ipv4;
-        iptr->source_port = cptr->port;
+        if (iptr->source_ip) {
+            iptr->type |= PACKET_TYPE_TCP_4;
+            iptr->source_ip = cptr->socket->our_ipv4;
+            iptr->destination_ip = cptr->address_ipv4;
+        } else {
+            iptr->type |= PACKET_TYPE_TCP_6;
+            CopyIPv6Address(&iptr->source_ipv6, &cptr->socket->our_ipv6);
+            CopyIPv6Address(&iptr->destination_ipv6, &cptr->address_ipv6);
+        }
 
-        iptr->destination_ip = cptr->address_ipv4;
+        iptr->source_port = cptr->port;
         iptr->destination_port = cptr->remote_port;//);//ntohs(ioptr->addr.sin_port);
 
         // TCP/IP ack/seq is required
@@ -699,14 +753,24 @@ PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContex
     // generate ACK packet to finalize TCP/IP connection opening
     if ((bptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) != NULL) {
 
-        bptr->type = PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4 | PACKET_TYPE_TCP;
+        bptr->type = PACKET_TYPE_TCP;
         bptr->flags = flags;
 
         bptr->tcp_window_size = sptr->window_size;
         bptr->ttl = sptr->ttl ? sptr->ttl : 64;
-        bptr->source_ip = get_local_ipv4();
+
+        // if ipv4...
+        if (cptr->address_ipv4) {
+            bptr->type |= PACKET_TYPE_TCP_4 | PACKET_TYPE_IPV4;
+            bptr->source_ip = sptr->our_ipv4;
+            bptr->destination_ip = cptr->address_ipv4;
+        } else {
+            bptr->type |= PACKET_TYPE_TCP_6 | PACKET_TYPE_IPV6;
+            CopyIPv6Address(&bptr->source_ipv6, &sptr->our_ipv6);
+            CopyIPv6Address(&bptr->destination_ipv6, &cptr->address_ipv6);
+        }
+
         bptr->source_port = cptr->port;
-        bptr->destination_ip = cptr->address_ipv4;
         bptr->destination_port = cptr->remote_port;
         bptr->header_identifier = cptr->identifier++;
 
@@ -756,6 +820,16 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
 
     // be sure both are same IP protocol ipv4 vs ipv6
     if (sptr->address_ipv4 && !iptr->source_ip) goto end;
+
+    // be sure its for the IP address bound to this socket
+    // is ipv4?
+    if (iptr->destination_ip ) {
+        if (iptr->destination_ip != sptr->our_ipv4) goto end;
+    } else {
+        // IPv6
+        if (!CompareIPv6Addresses(&iptr->destination_ipv6, &sptr->our_ipv6))
+            goto end;
+    }
 
     // verify ports equal to easily disqualify.. go straight to end if not (dont set to 1 since it may relate  to another socket)
     if (sptr->port && (iptr->destination_port != sptr->port)) goto end;
@@ -956,7 +1030,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
 
         // if its a FIN packet.. lets send back FIN with this ACK, and  mark as closing (so we cut it after the  next packet which will be ACK)
         if (iptr->flags & TCP_FLAG_FIN && 1==1) {
-            printf("FIN\n");
+            //printf("FIN\n");
             // we needed to increase the ACK by one.. no need to update our structure since its the FIN packet.. the +1 is due to its FIN ontop of data
             // *** maybe update correctly for proper-ness but it doesnt matter
             bptr->ack++;
@@ -994,6 +1068,14 @@ int NetworkAPI_SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBui
 
     // be sure both are same IP protocol ipv4 vs ipv6
     if (sptr->address_ipv4 && !iptr->source_ip) goto end;
+
+    // ipv4
+    if (sptr->address_ipv4) {
+        if (sptr->address_ipv4 != iptr->destination_ip) goto end;
+    } else  {
+        // ipv6
+        if (!CompareIPv6Addresses(&sptr->address_ipv6, &iptr->destination_ipv6)) goto end;
+    }
 
     // be sure this UDP socket is bound to that port...
     if (!(sptr->state & SOCKET_UDP_BOUND)) goto end;
@@ -1086,6 +1168,8 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
                 usleep(50000);
                 pthread_mutex_lock(&cptr->mutex);
 
+                if (cptr->completed) goto end;
+
                 // if count of validated (sent successful) changed.. then we are ready to move on
                 if (count != NetworkAPI_Count_Outgoing_Queue(cptr->out_buf))
                     break;
@@ -1097,6 +1181,9 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
 
     // loop adding all data at max to the tcp window...
     while (len > 0) {
+        
+        if (cptr->completed) goto end;
+
         size = min(cptr->socket->window_size, len);
         // allocate memory for this <fragmented> packet
         if ((ioptr = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
@@ -1314,6 +1401,7 @@ int NetworkAPI_ConnectSocket(int sockfd, const struct sockaddr_in *addr, socklen
     PacketBuildInstructions *bptr = NULL;
     SocketContext *sptr = NULL;
     int start = 0, state = 0, r = 0, ret = 0;
+    struct sockaddr_in6 *addr_ipv6 = NULL;
 
     // if we dont have a socket for that file descriptor then there must be an error
     if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) return -1;
@@ -1323,10 +1411,13 @@ int NetworkAPI_ConnectSocket(int sockfd, const struct sockaddr_in *addr, socklen
         if ((cptr = NetworkAPI_ConnectionNew(sptr)) == NULL)
             return -1;
 
-    // !!!  ipv6
     if ((addrlen == sizeof(struct sockaddr)) && (addr->sin_family == AF_INET)) {
         cptr->address_ipv4 = addr->sin_addr.s_addr;
         cptr->remote_port = ntohs(addr->sin_port);
+    } else if ((addrlen == sizeof(struct sockaddr_in6)) && (addr->sin_family == AF_INET6)) {
+        addr_ipv6 = (struct sockaddr_in6 *)addr;
+        CopyIPv6Address(&cptr->address_ipv6, &addr_ipv6->sin6_addr);
+        cptr->remote_port = ntohs(addr_ipv6->sin6_port);
     }
 
     // we always want to know when this connection socket began
@@ -1491,6 +1582,9 @@ int NetworkAPI_Close(int fd) {
     // set completed to 2 (program isnt going to require any data in the buffer)
     sptr->completed = 1;
 
+    sptr->port = 1;
+    sptr->remote_port = 1;
+
     return 0;
 }
 
@@ -1614,16 +1708,40 @@ int my_close(int fd) {
 
 
 ssize_t my_sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen) {
+    AS_context *ctx = NetworkAPI_CTX;
     IOBuf *ioptr = NULL;
+    struct sockaddr_in *conninfo;
+    struct sockaddr_in6 *conninfo6;
+    SocketContext *sptr = NULL;
+    ConnectionContext *cptr = NULL;
+
+    // if we were unable to get a file descriptor then we return -1
+    if ((sptr = NetworkAPI_SocketNew(NetworkAPI_CTX)) == NULL) return -1;
+
 
     // if we cannot add this information as a buffered IO queue entry.. then we return an error
-    if ((ioptr = NetworkAPI_BufferOutgoing(sockfd, (char *)buf, (int)len)) == NULL) {
+    if ((ioptr = NetworkAPI_BufferOutgoing(sockfd, (char *)buf, (int)len)) == NULL)
         return -1;
-    }
+
+    // find the connection context to copy the address information
+    if ((cptr = NetworkAPI_ConnectionByFD(ctx, sockfd)) == NULL) goto end;
 
     // copy over the other properties used in this API
-    if (addrlen == sizeof(struct sockaddr))
-        memcpy(&ioptr->addr, dest_addr, addrlen);
+    if (addrlen == sizeof(struct sockaddr_in)) {
+        conninfo = (struct sockaddr_in *)dest_addr;
+
+        sptr->remote_port = ntohs(conninfo->sin_port);
+        sptr->address_ipv4 = conninfo->sin_addr.s_addr;
+
+    } else if (addrlen == sizeof(struct sockaddr_in6)) {
+        conninfo6 = (struct sockaddr_in6 *)dest_addr;
+
+        sptr->remote_port = ntohs(conninfo6->sin6_port);
+        CopyIPv6Address(&cptr->address_ipv6, &conninfo6->sin6_addr);
+    }
+
+end:;
+    if (ctx) pthread_mutex_unlock(&cptr->mutex);
 
     return ioptr->size;
 }
@@ -1673,8 +1791,11 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
     // copy the information about the address from the incoming buffer
     if ((ioptr = cptr->in_buf) != NULL) {   
         // copy over the other properties used in this API
-        if (*addrlen == sizeof(struct sockaddr) && src_addr)
+        if (*addrlen == sizeof(struct sockaddr_in) && src_addr) {
             memcpy(src_addr, &ioptr->addr, *addrlen);
+        } else if (*addrlen == sizeof(struct sockaddr_in6) && src_addr) {
+            memcpy(src_addr, &ioptr->addr_ipv6, *addrlen);
+        }
     }
 
     pthread_mutex_unlock(&cptr->mutex);

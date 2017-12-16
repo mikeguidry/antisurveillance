@@ -25,6 +25,7 @@ typedef struct _io_buf {
 
     // src or dest addr...
     struct sockaddr_in addr;
+    struct sockaddr_in6 addr_ipv6;
     socklen_t addrlen;
     
 } IOBuf;
@@ -61,6 +62,8 @@ typedef struct _connection_context {
 
     uint32_t address_ipv4;
     struct in6_addr address_ipv6;
+
+    uint32_t our_ipv4;
     int is_ipv6;
 
     int port;
@@ -109,6 +112,10 @@ typedef struct _socket_context {
 
     uint32_t address_ipv4;
     struct in6_addr address_ipv6;
+
+    uint32_t our_ipv4;
+    struct in6_addr our_ipv6;
+    
     int is_ipv6;
 
     IOBuf *in_buf;

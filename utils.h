@@ -26,3 +26,5 @@ void L_link_unordered(LINK **list, LINK *ele);
 char *IP_prepare_ascii(uint32_t ipv4_dest, struct in6_addr *ipv6_src);
 int file_exist(char *filename);
 int FileWrite(char *filename, char *ptr, int size);
+uint32_t get_source_ipv4();
+void get_source_ipv6(struct in6_addr *addr6);
