@@ -663,7 +663,7 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
     //printf("network_fill_incoming_buffer %p %p\n", ctx, nptr);
 
     // clean up the packet queue structure (counts must be zero first time callling NetworkReadSocket())
-    memset(nptr, 0, sizeof(IncomingPacketQueue));
+    //memset(nptr, 0, sizeof(IncomingPacketQueue));
 
     // no need since calloc
     nptr->max_buf_size = MAX_BUF_SIZE;

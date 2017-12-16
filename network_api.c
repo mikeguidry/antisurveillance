@@ -42,6 +42,9 @@ this allows the router to have minimal modification.. and highest performance wh
 ever contacting the server itself
 the attack would essentially be untracable.. but it could be counted by the hops.. therefore hops should be randomized (so it seems further/closer)
 
+using this with ip ranges (bypassing firewalls, etc) allows reaching entire new types of attacks which can focus on hot spots in kernels, etc (of the actual
+tcp/ip stacks, or kernels itselves) to just pair with devastation of other attacks on the app layer (http).. load balancers probably have weird quirks
+if they are custom as well.. and IPv6 = whole mess ready to be exploited
 
 */
 
@@ -784,10 +787,10 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     while (sptr != NULL) {
         
         // *** if we want to support TCP/IP correctly we want to allow packets until we ACK everything, and close gracefully
-        if (!sptr->completed) {
+        //if (!sptr->completed) {
             // if filter is enabled.. verify it... sockets can prepare this to help with the rest of the system..
             // whenever listen() hits, or connect() can prepare that structure to only get packets designated for it
-            if (FilterCheck(ctx, &sptr->flt, iptr)) {
+            //if (FilterCheck(ctx, &sptr->flt, iptr)) {
                 // be sure both are same types (ipv4/6, and TCP/UDP/ICMP)
                 if (((sptr->state & PACKET_TYPE_IPV4) && (iptr->type & PACKET_TYPE_IPV4)) ||
                             ((sptr->state & PACKET_TYPE_IPV6) && (iptr->type & PACKET_TYPE_IPV6))) {
@@ -803,8 +806,8 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
                     }
                     // if it was processed and returned 1, then no need to test all other sockets.
                     if (ret) break;
-            }
-        }
+            //}
+        //}
         sptr = sptr->next;
     }
     j++;
@@ -1544,6 +1547,12 @@ int NetworkAPI_ConnectSocket(int sockfd, const struct sockaddr_in *addr, socklen
     cptr->port = 1024+(rand()%(65536-1024));
     // make sure the original socket context has this port we just chose
     sptr->port = cptr->port;
+
+    // ensure that the filter gets reinitialized
+    sptr->flt.init = 0;
+    // prepare the filter so that this socket only receives packets for its local port
+    FilterPrepare(&sptr->flt, FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, sptr->port);
+
     // pick random identifier for the header of this connections packets
     cptr->identifier = rand()%0xFFFFFFFF;
     // pick a random uint32 value to start the sequence for the TCP/IP security portion

@@ -1155,9 +1155,6 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
 
     end:;
 
-    if (iptr == NULL) {
-        printf("err processing\n");
-    }
     return iptr;
 }
 
