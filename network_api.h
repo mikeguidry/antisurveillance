@@ -131,6 +131,8 @@ typedef struct _socket_context {
     // is this socket done?
     int completed;
     pthread_mutex_t mutex;
+
+    int max_wait;
 } SocketContext;
 
 

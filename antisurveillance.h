@@ -343,7 +343,7 @@ typedef struct _antisurveillance_context {
     int free_memory;
 
     // socket list for network api
-    SocketContext *socket_list;
+    SocketContext *socket_list[JTABLE_SIZE];
     // current fd
     int socket_fd;
     pthread_t socket_list_mutex;

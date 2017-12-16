@@ -51,13 +51,21 @@ int network_code_start(AS_context *ctx, int tid) {
     if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;
 
     if ((sptr = NetworkAPI_SocketByFD(ctx, sock)) == NULL) return -1;
-    sprintf(ip, "192.168.72.%d", (tid == 135) ? 134 : tid);
+
+    if (tid == 174) tid = 173;
+    if (tid == 0) tid = 1;
+
+    sprintf(ip, "192.168.72.%d", tid);
+    //printf("settinng ip %s\n", ip);
     sptr->our_ipv4 = inet_addr(ip);
+
+    // max wait for recv... (for broken sockets until protocol is up to par with regular OS)
+    sptr->max_wait = 3;
     //printf("sock: %d\n", sock);
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.135");
+    dest.sin_addr.s_addr = inet_addr("192.168.72.174");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
@@ -85,7 +93,7 @@ int network_code_start(AS_context *ctx, int tid) {
             memset(buf,0,sizeof(buf)-1);
             //ctx->socket_list->connections->noblock=1;
             r = my_recv(sock, buf, sizeof(buf), 0);
-
+            if (r <= 0) retry--;
             //printf("recv: %d\ndata: \"%s\"\n", r, buf);
             if (strstr(buf, "</html>")) {
                 //printf("FULL SUCCESS\n");
@@ -93,7 +101,7 @@ int network_code_start(AS_context *ctx, int tid) {
                 break;
             }
             //if (!r) sleep(3);
-        } while (r != -1);// || retry--);
+        } while (r != -1 || !retry);
     }
 
     // close socket
@@ -130,7 +138,7 @@ void thread_network_test(void  *arg) {
             break;
         }
 
-        if (c == 20) exit(0);
+        //if (c == 20) exit(0);
     }
 
     

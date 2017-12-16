@@ -589,11 +589,11 @@ int network_process_incoming_buffer(AS_context *ctx) {
         nnext = nptr->next;
 
         // put in pool...
-        nptr->next = pool;
-        pool = nptr;
+        //nptr->next = pool;
+        //pool = nptr;
 
         // free this structure since we are finished with it
-        //free(nptr);
+        free(nptr);
         
         // go to the next cluster of packets we are processing
         nptr = nnext;
