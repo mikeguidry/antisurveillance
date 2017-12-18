@@ -422,7 +422,7 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
                 if (sptr->completed == 1) {
                     // we are giving 10 seconds to allow for the application to grab data after something caused the socket to error
                     // maybe support better but for now this system should work, and also allow massive connections simultaneously
-                    if ((ts - sptr->last_ts) > 2    ) {
+                    if ((ts - sptr->last_ts) > 2) {
                         //printf("turning to completed\n");
                         sptr->completed = 2;
                     }
@@ -645,6 +645,9 @@ int NetworkAPI_Perform(AS_context *ctx) {
         while (sptr != NULL) {
             // lock the connection structure so no other threads affect it while we modify it
             // the IO buffers can change from the network outgoing/ingoing threads
+
+            // trylock isnt good here.. because by the time it loops around is too long to properly deal with TCP/IP for the socket...
+            // it went from 20k to 13k on a test...
             if (pthread_mutex_lock(&sptr->mutex) == 0) {
                 //printf("locked cptr %p\n", cptr);
                 // outgoing instructions go first.. always the most important
@@ -707,8 +710,13 @@ int NetworkAPI_IncomingSocket(AS_context *ctx, SocketContext *sptr, PacketBuildI
     int ret = 0;
     IOBuf *bptr = NULL;
 
-    if (((sptr->state & PACKET_TYPE_IPV4) && (iptr->type & PACKET_TYPE_IPV4)) ||
-                ((sptr->state & PACKET_TYPE_IPV6) && (iptr->type & PACKET_TYPE_IPV6))) {
+    // this filter check is a hotspot.. but it would happen in IncomingTCP() or whatever anyways..
+    if (!FilterCheck(ctx, &sptr->flt, iptr)) return 0;
+
+
+    // The top of each SocketIncoming[TCP/UDP/ICMP] perform this check.. so i commented out.. things went fromm 17093 to 18933
+    //if (((sptr->state & PACKET_TYPE_IPV4) && (iptr->type & PACKET_TYPE_IPV4)) ||
+    //            ((sptr->state & PACKET_TYPE_IPV6) && (iptr->type & PACKET_TYPE_IPV6))) {
                 // if its TCP then call the tcp processor
                 if ((sptr->state & SOCKET_TCP) && (iptr->type & PACKET_TYPE_TCP))
                     ret = NetworkAPI_SocketIncomingTCP(ctx, sptr, iptr);
@@ -718,7 +726,7 @@ int NetworkAPI_IncomingSocket(AS_context *ctx, SocketContext *sptr, PacketBuildI
                 // or call ICMP processor
                 else if ((sptr->state & SOCKET_ICMP) && (iptr->type & PACKET_TYPE_ICMP))
                     ret = NetworkAPI_SocketIncomingICMP(ctx, sptr, iptr);
-    }
+    //}
 
     return ret;    
 }
@@ -735,13 +743,11 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
         sptr = ctx->socket_list[j];
         while (sptr != NULL) {
             
-            ret = NetworkAPI_IncomingSocket(ctx, sptr, iptr);
-            if (ret) goto end;
-            if (sptr->connections) {
-                connptr = sptr->connections;
+            if ((ret = NetworkAPI_IncomingSocket(ctx, sptr, iptr)) > 0) goto end;
+
+            if ((connptr = sptr->connections) != NULL) {
                 while (connptr != NULL) {
-                    ret = NetworkAPI_IncomingSocket(ctx, connptr, iptr);
-                    if (ret) goto end;
+                    if ((ret = NetworkAPI_IncomingSocket(ctx, connptr, iptr)) > 0) goto end;
                     
                     connptr = connptr->next;
                 }
@@ -855,10 +861,8 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     }
 
     // verify ports equal to easily disqualify.. go straight to end if not (dont set to 1 since it may relate  to another socket)
-    if (sptr->port && (iptr->destination_port != sptr->port)) {
-        //if (w) printf("not same port as socket\n");
-        goto skipunlock;
-    }
+    // this is handled by FilterCheck in the prior function
+    if (sptr->port && (iptr->destination_port != sptr->port)) goto skipunlock;
 
     // lets check if this is for a listening socket
     if (sptr->state & SOCKET_TCP_LISTEN) {
@@ -1201,21 +1205,23 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
     // if we cannot find the connection by its file descriptor.. then we are done (return NULL since ioptr starts as NULL)
     if ((cptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
 
+    pthread_mutex_lock(&cptr->mutex);
+    
     // if there are too many unvalidated outgoing buffered packets in queue and this connection is blocking..
     // lets wait for at least 1 more to validate before we continue
     // some apps may break, or transmit too much data if this doesnt take plaace
-    /*if (!cptr->noblock) {
+    if (!cptr->noblock) {
         if ((count = NetworkAPI_Count_Outgoing_Queue(cptr->out_buf)) > 0) {
             while (1) {
                 pthread_mutex_unlock(&cptr->mutex);
                 // free so we dont unlock again at bottom of function if we cannot find the connection after this sleep period
-                cptr = NULL;
+                
                 usleep(50000);
 
                 // its possible the connection died during the  sleep due to cleanup
-                if ((cptr = NetworkAPI_ConnectionByFD(ctx, sockfd)) == NULL) goto end;
+                if ((cptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
 
-                //pthread_mutex_lock(&cptr->mutex);
+                pthread_mutex_lock(&cptr->mutex);
                 
                 if (cptr->completed) goto end;
 
@@ -1224,9 +1230,9 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
                     break;
             }
         }
-    }*/
+    }
 
-    pthread_mutex_lock(&cptr->mutex);
+    
 
     cptr->last_ts = time(0);
 
@@ -1548,14 +1554,14 @@ int NetworkAPI_ConnectSocket(int sockfd, const struct sockaddr_in *addr, socklen
         sptr = NULL;
 
         while (((start - time(0)) < 30) && !r) {
-
-
             // we dont want this to happen too fast because other threads are locking/changing client structures
             usleep(50000);
 
             // if we cannot find the connection by its file descriptor.. then we are done (return NULL since ioptr starts as NULL)
             if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
 
+            pthread_mutex_lock(&sptr->mutex);
+            
             // check to see if the state has changed since we began
             if (sptr->state != state) {
                 r = 1;
@@ -1670,10 +1676,9 @@ int NetworkAPI_Listen(int sockfd) {
     }
 
     // verify no other socket is listening.. if we find another return an error
-    if ((pptr = NetworkAPI_SocketByStatePort(ctx, SOCKET_TCP_LISTEN, sptr->port)) != NULL) {
-        printf("cannot find socket tcp listen\n");
-        return -1;
-    }
+    if ((pptr = NetworkAPI_SocketByStatePort(ctx, SOCKET_TCP_LISTEN, sptr->port)) != NULL) goto end;
+
+    pthread_mutex_lock(&sptr->mutex);
 
     // enable listening on the socket
     sptr->state |= SOCKET_TCP_LISTEN;
@@ -1683,6 +1688,8 @@ int NetworkAPI_Listen(int sockfd) {
 
     printf("filter prepare for port %d\n", sptr->port);
 
+end:;
+    if (sptr) pthread_mutex_unlock(&sptr->mutex);
     // no error
     return 0;
 }
@@ -1695,6 +1702,8 @@ int NetworkAPI_Close(int fd) {
     if ((sptr = NetworkAPI_SocketByFD(ctx, fd)) == NULL)
         return -1;
 
+    pthread_mutex_lock(&sptr->mutex);
+
     // set state to 0
     sptr->state = 0;
     // set completed to 2 (program isnt going to require any data in the buffer)
@@ -1703,6 +1712,8 @@ int NetworkAPI_Close(int fd) {
     sptr->port = 1;
     sptr->remote_port = 1;
 
+    pthread_mutex_unlock(&sptr->mutex);
+
     return 0;
 }
 
@@ -1710,6 +1721,7 @@ int NetworkAPI_Close(int fd) {
 // to keep things simple for allowing dynamic ports, and IPs for listening, etc (so we can open services
 // across thousands of IPs from various netmasks simultaneously, and move it without keeping discarded ones)..
 // the SocketContext/ConnectionContext doesnt work well.. everything should be a socketcontext
+// do not lock mutex here.. it happens in IncomingTCP before this
 SocketContext *NetworkAPI_DuplicateSocket(SocketContext *sptr) {
     SocketContext *ret = NULL;
     int ret_size = 0;
@@ -1859,6 +1871,8 @@ ssize_t my_sendto(int sockfd, const void *buf, size_t len, int flags, const stru
     // find the connection context to copy the address information
     if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
 
+    pthread_mutex_lock(&sptr->mutex);
+
     // copy over the other properties used in this API
     if (addrlen == sizeof(struct sockaddr_in)) {
         conninfo = (struct sockaddr_in *)dest_addr;
@@ -1919,7 +1933,7 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
     if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) return -1;
     
     // lock the mutex so nothing else can affect it while we are using it
-    //pthread_mutex_lock(&cptr->mutex);
+    pthread_mutex_lock(&sptr->mutex);
 
     // copy the information about the address from the incoming buffer
     if ((ioptr = sptr->in_buf) != NULL) {   
