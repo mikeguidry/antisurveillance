@@ -244,7 +244,7 @@ SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd) {
 
         // we are choosing to ignore cptr->completed here because we want the applicaation to have ability
         // to obtain data which has already been downloaded from the remote side (we accept all of it on purpose)
-        /*if ((cptr = sptr->connections) != NULL) {
+        if ((cptr = sptr->connections) != NULL) {
             while (cptr != NULL) {
                 //pthread_mutex_lock(&cptr->mutex);
                 if ((cptr->completed != 2) && cptr->socket_fd == fd) {
@@ -254,7 +254,7 @@ SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd) {
                 if (ret) break;
                 cptr = cptr->next;
             }
-        }*/
+        }
 
         //if (ret) break;
         sptr = sptr->next;
@@ -949,22 +949,22 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     struct in_addr addr;
     int w = 0;
 
-
+/*
     if (iptr->destination_port == 1001 || (iptr->source_port == 1001)) {
         w=1;
         addr.s_addr = iptr->source_ip;
-        printf("Incoming TCP packet data_size %d [%s:%d -> %d]\n", iptr->data_size, inet_ntoa(addr), iptr->source_port, iptr->destination_port);
-    /*
+        //printf("Incoming TCP packet data_size %d [%s:%d -> %d]\n", iptr->data_size, inet_ntoa(addr), iptr->source_port, iptr->destination_port);
+   
         if (iptr->flags & TCP_FLAG_FIN) printf("fin\n");
         if (iptr->flags & TCP_FLAG_ACK) printf("ack\n");
         if (iptr->flags & TCP_FLAG_RST) printf("rst\n");
         if (iptr->flags & TCP_FLAG_PSH) printf("psh\n");
-    */
+  
     }
-
+  */
     // be sure both are same IP protocol ipv4 vs ipv6
     if (sptr->address_ipv4 && !iptr->source_ip) {
-        if (w) printf("not same ip ver\n");
+        //if (w) printf("not same ip ver\n");
         goto end;
     }
     
@@ -972,7 +972,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     // is ipv4?
     if (iptr->destination_ip ) {
         if (iptr->destination_ip != sptr->our_ipv4) {
-            if (w) printf("ip wrong\n");
+            //if (w) printf("ip wrong\n");
             goto end;
         }
     } else {
@@ -983,7 +983,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
 
     // verify ports equal to easily disqualify.. go straight to end if not (dont set to 1 since it may relate  to another socket)
     if (sptr->port && (iptr->destination_port != sptr->port)) {
-        if (w) printf("not same port as socket\n");
+        //if (w) printf("not same port as socket\n");
         goto end;
     }
 
@@ -998,7 +998,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
 
             // create new connection structure
             if (!cptr && (cptr = NetworkAPI_ConnectionNew(sptr)) == NULL) {
-                printf("cannnot get new connection sstrucutre\n");
+                //printf("cannnot get new connection sstrucutre\n");
                 goto end;
             }
 
@@ -1007,7 +1007,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
             cptr->remote_seq = ++iptr->seq;
 
 
-            printf("cptr %p\n", cptr);
+            //printf("cptr %p\n", cptr);
 
             // generate packet sending back ACK+SYN
             if ((bptr = NetworkAPI_GeneratePacket(ctx, sptr, cptr, TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP)) == NULL) {
@@ -1023,7 +1023,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
             // no neeed to allow anythiing else to process this packet
             ret = 1;
 
-            printf("good send SYN|ACK\n");
+            //printf("good send SYN|ACK\n");
 
             goto end;
         }
@@ -1033,9 +1033,9 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     // anything else we expect it to be related to a connection structure
     // if we dont have a connection structure yet then we are done.. listening sockets were already verified
     if ((cptr = NetworkAPI_ConnFindByRemotePort(ctx, sptr, iptr->source_port)) == NULL) {
-        if (w) printf("cannot find connection\n");
+        //if (w) printf("cannot find connection\n");
         goto end;
-    } else printf("found connection\n");
+    }// else printf("found connection\n");
 
     // lock mutex
     pthread_mutex_lock(&cptr->mutex);
@@ -1574,6 +1574,8 @@ ssize_t NetworkAPI_RecvBlocking(int sockfd, void *buf, size_t len) {
 
         start = time(0);
         while(1) {
+            //printf("socket %d read loop\n", sockfd);
+
             // we dont want this to be too low since other threads are going to lock/unlock the connection structure
             usleep(50000);
 
@@ -1590,6 +1592,10 @@ ssize_t NetworkAPI_RecvBlocking(int sockfd, void *buf, size_t len) {
                 ret = 0;
                 break;
             }
+
+
+            // we must also check if the socket state  has changed...
+
         }
     }
 
