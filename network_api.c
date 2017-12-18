@@ -307,7 +307,7 @@ SocketContext *NetworkAPI_ConnectionNew(AS_context *ctx, SocketContext *sptr) {
     SocketContext *cptr = NULL;
 
     // duplicate the socket context...
-    if ((cptr = DuplicateSocket(sptr)) == NULL) return NULL;
+    if ((cptr = NetworkAPI_DuplicateSocket(sptr)) == NULL) return NULL;
 
     cptr->ts = cptr->last_ts = time(0);
     //cptr->port = cptr->port;
@@ -321,7 +321,7 @@ SocketContext *NetworkAPI_ConnectionNew(AS_context *ctx, SocketContext *sptr) {
     pthread_mutex_lock(&NetworkAPI_CTX->socket_list_mutex);
 
     // add the connection to the original socket context structure so it can get accepted by the appllication   
-    L_link_ordered((LINK **)&cptr->connections[NetworkAPI_IP_JTABLE(sptr->socket_fd,NULL)], (LINK *)sptr);
+    L_link_ordered((LINK **)&sptr->connections[NetworkAPI_IP_JTABLE(cptr->socket_fd,NULL)], (LINK *)cptr);
     
     pthread_mutex_lock(&cptr->mutex);
 
@@ -422,7 +422,7 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
                 if (sptr->completed == 1) {
                     // we are giving 10 seconds to allow for the application to grab data after something caused the socket to error
                     // maybe support better but for now this system should work, and also allow massive connections simultaneously
-                    if ((ts - sptr->last_ts) > 10) {
+                    if ((ts - sptr->last_ts) > 2    ) {
                         //printf("turning to completed\n");
                         sptr->completed = 2;
                     }
@@ -1707,6 +1707,29 @@ int NetworkAPI_Close(int fd) {
 }
 
 
+// to keep things simple for allowing dynamic ports, and IPs for listening, etc (so we can open services
+// across thousands of IPs from various netmasks simultaneously, and move it without keeping discarded ones)..
+// the SocketContext/ConnectionContext doesnt work well.. everything should be a socketcontext
+SocketContext *NetworkAPI_DuplicateSocket(SocketContext *sptr) {
+    SocketContext *ret = NULL;
+    int ret_size = 0;
+
+    // duplicate the socket context
+    if (!PtrDuplicate(sptr, sizeof(SocketContext), &ret, &ret_size)) return NULL;
+
+    // change the pointers (we dont want them)
+    ret->next = NULL;
+    ret->in_buf = NULL;
+    ret->out_buf = NULL;
+    ret->connections = NULL;
+
+    // set state to 0 (just so it doesnt mess up anything if i forget in some functions later)
+    ret->state = 0;
+
+    return ret;
+}
+
+
 // -------------- all networkAPI (our functions) above here..
 
 
@@ -1962,29 +1985,6 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
         ret = 1;
     }
-
-    return ret;
-}
-
-
-// to keep things simple for allowing dynamic ports, and IPs for listening, etc (so we can open services
-// across thousands of IPs from various netmasks simultaneously, and move it without keeping discarded ones)..
-// the SocketContext/ConnectionContext doesnt work well.. everything should be a socketcontext
-SocketContext *DuplicateSocket(SocketContext *sptr) {
-    SocketContext *ret = NULL;
-    int ret_size = 0;
-
-    // duplicate the socket context
-    if (!PtrDuplicate(sptr, sizeof(SocketContext), &ret, &ret_size)) return NULL;
-
-    // change the pointers (we dont want them)
-    ret->next = NULL;
-    ret->in_buf = NULL;
-    ret->out_buf = NULL;
-    ret->connections = NULL;
-
-    // set state to 0 (just so it doesnt mess up anything if i forget in some functions later)
-    ret->state = 0;
 
     return ret;
 }

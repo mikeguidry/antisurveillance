@@ -118,7 +118,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
 int NetworkAPI_SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 int NetworkAPI_SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 int NetworkAPI_Perform(AS_context *);
-SocketContext *DuplicateSocket(SocketContext *sptr);
+SocketContext *NetworkAPI_DuplicateSocket(SocketContext *sptr);
 
 
 PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContext *cptr, int flags);
