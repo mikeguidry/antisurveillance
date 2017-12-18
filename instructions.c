@@ -104,7 +104,7 @@ void FilterPrepare(FilterInformation *fptr, int type, uint32_t value) {
 // Filters through packets ensuring that it matches a criteria of something being looked for..
 int FilterCheck(AS_context *ctx, FilterInformation *fptr, PacketBuildInstructions *iptr) {
     int ret = 0;
-    struct iphdr *ip = (struct iphdr *)iptr->packet;
+    struct iphdr *ip = NULL;
     struct tcphdr *tcp = NULL;
     struct icmphdr *icmp = NULL;
     struct udphdr *udp = NULL;
@@ -112,6 +112,9 @@ int FilterCheck(AS_context *ctx, FilterInformation *fptr, PacketBuildInstruction
     int cur_packet = 0;
     int found = 0;
 
+    if (iptr == NULL) return -1;
+
+    ip = (struct iphdr *)iptr->packet;
     //return 1;
 
     // if the filter is empty... its allowed

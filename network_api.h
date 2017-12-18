@@ -49,55 +49,10 @@ enum {
 struct _socket_context;
 typedef struct _socket_context SocketContext;
 
-
-typedef struct _connection_context {
-    struct _connection_context *next;
-
-    uint32_t seq;
-    uint32_t remote_seq;
-    uint32_t identifier;
-
-    int ts;
-    int last_ts;
-
-    uint32_t address_ipv4;
-    struct in6_addr address_ipv6;
-
-    int is_ipv6;
-
-    //int port;
-    int remote_port;
-
-    // these go first (before IOBuf's).. contains tcp/ip protocol instructions
-    PacketBuildInstructions *out_instructions;
-
-    IOBuf *in_buf;
-    IOBuf *out_buf;
-
-    FilterInformation flt;
-
-    int socket_fd;
-    int state;
-    int incoming;
-    int completed;
-
-    SocketContext *socket;
-
-    // mutex is for whenever apps are performing BLOCKING actions like connect()..
-    // go figure.. non blocking is actually EASIER to support...
-    int noblock;
-    pthread_mutex_t mutex;
-} ConnectionContext;
-
 typedef struct _socket_context {
     struct _socket_context *next;
 
-    // getting a little sloppy here.. .. the connetion fd needs to find the socket..
-    // i need to redesign the system for finding sockets/fds.. or link them together more
-    // it depends how it goes with multiple accepts.. ill check soon
-    struct _socket_context *connection_list;
-
-    ConnectionContext *connections;
+    SocketContext *connections;
 
     int state;
     int socket_fd;
@@ -124,6 +79,7 @@ typedef struct _socket_context {
 
     IOBuf *in_buf;
     IOBuf *out_buf;
+    PacketBuildInstructions *out_instructions;
 
     int domain;
     int type;
@@ -137,6 +93,9 @@ typedef struct _socket_context {
     pthread_mutex_t mutex;
 
     int max_wait;
+
+    // if we want to store which fd was duplicated
+    int duplicate_fd;
 } SocketContext;
 
 
@@ -144,12 +103,12 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 int NetworkAPI_Init(AS_context *ctx);
 int NetworkAPI_Perform(AS_context *ctx);
 int NetworkAPI_SocketIncoming(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
-ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd);
+SocketContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd);
 SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd);
 SocketContext *NetworkAPI_SocketByStatePort(AS_context *ctx, int state, int port);
 int NetworkAPI_NewFD(AS_context *ctx);
 SocketContext *NetworkAPI_SocketNew(AS_context *ctx);
-ConnectionContext *NetworkAPI_ConnectionNew(SocketContext *sptr);
+SocketContext *NetworkAPI_ConnectionNew(AS_context *, SocketContext *sptr);
 void NetworkAPI_FreeBuffers(IOBuf **ioptr);
 void NetworkAPI_ConnectionsCleanup(AS_context *, SocketContext *sptr);
 int NetworkAPI_Cleanup(AS_context *ctx);
@@ -158,11 +117,11 @@ PacketBuildInstructions *NetworkAPI_BuildBasePacket(AS_context *ctx, SocketConte
 int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 int NetworkAPI_SocketIncomingUDP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
 int NetworkAPI_SocketIncomingICMP(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr);
-
 int NetworkAPI_Perform(AS_context *);
+SocketContext *DuplicateSocket(SocketContext *sptr);
 
 
-PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContext *sptr, ConnectionContext *cptr, int flags);
+PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContext *cptr, int flags);
 
 
 

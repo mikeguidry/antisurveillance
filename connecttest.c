@@ -67,7 +67,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     // bind to the IP we chose, and port for the  outgoing connection we will place
     r = my_bind((int)sock, (const struct sockaddr_in *)&dest, (socklen_t)sizeof(struct sockaddr_in));
-    printf("bind: %d\n", r);
+    //printf("bind: %d\n", r);
 
 
     // max wait for recv... (for broken sockets until protocol is up to par with regular OS)

@@ -69,7 +69,26 @@ void L_link_ordered(LINK **list, LINK *ele) {
     _last->next = ele;
 }
 
-  
+  // unlinks something from a list
+void L_unlink(LINK **list, LINK *ptr) {
+    LINK *lptr = *list, *lnext = NULL, *llast = NULL;
+
+    while (lptr != NULL) {
+
+        // if we found it
+        if (lptr == ptr) {
+            if (llast) {
+                llast->next = ptr->next;
+            } else {
+                *list = ptr->next;
+            }
+            return;
+        }
+
+        lptr = lptr->next;
+    }
+}
+
 
 // free a pointer after verifying it even exists
 void PtrFree(char **ptr) {
