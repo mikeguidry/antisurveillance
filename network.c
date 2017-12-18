@@ -269,7 +269,8 @@ int prepare_write_sockets(AS_context *ctx) {
     int ip_ver = 0, proto = 0;
     int which_proto = 0, which_domain = 0;
     int bufsize = 1024*1024*10;
-
+    struct ifreq ifr;
+    struct packet_mreq mreq;
 
     for (proto = 0; proto < 3; proto++) {
         for (ip_ver = 0; ip_ver < 2; ip_ver++) {
@@ -306,6 +307,16 @@ int prepare_write_sockets(AS_context *ctx) {
                 exit(-1);
                 return -1;
             }
+
+            //https://stackoverflow.com/questions/12177708/raw-socket-promiscuous-mode-not-sniffing-what-i-write
+            memcpy(&ifr.ifr_name, ctx->network_interface, IFNAMSIZ);
+            ioctl(ctx->write_socket[proto][ip_ver], SIOCGIFINDEX, &ifr);
+
+            mreq.mr_ifindex = ifr.ifr_ifindex;
+            mreq.mr_type = PACKET_MR_PROMISC;
+            mreq.mr_alen = 6;
+
+            setsockopt(ctx->write_socket[proto][ip_ver],SOL_PACKET,PACKET_ADD_MEMBERSHIP,(void*)&mreq,(socklen_t)sizeof(mreq));
 
             setsockopt(ctx->write_socket[proto][ip_ver], SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
 
@@ -407,11 +418,13 @@ int prepare_read_sockets(AS_context *ctx) {
     int ip_ver = 0;
     int which_proto = 0, proto = 0, which_domain = 0;
 
+    struct packet_mreq mreq;
+
     // set ifr structure to 0
     memset (&ifr, 0, sizeof (struct ifreq));
     memset(&if_mac, 0, sizeof(struct ifreq));
     memset(&if_ip, 0, sizeof(struct ifreq));
-    
+    memset(&mreq, 0, sizeof(mreq));
 
     for (proto = 0; proto < 3; proto++) {
         for (ip_ver = 0; ip_ver < 2; ip_ver++) {
