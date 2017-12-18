@@ -46,6 +46,26 @@ using this with ip ranges (bypassing firewalls, etc) allows reaching entire new 
 tcp/ip stacks, or kernels itselves) to just pair with devastation of other attacks on the app layer (http).. load balancers probably have weird quirks
 if they are custom as well.. and IPv6 = whole mess ready to be exploited
 
+
+
+to take this unoptimized system and use it THIS WEEK to perform the biggest attack the internet  has ever seen would only take a few changees:
+1) your passive monitoring box would need several other machines (could even use different uplinks, or remote) to help it generate packets fast enough
+you take the IPs you are using, and modular them by the amount of boxes you are going to use.. i suggest at least 10-20 depending on the range you will
+use for attacking... ensure that it is split up properly.. you may have to adjust this algorithm
+
+2) each machine shoould execute separate processes which can split up the connections  by source port ranges of the IP addresses you are going to
+spoof
+
+3) ensure you are obtaining thee ACK/SEQ quick enough, and also you need to ensure your 
+
+
+-- this is impossible to block although there are some protections you can take to limit your usage in these attacks
+
+
+
+*** - if doing algorithm changes in real time..  cptr->port, and sptr->port should be changed..
+and both need to be supported for IncomingTCP, etc (along with addresses that can change, etc)
+
 */
 
 
@@ -79,7 +99,29 @@ if they are custom as well.. and IPv6 = whole mess ready to be exploited
 #include <math.h>
 
 
-int IP_JTABLE(uint32_t ip, struct in6_addr *ipv6);
+
+int NetworkAPI_IP_JTABLE(uint32_t ip, struct in6_addr *ipv6) {
+    return 0;
+    int i = 0;
+    uint32_t _ip = 0;
+    uint32_t *_ipv6 = NULL;
+
+    if (ip) {
+        _ip = ip;
+    } else {
+        // add all 4 parts of ipv6 together to make a fake IPv4 just so we can calculate the jump table.. so they share the same
+        while (i < 4) {
+            _ipv6 = (uint32_t *)((char *)ipv6+(sizeof(uint32_t)*i));
+            _ip += *_ipv6;
+
+            i++;
+        }
+    }
+
+    return (_ip % JTABLE_SIZE);
+}
+
+
 
 // global variable for AS_context since the libc functions for sockets cannot be changed-
 AS_context *NetworkAPI_CTX = NULL;
@@ -98,7 +140,7 @@ int my_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, c
 int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
 int my_getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
 int my_setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
-
+int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 // ----
 // done
 int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
@@ -154,7 +196,7 @@ ConnectionContext *NetworkAPI_ConnectionByFD(AS_context *ctx, int fd) {
 
     pthread_mutex_lock(&ctx->socket_list_mutex);
     
-    sptr = ctx->socket_list[IP_JTABLE(fd,NULL)];
+    sptr = ctx->socket_list[NetworkAPI_IP_JTABLE(fd,NULL)];
     while (sptr != NULL) {
         if ((cptr = sptr->connections) != NULL) {
             // sptr becomes completed manually.. by closing socket.. so the app wouldnt want anymore memory afterwards
@@ -193,7 +235,7 @@ SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd) {
 
     pthread_mutex_lock(&ctx->socket_list_mutex);
 
-    sptr = ctx->socket_list[IP_JTABLE(fd,NULL)];
+    sptr = ctx->socket_list[NetworkAPI_IP_JTABLE(fd,NULL)];
     while (sptr != NULL) {
         if (sptr->socket_fd == fd) {
             ret = sptr;
@@ -232,17 +274,21 @@ SocketContext *NetworkAPI_SocketByStatePort(AS_context *ctx, int state, int port
 
     pthread_mutex_lock(&ctx->socket_list_mutex);
 
-    for (i = 0; i < JTABLE_SIZE; i++) {
-        sptr = ctx->socket_list[i];
-        while (sptr != NULL) {
-            if (!sptr->completed && (!state || ((sptr->state & state))))
-                if (port && sptr->port == port) {
-                    goto end;
-                }
+    while (i < JTABLE_SIZE) {
+        for (i = 0; i < JTABLE_SIZE; i++) {
+            sptr = ctx->socket_list[i];
+            while (sptr != NULL) {
+                if (!sptr->completed && (!state || ((sptr->state & state))))
+                    if (port && sptr->port == port) {
+                        goto end;
+                    }
 
-            sptr = sptr->next;
+                sptr = sptr->next;
+            }
         }
+        i++;
     }
+        
 
     end:;
     pthread_mutex_unlock(&ctx->socket_list_mutex);
@@ -298,7 +344,7 @@ SocketContext *NetworkAPI_SocketNew(AS_context *ctx) {
         pthread_mutex_init(&sptr->mutex, NULL);
 
         pthread_mutex_lock(&ctx->socket_list_mutex);
-        L_link_ordered((LINK **)&ctx->socket_list[IP_JTABLE(sptr->socket_fd,NULL)], (LINK *)sptr);
+        L_link_ordered((LINK **)&ctx->socket_list[NetworkAPI_IP_JTABLE(sptr->socket_fd,NULL)], (LINK *)sptr);
         pthread_mutex_unlock(&ctx->socket_list_mutex);
     }
 
@@ -316,7 +362,7 @@ ConnectionContext *NetworkAPI_ConnectionNew(SocketContext *sptr) {
         return NULL;
 
     cptr->ts = cptr->last_ts = time(0);
-    cptr->port = sptr->port;
+    //cptr->port = cptr->port;
     cptr->identifier = rand()%0xFFFFFFFF;
     cptr->seq = rand()%0xFFFFFFFF;
     cptr->socket = sptr;
@@ -463,41 +509,41 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
     pthread_mutex_lock(&ctx->socket_list_mutex);
 
     while (i < JTABLE_SIZE) {
-    sptr = ctx->socket_list[i];
-    while (sptr != NULL) {
-        
-        // first cleanup connections.. we need a timeout on these.. (if connecctions are idle for 5 minutes?)
-        if (sptr->connections)
-            NetworkAPI_ConnectionsCleanup(ctx, sptr);
+        sptr = ctx->socket_list[i];
+        while (sptr != NULL) {
+            
+            // first cleanup connections.. we need a timeout on these.. (if connecctions are idle for 5 minutes?)
+            if (sptr->connections)
+                NetworkAPI_ConnectionsCleanup(ctx, sptr);
 
-        // we can only cleanup this socket context if all connections are over (they are linked directly)
-        if (sptr->completed && !L_count((LINK *)sptr->connections)) {
-            //printf("cleaning socket\n");
-            snext = sptr->next;
+            // we can only cleanup this socket context if all connections are over (they are linked directly)
+            if (sptr->completed && !L_count((LINK *)sptr->connections)) {
+                //printf("cleaning socket\n");
+                snext = sptr->next;
 
-            if (ctx->socket_list[i] == sptr) {
-                ctx->socket_list[i] = snext;
-            } else {
-                slast->next = snext;
+                if (ctx->socket_list[i] == sptr) {
+                    ctx->socket_list[i] = snext;
+                } else {
+                    slast->next = snext;
+                }
+
+                NetworkAPI_FreeBuffers(&sptr->in_buf);
+                NetworkAPI_FreeBuffers(&sptr->out_buf);
+
+                //pthread_mutex_unlock(&sptr->mutex);
+
+                free(sptr);
+
+                sptr = snext;
+                continue;
             }
-
-            NetworkAPI_FreeBuffers(&sptr->in_buf);
-            NetworkAPI_FreeBuffers(&sptr->out_buf);
 
             //pthread_mutex_unlock(&sptr->mutex);
 
-            free(sptr);
-
-            sptr = snext;
-            continue;
+            slast = sptr;
+            sptr = sptr->next;
         }
-
-        //pthread_mutex_unlock(&sptr->mutex);
-
-        slast = sptr;
-        sptr = sptr->next;
-    }
-    i++;
+        i++;
     }
 
     pthread_mutex_unlock(&ctx->socket_list_mutex);
@@ -526,7 +572,7 @@ void NetworkAPI_TransmitUDP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
             CopyIPv6Address(&iptr->destination_ipv6, &cptr->socket->our_ipv6);
         }
         
-        iptr->source_port = cptr->port;
+        iptr->source_port = cptr->socket->port;
         iptr->destination_port = ntohs(ioptr->addr.sin_port);
         iptr->header_identifier = cptr->identifier++;
 
@@ -630,7 +676,7 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, ConnectionContext *cptr, IOBuf *iop
             CopyIPv6Address(&iptr->destination_ipv6, &cptr->address_ipv6);
         }
 
-        iptr->source_port = cptr->port;
+        iptr->source_port = cptr->socket->port;
         iptr->destination_port = cptr->remote_port;//);//ntohs(ioptr->addr.sin_port);
 
         // TCP/IP ack/seq is required
@@ -702,64 +748,67 @@ int NetworkAPI_Perform(AS_context *ctx) {
 
     pthread_mutex_lock(&ctx->socket_list_mutex);
 
+    // loop for every jump table list (speeds up things drastically.. 4000 in 1 minute to 20000)
     while (j < JTABLE_SIZE) {
-    // loop for all sockets in the list to perform actions
-    sptr = ctx->socket_list[j];
-    while (sptr != NULL) {
-        //pthread_mutex_lock(&sptr->mutex);
-        // we want to loop for all connections under each socket (one listen socket will have many connections)
-        cptr = sptr->connections;
-        while (cptr != NULL) {
-            // lock the connection structure so no other threads affect it while we modify it
-            // the IO buffers can change from the network outgoing/ingoing threads
-            if (pthread_mutex_lock(&cptr->mutex) == 0) {
-                //printf("locked cptr %p\n", cptr);
-                // outgoing instructions go first.. always the most important
-                if (cptr->out_instructions != NULL) {
-                    // handle all outgoing instructions queued for this connection in proper FIFO order
-                    iptr = cptr->out_instructions;
-                    while (iptr) {
-                        i = NetworkQueueInstructions(ctx, iptr, &optr);
-                        // unchain this one
-                        iptr = iptr->next;
-                    }
-                    // free this instruction structure we just used
-                    PacketBuildInstructionsFree(&cptr->out_instructions);
-                } else {
-                    //loop to see if we are prepared to distribute another packet (either first time, timeout, or next)
-                    ioptr = cptr->out_buf;
-                    while (ioptr != NULL) {
-                        // either packet hasn't been transmitted.... or we will retransmit
-                        if (!ioptr->verified && (!ioptr->transmit_ts || ((ts - ioptr->transmit_ts) > 3))) {
-                            if (ioptr->retry++ < 5) {
-                                ioptr->transmit_ts = time(0);
-
-                                // call correct packet building for this outgoing buffer
-                                NetworkAPI_TransmitPacket(ctx, cptr, ioptr, &optr);
-                            } else {
-
-                                // set completed to 1 becauase we want the appllication to have the ability to get the entire incoming packet queue
-                                cptr->completed = 1;
-                                
-                                // send back RST packet... due to too many timeouts on successful transmission of a packet (5 tries at 3seconds each)
-                                NetworkAPI_GeneratePacket(ctx, sptr, cptr, TCP_FLAG_RST|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP);
-                            }
-                            break;
+        // loop for all sockets in the list to perform actions
+        sptr = ctx->socket_list[j];
+        while (sptr != NULL) {
+            //pthread_mutex_lock(&sptr->mutex);
+            // we want to loop for all connections under each socket (one listen socket will have many connections)
+            cptr = sptr->connections;
+            while (cptr != NULL) {
+                // lock the connection structure so no other threads affect it while we modify it
+                // the IO buffers can change from the network outgoing/ingoing threads
+                if (pthread_mutex_lock(&cptr->mutex) == 0) {
+                    //printf("locked cptr %p\n", cptr);
+                    // outgoing instructions go first.. always the most important
+                    if (cptr->out_instructions != NULL) {
+                        // handle all outgoing instructions queued for this connection in proper FIFO order
+                        iptr = cptr->out_instructions;
+                        while (iptr) {
+                            i = NetworkQueueInstructions(ctx, iptr, &optr);
+                            // unchain this one
+                            iptr = iptr->next;
                         }
-                        ioptr = ioptr->next;
+                        // free this instruction structure we just used
+                        PacketBuildInstructionsFree(&cptr->out_instructions);
+                    } else {
+                        //loop to see if we are prepared to distribute another packet (either first time, timeout, or next)
+                        ioptr = cptr->out_buf;
+                        while (ioptr != NULL) {
+                            // either packet hasn't been transmitted.... or we will retransmit
+                            if (!ioptr->verified && (!ioptr->transmit_ts || ((ts - ioptr->transmit_ts) > 3))) {
+                                if (ioptr->retry++ < 5) {
+                                    ioptr->transmit_ts = time(0);
+
+                                    // call correct packet building for this outgoing buffer
+                                    NetworkAPI_TransmitPacket(ctx, cptr, ioptr, &optr);
+                                } else {
+
+                                    // set completed to 1 becauase we want the appllication to have the ability to get the entire incoming packet queue
+                                    cptr->completed = 1;
+                                    
+                                    // send back RST packet... due to too many timeouts on successful transmission of a packet (5 tries at 3seconds each)
+                                    NetworkAPI_GeneratePacket(ctx, sptr, cptr, TCP_FLAG_RST|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP);
+                                }
+                                break;
+                            }
+                            ioptr = ioptr->next;
+                        }
                     }
+                    pthread_mutex_unlock(&cptr->mutex);
                 }
-                pthread_mutex_unlock(&cptr->mutex);
+                cptr = cptr->next;
             }
-            cptr = cptr->next;
+
+            //pthread_mutex_unlock(&sptr->mutex);
+
+            // check if any connections are timmed out (5min)
+            sptr = sptr->next;
         }
 
-        //pthread_mutex_unlock(&sptr->mutex);
-
-        // check if any connections are timmed out (5min)
-        sptr = sptr->next;
-    }
-    j++;
+        // move to next jump table list
+        j++;
     }
 
     pthread_mutex_unlock(&ctx->socket_list_mutex);
@@ -782,35 +831,36 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int j = 0;
 
     while (j < JTABLE_SIZE) {
-    // lets see if we have any connections which want this packet
-    sptr = ctx->socket_list[j];
-    while (sptr != NULL) {
-        
-        // *** if we want to support TCP/IP correctly we want to allow packets until we ACK everything, and close gracefully
-        //if (!sptr->completed) {
-            // if filter is enabled.. verify it... sockets can prepare this to help with the rest of the system..
-            // whenever listen() hits, or connect() can prepare that structure to only get packets designated for it
-            //if (FilterCheck(ctx, &sptr->flt, iptr)) {
-                // be sure both are same types (ipv4/6, and TCP/UDP/ICMP)
-                if (((sptr->state & PACKET_TYPE_IPV4) && (iptr->type & PACKET_TYPE_IPV4)) ||
-                            ((sptr->state & PACKET_TYPE_IPV6) && (iptr->type & PACKET_TYPE_IPV6))) {
-                            // if its TCP then call the tcp processor
-                            if ((sptr->state & SOCKET_TCP) && (iptr->type & PACKET_TYPE_TCP))
-                                ret = NetworkAPI_SocketIncomingTCP(ctx, sptr, iptr);
-                            // or call UDP processor
-                            else if ((sptr->state & SOCKET_UDP) && (iptr->type & PACKET_TYPE_UDP))
-                                ret = NetworkAPI_SocketIncomingUDP(ctx, sptr, iptr);
-                            // or call ICMP processor
-                            else if ((sptr->state & SOCKET_ICMP) && (iptr->type & PACKET_TYPE_ICMP))
-                                ret = NetworkAPI_SocketIncomingICMP(ctx, sptr, iptr);
-                    }
-                    // if it was processed and returned 1, then no need to test all other sockets.
-                    if (ret) break;
+        // lets see if we have any connections which want this packet
+        sptr = ctx->socket_list[j];
+        while (sptr != NULL) {
+            
+            // *** if we want to support TCP/IP correctly we want to allow packets until we ACK everything, and close gracefully
+            //if (!sptr->completed) {
+                // if filter is enabled.. verify it... sockets can prepare this to help with the rest of the system..
+                // whenever listen() hits, or connect() can prepare that structure to only get packets designated for it
+                //if (FilterCheck(ctx, &sptr->flt, iptr)) {
+                    // be sure both are same types (ipv4/6, and TCP/UDP/ICMP)
+                    
+                    if (((sptr->state & PACKET_TYPE_IPV4) && (iptr->type & PACKET_TYPE_IPV4)) ||
+                                ((sptr->state & PACKET_TYPE_IPV6) && (iptr->type & PACKET_TYPE_IPV6))) {
+                                // if its TCP then call the tcp processor
+                                if ((sptr->state & SOCKET_TCP) && (iptr->type & PACKET_TYPE_TCP))
+                                    ret = NetworkAPI_SocketIncomingTCP(ctx, sptr, iptr);
+                                // or call UDP processor
+                                else if ((sptr->state & SOCKET_UDP) && (iptr->type & PACKET_TYPE_UDP))
+                                    ret = NetworkAPI_SocketIncomingUDP(ctx, sptr, iptr);
+                                // or call ICMP processor
+                                else if ((sptr->state & SOCKET_ICMP) && (iptr->type & PACKET_TYPE_ICMP))
+                                    ret = NetworkAPI_SocketIncomingICMP(ctx, sptr, iptr);
+                        }
+                        // if it was processed and returned 1, then no need to test all other sockets.
+                        if (ret) break;
+                //}
             //}
-        //}
-        sptr = sptr->next;
-    }
-    j++;
+            sptr = sptr->next;
+        }
+        j++;
     }
 
     return ret;
@@ -856,7 +906,7 @@ PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContex
             CopyIPv6Address(&bptr->destination_ipv6, &cptr->address_ipv6);
         }
 
-        bptr->source_port = cptr->port;
+        bptr->source_port = cptr->socket->port;
         bptr->destination_port = cptr->remote_port;
         bptr->header_identifier = cptr->identifier++;
 
@@ -896,22 +946,35 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     PacketBuildInstructions *build_list = NULL;
     ConnectionContext *cptr = NULL;
     uint32_t rseq = 0;
+    struct in_addr addr;
+    int w = 0;
 
-/*
-    printf("Incoming TCP packet data_size %d\n", iptr->data_size);
-    if (iptr->flags & TCP_FLAG_FIN) printf("fin\n");
-    if (iptr->flags & TCP_FLAG_ACK) printf("ack\n");
-    if (iptr->flags & TCP_FLAG_RST) printf("rst\n");
-    if (iptr->flags & TCP_FLAG_PSH) printf("psh\n");
-*/
+
+    if (iptr->destination_port == 1001 || (iptr->source_port == 1001)) {
+        w=1;
+        addr.s_addr = iptr->source_ip;
+        printf("Incoming TCP packet data_size %d [%s:%d -> %d]\n", iptr->data_size, inet_ntoa(addr), iptr->source_port, iptr->destination_port);
+    /*
+        if (iptr->flags & TCP_FLAG_FIN) printf("fin\n");
+        if (iptr->flags & TCP_FLAG_ACK) printf("ack\n");
+        if (iptr->flags & TCP_FLAG_RST) printf("rst\n");
+        if (iptr->flags & TCP_FLAG_PSH) printf("psh\n");
+    */
+    }
 
     // be sure both are same IP protocol ipv4 vs ipv6
-    if (sptr->address_ipv4 && !iptr->source_ip) goto end;
-
+    if (sptr->address_ipv4 && !iptr->source_ip) {
+        if (w) printf("not same ip ver\n");
+        goto end;
+    }
+    
     // be sure its for the IP address bound to this socket
     // is ipv4?
     if (iptr->destination_ip ) {
-        if (iptr->destination_ip != sptr->our_ipv4) goto end;
+        if (iptr->destination_ip != sptr->our_ipv4) {
+            if (w) printf("ip wrong\n");
+            goto end;
+        }
     } else {
         // IPv6
         if (!CompareIPv6Addresses(&iptr->destination_ipv6, &sptr->our_ipv6))
@@ -919,20 +982,37 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     }
 
     // verify ports equal to easily disqualify.. go straight to end if not (dont set to 1 since it may relate  to another socket)
-    if (sptr->port && (iptr->destination_port != sptr->port)) goto end;
+    if (sptr->port && (iptr->destination_port != sptr->port)) {
+        if (w) printf("not same port as socket\n");
+        goto end;
+    }
 
     // lets check if this is for a listening socket
     if (sptr->state & SOCKET_TCP_LISTEN) {
         // SYN = new  connection.. see if we are listening
         if (iptr->flags & TCP_FLAG_SYN) {
             // allocate new file descriptor
-            if ((new_fd = NetworkAPI_NewFD(ctx)) == -1) goto end;
+            if ((new_fd = NetworkAPI_NewFD(ctx)) == -1) {
+                goto end;
+            }
 
             // create new connection structure
-            if (!cptr && (cptr = NetworkAPI_ConnectionNew(sptr)) == NULL) goto end;
+            if (!cptr && (cptr = NetworkAPI_ConnectionNew(sptr)) == NULL) {
+                printf("cannnot get new connection sstrucutre\n");
+                goto end;
+            }
+
+            cptr->address_ipv4 = iptr->source_ip;
+            cptr->remote_port = iptr->source_port;
+            cptr->remote_seq = ++iptr->seq;
+
+
+            printf("cptr %p\n", cptr);
 
             // generate packet sending back ACK+SYN
-            if ((bptr = NetworkAPI_GeneratePacket(ctx, sptr, cptr, TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP)) == NULL) goto end;
+            if ((bptr = NetworkAPI_GeneratePacket(ctx, sptr, cptr, TCP_FLAG_SYN|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP)) == NULL) {
+                goto end;
+            }
             
             // all properties which are different from NetworkAPI_GenerateResponse() standard
             cptr->socket_fd = new_fd;
@@ -943,6 +1023,8 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
             // no neeed to allow anythiing else to process this packet
             ret = 1;
 
+            printf("good send SYN|ACK\n");
+
             goto end;
         }
     }
@@ -950,7 +1032,10 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
 
     // anything else we expect it to be related to a connection structure
     // if we dont have a connection structure yet then we are done.. listening sockets were already verified
-    if ((cptr = NetworkAPI_ConnFindByRemotePort(ctx, sptr, iptr->source_port)) == NULL) goto end;
+    if ((cptr = NetworkAPI_ConnFindByRemotePort(ctx, sptr, iptr->source_port)) == NULL) {
+        if (w) printf("cannot find connection\n");
+        goto end;
+    } else printf("found connection\n");
 
     // lock mutex
     pthread_mutex_lock(&cptr->mutex);
@@ -1334,6 +1419,7 @@ end:;
 
 
 // takes multiple IOBufs and puts them together into a single one
+// ** this does NOT lock the connection context ** calling function must
 IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd, ConnectionContext *cptr) {
     AS_context *ctx = NetworkAPI_CTX;
     //ConnectionContext *cptr = NULL;
@@ -1453,11 +1539,18 @@ ssize_t NetworkAPI_RecvBlocking(int sockfd, void *buf, size_t len) {
     int max_wait = 0;
     int start = 0;
     
+    printf("start recv\n");
+
     // first we attempt to read without locking the connection structure.. and we return if that was OK
-    if ((ret = NetworkAPI_ReadSocket(sockfd, buf, len)) > 0) goto end;
+    if ((ret = NetworkAPI_ReadSocket(sockfd, buf, len)) > 0) {
+        printf("read socket  ok\n");
+        goto end;
+    }
 
     // get the connection structure..
     if ((cptr = NetworkAPI_ConnectionByFD(ctx, sockfd)) == NULL) {
+        printf("failed find conn\n");
+
         // if there is no connection then theres an error
         ret = -1;
         goto end;
@@ -1502,7 +1595,7 @@ ssize_t NetworkAPI_RecvBlocking(int sockfd, void *buf, size_t len) {
 
     end:;
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
-
+printf("end recv\n");
     return ret;
 }
 
@@ -1544,9 +1637,9 @@ int NetworkAPI_ConnectSocket(int sockfd, const struct sockaddr_in *addr, socklen
     // and the last activity (same as initial for now)
     cptr->last_ts = cptr->ts;
     // pick random source port for this new connection
-    cptr->port = 1024+(rand()%(65536-1024));
+    sptr->port = 1024+(rand()%(65536-1024));
     // make sure the original socket context has this port we just chose
-    sptr->port = cptr->port;
+    //sptr->port = cptr->port;
 
     // ensure that the filter gets reinitialized
     sptr->flt.init = 0;
@@ -1679,7 +1772,6 @@ int NetworkAPI_AcceptConnection(int sockfd) {
     if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
     return ret;
-
 }
 
 int NetworkAPI_Listen(int sockfd) {
@@ -1688,18 +1780,24 @@ int NetworkAPI_Listen(int sockfd) {
     SocketContext *pptr = NULL;
 
     // if we cannot find this socket... then return error
-    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL)
+    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) {
+        printf("caannot find sock\n");
         return -1;
+    }
 
     // verify no other socket is listening.. if we find another return an error
-    if ((pptr = NetworkAPI_SocketByStatePort(ctx, SOCKET_TCP_LISTEN, sptr->port)) != NULL)
+    if ((pptr = NetworkAPI_SocketByStatePort(ctx, SOCKET_TCP_LISTEN, sptr->port)) != NULL) {
+        printf("cannot find socket tcp listen\n");
         return -1;
+    }
 
     // enable listening on the socket
     sptr->state |= SOCKET_TCP_LISTEN;
 
     // prepare filter for it just so we dont have to process packets which arent used by this socket context
     FilterPrepare(&sptr->flt, FILTER_PACKET_TCP|FILTER_SERVER_PORT, sptr->port);
+
+    printf("filter prepare for port %d\n", sptr->port);
 
     // no error
     return 0;
@@ -1772,6 +1870,8 @@ int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
             conninfo6.sin6_family = AF_INET6;
             conninfo6.sin6_port = htons(sptr->remote_port);
 
+            *addrlen = sizeof(struct sockaddr_in6);
+
             CopyIPv6Address(&conninfo6.sin6_addr, &cptr->address_ipv6);
         }
     }
@@ -1829,12 +1929,6 @@ int my_socket(int domain, int type, int protocol) {
 }
 
 
-
-// bind/listen to a port
-int my_listen(int sockfd, int backlog) {
-    return NetworkAPI_Listen(sockfd);
-}
- 
 
 
 int my_close(int fd) {
@@ -1947,3 +2041,49 @@ ssize_t my_recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockadd
 int my_connect(int sockfd,  const struct sockaddr_in *addr, socklen_t addrlen) {
     return NetworkAPI_ConnectSocket(sockfd, addr, addrlen);
 }
+
+// bind/listen to a port
+int my_listen(int sockfd, int backlog) {
+    return NetworkAPI_Listen(sockfd);
+}
+ 
+
+int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+    AS_context *ctx = NetworkAPI_CTX;
+    int port = 0;
+    uint32_t address = 0;
+    struct in6_addr *address_ipv6 = NULL;
+    struct sockaddr_in *addr_ipv4;
+    struct sockaddr_in6 *addr_ipv6;
+    SocketContext *sptr = NULL;
+    int ret = 0;
+    
+
+    // if it was successful, then find the connection structure by its file descriptor
+    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) return -1;
+
+    if (addrlen == sizeof(struct sockaddr_in)) {
+        addr_ipv4 = (struct sockaddr_in  *)addr;
+
+        // get port out of the sockaddr structure
+        sptr->port = ntohs(addr_ipv4->sin_port);
+
+        sptr->our_ipv4 = addr_ipv4->sin_addr.s_addr;
+
+        ret = 1;
+
+    } else if (addrlen == sizeof(struct sockaddr_in6)) {
+        addr_ipv6 = (struct sockaddr_in6 *)addr;
+
+        CopyIPv6Address(&sptr->our_ipv6, &addr_ipv6->sin6_addr);
+
+        // get port from IPv6 structure
+        sptr->port = ntohs(addr_ipv6->sin6_port);
+
+        ret = 1;
+    }
+
+    return ret;
+}
+
+

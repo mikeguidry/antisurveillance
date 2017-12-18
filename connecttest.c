@@ -52,12 +52,23 @@ int network_code_start(AS_context *ctx, int tid) {
 
     if ((sptr = NetworkAPI_SocketByFD(ctx, sock)) == NULL) return -1;
 
-    if (tid == 174) tid = 173;
+    if (tid == 175) tid = 174;
     if (tid == 0) tid = 1;
 
     sprintf(ip, "192.168.72.%d", tid);
     //printf("settinng ip %s\n", ip);
-    sptr->our_ipv4 = inet_addr(ip);
+    //sptr->our_ipv4 = inet_addr(ip);
+    // prepare binding to a specific, ip and local port
+    memset(&dest, 0, sizeof(struct sockaddr_in));
+    dest.sin_addr.s_addr = inet_addr(ip);
+    //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
+    dest.sin_family = AF_INET;
+    dest.sin_port = rand()%0xFFFFFFFF;
+
+    // bind to the IP we chose, and port for the  outgoing connection we will place
+    r = my_bind((int)sock, (const struct sockaddr_in *)&dest, (socklen_t)sizeof(struct sockaddr_in));
+    printf("bind: %d\n", r);
+
 
     // max wait for recv... (for broken sockets until protocol is up to par with regular OS)
     sptr->max_wait = 3;
@@ -65,7 +76,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.174");
+    dest.sin_addr.s_addr = inet_addr("192.168.72.177");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
@@ -109,7 +120,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     //printf("%d seconds to execute\n", time(0) - start);
 
-    sleep(3);
+    //sleep(3);
 
     my_close(sock);
     

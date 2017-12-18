@@ -63,10 +63,9 @@ typedef struct _connection_context {
     uint32_t address_ipv4;
     struct in6_addr address_ipv6;
 
-    uint32_t our_ipv4;
     int is_ipv6;
 
-    int port;
+    //int port;
     int remote_port;
 
     // these go first (before IOBuf's).. contains tcp/ip protocol instructions
@@ -92,6 +91,11 @@ typedef struct _connection_context {
 
 typedef struct _socket_context {
     struct _socket_context *next;
+
+    // getting a little sloppy here.. .. the connetion fd needs to find the socket..
+    // i need to redesign the system for finding sockets/fds.. or link them together more
+    // it depends how it goes with multiple accepts.. ill check soon
+    struct _socket_context *connection_list;
 
     ConnectionContext *connections;
 
@@ -181,4 +185,5 @@ int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 int my_socket(int domain, int type, int protocol);
 int my_listen(int sockfd, int backlog);
 int my_close(int fd);
+int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 // ----

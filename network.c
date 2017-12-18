@@ -9,6 +9,12 @@ protection to be developed, and this can become the 'third party server' for hun
 -- all in one fuck you to nsa -- this is for rape.
 
 
+
+
+https://stackoverflow.com/questions/12177708/raw-socket-promiscuous-mode-not-sniffing-what-i-write
+to remove the 3second timmeout, and ram limitations I was going to use for removing our own outgoing packets/sessions
+
+
 */
 
 #include <stdio.h>
@@ -110,7 +116,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
 
     // we need some raw sockets.
     if (ctx->write_socket[0][0] <= 0) {
-        if (prepare_socket(ctx) <= 0) {
+        if (prepare_write_sockets(ctx) <= 0) {
             //printf("no raw socket\n");
             return -1;
         }
@@ -258,7 +264,7 @@ void *thread_network_flush(void *arg) {
 
 
 // prepare raw outgoing socket (requires root)..
-int prepare_socket(AS_context *ctx) {
+int prepare_write_sockets(AS_context *ctx) {
     int one = 1;
     int ip_ver = 0, proto = 0;
     int which_proto = 0, which_domain = 0;
@@ -386,7 +392,7 @@ typedef struct _socket_info {
 // http://yusufonlinux.blogspot.com/2010/11/data-link-access-and-zero-copy.html
 // https://austinmarton.wordpress.com/2011/09/14/sending-raw-ethernet-packets-from-a-specific-interface-in-c-on-linuxin
 // prepare raw incoming socket.. we perform our own filtering so we want all packets
-int prepare_read_socket(AS_context *ctx) {
+int prepare_read_sockets(AS_context *ctx) {
     int ret = 0;
     struct ifreq ifr;
     struct sockaddr_ll sll;
@@ -777,7 +783,7 @@ void *thread_read_network(void *arg) {
     //printf("network reading thread\n");
     // open raw reading socket
     //prepare_read_socket_old(ctx);
-    i = prepare_read_socket(ctx);
+    i = prepare_read_sockets(ctx);
 
     // if sock didnt open, or we cant allocae space for reading packets
     if (!i) goto end;
