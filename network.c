@@ -664,6 +664,9 @@ int NetworkReadSocket(IncomingPacketQueue *nptr, int socket, int proto, int ip_v
         nptr->packet_starts[nptr->cur_packet] = nptr->size;
         nptr->packet_ends[nptr->cur_packet] = (nptr->size + r);
 
+        //nptr->packet_protocol[nptr->cur_packet] = proto;
+        //nptr->packet_ipversion[nptr->cur_packet] = ip_ver;
+
         // prep for the next packet
         nptr->cur_packet++;
 
@@ -688,40 +691,27 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
 
     //printf("network_fill_incoming_buffer %p %p\n", ctx, nptr);
 
-    // clean up the packet queue structure (counts must be zero first time callling NetworkReadSocket())
-    //memset(nptr, 0, sizeof(IncomingPacketQueue));
-
     // moved to malloc to lower perf mon on calloc/memset
     nptr->max_buf_size = MAX_BUF_SIZE;
     nptr->cur_packet = 0;
     nptr->size = 0;
 
-    // lets read old socket (All in one)
-    //if (ctx->raw_socket) NetworkReadSocket(nptr, ctx->raw_socket, 100, 100);
-
     // enumerate for each protocol and packet type to read into our buffer
-    do {
-        packet_count = 0;
-
-        for (proto = 0; proto < 3; proto++) {
-            for (ip_ver = 0; ip_ver < 2; ip_ver++) {
+    for (proto = 0; proto < 3; proto++) {
+        for (ip_ver = 0; ip_ver < 2; ip_ver++) {
+            do {
                 r = NetworkReadSocket(nptr, ctx->read_socket[proto][ip_ver], proto, ip_ver);
 
                 packet_count += r;
-
-                // so we can track which protocols later for debugging purposes
-                nptr->packet_protocol[nptr->cur_packet - 1] = proto;
-                nptr->packet_ipversion[nptr->cur_packet - 1] = ip_ver;
-
-                // if we have used 90% of the buffer size...
-                if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) goto too_much;
-
-                // we only have positions for a max of X packets with this buffer
-                if (nptr->cur_packet >= MAX_PACKETS) goto too_much;
-            }
-
+            } while (r);
         }
-    } while (packet_count);
+
+        // if we have used 90% of the buffer size...
+        if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) goto too_much;
+
+        // we only have positions for a max of X packets with this buffer
+        if (nptr->cur_packet >= MAX_PACKETS) goto too_much;
+    }
 
     too_much:;
 
@@ -981,9 +971,9 @@ int NetworkQueueInstructions(AS_context *ctx, PacketBuildInstructions *iptr, Out
     }
 
     // mark protocol
-    optr->packet_protocol[optr->cur_packet] = which_protocol;
+    //optr->packet_protocol[optr->cur_packet] = which_protocol;
     // mark if its ipv6 by checking if ipv4 is empty
-    optr->packet_ipversion[optr->cur_packet] = (iptr->destination_ip == 0);
+    //optr->packet_ipversion[optr->cur_packet] = (iptr->destination_ip == 0);
 
 
     optr->packet_starts[optr->cur_packet] = optr->size;

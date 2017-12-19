@@ -7,7 +7,7 @@
 
 
 
-#define JTABLE_SIZE 1024
+#define JTABLE_SIZE 4096
 
 
 struct _packet_info;
@@ -346,6 +346,7 @@ typedef struct _antisurveillance_context {
     SocketContext *socket_list[JTABLE_SIZE];
     // current fd
     int socket_fd;
+    int socket_fd_check;
     pthread_t socket_list_mutex;
 
     // ignore incoming data...

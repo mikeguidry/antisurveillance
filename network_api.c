@@ -258,13 +258,18 @@ int NetworkAPI_NewFD(AS_context *ctx) {
     int i = ctx->socket_fd;
     int try = 1024;
 
-    do {
-        if (i++ < 1024) i = 1024;
+    //if (ctx->socket_fd_check) {
+        do {
+            if (i++ < 1024) i = 1024;
 
-        sptr = NetworkAPI_SocketByFD(ctx, i);
+            sptr = NetworkAPI_SocketByFD(ctx, i);
 
-    } while (sptr && try--);
-
+        } while (sptr && try--);
+/*
+    } else {
+        if (i < 1024) ctx->socket_fd_check = 1;
+    }
+*/
     if (try == 0) return -1;
 
     ctx->socket_fd = ++i;
