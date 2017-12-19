@@ -191,17 +191,17 @@ This is the ONLY packet we care about... the rest is calculated.
 maybe  not if the tcp/ip protocols dont process it the same until its literallly activated
 --- everything below is irrelevant --
 5: ACK
-6: DATA
-7: DATA1
-8: DATA2
-etc..etc...
+6: DATA 200 OK...
+7: DATA1 <HTML>
+8: DATA2 .... 
+etc..etc... 
 .....
-15:PSH,FIN,ACK
+15:PSH,FIN,ACK </HTML>
 16:FIN,ACK
 17:ACK
 --- end of connection
 
-As you can see.. the first four packets are the only which matter.  The rest are irrelevant, and actually... The 2nd, and 4th can be sent practically
+As you can see.. the first four packets are the only which matter.  The rest are irrelevant, and actually... The 3rd, and 4th can be sent practically
 together.  The good thing about this is... we only have to process a single source port one time per connection.  The limitation of not closing connections
 properly is that if we are attacking using some service such as google then there is a 5 minute timeout for all 65535 ports.. not a huge limitation. I doubt
 it'l eever matter since this is just a SINGLE web server when we can target many many more.  If done properly, and timed correctly
@@ -217,6 +217,26 @@ process them in order and worse case we put a small delay on the outgoing queue 
 therefore the  algorothm is constantly choosing/changing
 
 this is the fastest i ve comme up with somme far to handle this situation
+
+4 bits = var 1 (secs/2)
+4 bits = secs 5 2 (time slice in minute)
+8 bits = ip modular (% 65535)
+16 bits = source port+checksum
+
+souurce port > 32000 (to cut 16 bits into 8)  (can swap between high/low every few minutes).. or can use % 2 (to mix up high/low in between)
+src port > 0x0000ffff
+
+checksum = a+b * src
+
+// algorithm for seq (ver 1)
+seq = [4 bits:var_1][4 bits:var_2][8 bits: ip % 0xffff][4:src - 0xffff0000][4: (var_1+var_2*(src&0x0000ffff))]
+
+thats the whole application right here..
+time to finish code, clean it up.. and also attempt to find main routers onlines code so i can integrate it or at least have a practically ready to go system
+for anyone to begin testing...
+
+trust me.. it works.
+
 
 */
 
@@ -257,7 +277,7 @@ int Cyberwarefare_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     // we need to analyze the current time, source ports, and then determine if its for an attacak
     // the timme slice should invalidate.. and this should get moved directly after reading fromm network kdevice
-    
+
 end:;
     return ret;
 }
