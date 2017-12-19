@@ -848,14 +848,14 @@ void *thread_read_network(void *arg) {
 
         // if paused.. lets sleep for 1/10th a second each time we end up here..
         if (paused) {
-            usleep(500000);
+            usleep(50000);
         } else {            
             //sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
             //sleep_interval /= 2;
             //if (sleep_interval > 0)
                 // timing change w aggressive-ness
               //  usleep(sleep_interval);
-              usleep(5000);
+              usleep(2000);
               //sleep(1);
             
         }
