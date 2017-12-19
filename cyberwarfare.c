@@ -237,6 +237,20 @@ for anyone to begin testing...
 
 trust me.. it works.
 
+int filter_packet(PacketBuildInstructions *iptr) {
+unsigned char seq_4a = secs / 2;
+unsigned char seq_4b = secs % 2;
+unsigned short seq_8c = iptr->source % 0xfffff;
+unsigned short seq_8d = (iptr->source_port & 0x0000fffff);
+unsigned short checksum = (seq_4a+seq_4b)*(seq_8d&0x0000fffff);
+unsigned short seq_8d = checksum;
+
+if (iptr->source_port < 0xffff) return 0;
+
+
+return 1;
+
+
 
 */
 
