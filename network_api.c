@@ -230,8 +230,6 @@ SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd) {
 
     pthread_mutex_unlock(&ctx->socket_list_mutex);
 
-    if (ret) pthread_mutex_lock(&ret->mutex);
-
     return ret;
 }
 
@@ -1987,6 +1985,8 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
     // if it was successful, then find the connection structure by its file descriptor
     if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) return -1;
+
+    pthread_mutex_lock(&sptr->mutex);
 
     if (addrlen == sizeof(struct sockaddr_in)) {
         addr_ipv4 = (struct sockaddr_in  *)addr;
