@@ -56,7 +56,7 @@ I bet in the future you don't take me as doing nothing as the end of things.  It
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>  
 #include <arpa/inet.h>
-#include <stddef.h> /* For offsetof */
+#include <stddef.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
@@ -135,7 +135,6 @@ PacketBuildInstructions *CW_BasePacket(CW_AttackQueue *qptr, int client, int fla
     bptr->destination_ip = client ? qptr->webserver_ip : qptr->target_ip;
     //!!! ipv6
 
-    //bptr->source_port = sptr->port;
     bptr->destination_port = client ? qptr->destination_port : qptr->source_port;
     bptr->source_port = client ? qptr->source_port : qptr->destination_port;
 
@@ -238,21 +237,35 @@ for anyone to begin testing...
 trust me.. it works.
 
 int filter_packet(PacketBuildInstructions *iptr) {
+
+    seq_<bits><a-e>
 unsigned char seq_4a = secs / 2;
 unsigned char seq_4b = secs % 2;
 unsigned short seq_8c = iptr->source % 0xfffff;
 unsigned short seq_8d = (iptr->source_port & 0x0000fffff);
 unsigned short checksum = (seq_4a+seq_4b)*(seq_8d&0x0000fffff);
-unsigned short seq_8d = checksum;
+unsigned short seq_8e = checksum;
 
 if (iptr->source_port < 0xffff) return 0;
 
 
 return 1;
 
+for pre-generation attack packeets ahead of time (so we can queue with different processors, or cards, or boxes to distribute them out)
+instead of using queue with timers.. and  loops.. we can put the delay till the next packet, or section directly into the array itself
+so its a single stream (but must test output buffer ability)
+
 
 
 */
+typedef struct _seq_oracle {
+    unsigned seq_a : 4;
+    unsigned seq_b : 4;
+    unsigned seq_c : 8;
+    unsigned seq_d : 8:
+    unsigned seq_e : 8;
+} SequenceOracle;
+
 
 // for now we will use my network.c but it should be easy to modify incoming to receive all packets which match a criteria later...
 int Cyberwarefare_DDoS_Init() {

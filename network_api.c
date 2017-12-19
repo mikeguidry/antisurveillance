@@ -230,7 +230,7 @@ SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd) {
 
     pthread_mutex_unlock(&ctx->socket_list_mutex);
 
-    //if (ret) pthread_mutex_lock(&sptr->mutex);
+    if (ret) pthread_mutex_lock(&ret->mutex);
 
     return ret;
 }
@@ -768,8 +768,6 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
             if ((ret = NetworkAPI_IncomingSocket(ctx, sptr, iptr)) > 0) goto end;
 
             if (sptr->connections) {
-            // performance wise this  was setting AND checking a highly unlikely situation (perf top -p `pidof -s connecttest`)
-            //if ((connptr = sptr->connections) != NULL) {
                 connptr = sptr->connections;
                 while (connptr != NULL) {
                     if ((ret = NetworkAPI_IncomingSocket(ctx, connptr, iptr)) > 0) goto end;
@@ -1004,11 +1002,11 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
                 // use as temporary value so we can free the current packet information
                 ioptr = sptr->out_buf->next;
 
-                // free the actual packet we were awaiting validation for
-                free(sptr->out_buf);
-
                 // if we had some packet instructions attached to this.. lets ensure they are free
                 PacketBuildInstructionsFree(&sptr->out_buf->iptr);
+
+                // free the actual packet we were awaiting validation for
+                free(sptr->out_buf);
 
                 // move pointer in outgoing buffer to the next in our outgoing list of packets
                 sptr->out_buf = ioptr;
@@ -1025,11 +1023,10 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
 
     // is this attempting to close the connection using a reset packet?
     // we only perform this here if it does NOT have data... otherwise it has to be below (acks will be wrong)
-    if (1==1 && !iptr->data_size && ((iptr->flags & TCP_FLAG_RST) || (iptr->flags & TCP_FLAG_FIN))) {
-        //printf("handling FIN or RST\n");
+    if (!iptr->data_size && ((iptr->flags & TCP_FLAG_RST) || (iptr->flags & TCP_FLAG_FIN))) {
         // connection is completed.. keep buffers for our program reading until here
         sptr->completed = 1;
-        //printf("COMPLETED 3\n");
+
         // no other socket should process this as well
         ret = 1;
 
@@ -1103,7 +1100,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
         bptr->ack = (iptr->seq + iptr->data_size);
 
         // if its a FIN packet.. lets send back FIN with this ACK, and  mark as closing (so we cut it after the  next packet which will be ACK)
-        if (iptr->flags & TCP_FLAG_FIN && 1==1) {
+        if (iptr->flags & TCP_FLAG_FIN) {
             //printf("FIN\n");
             // we needed to increase the ACK by one.. no need to update our structure since its the FIN packet.. the +1 is due to its FIN ontop of data
             // *** maybe update correctly for proper-ness but it doesnt matter
@@ -1125,10 +1122,8 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     ret = 1;
 
     end:;
-    if (bptr) {
-        //if (iptr->flags & TCP_FLAG_PSH) bptr->flags |= TCP_FLAG_PSH;
-    }
     if (sptr) pthread_mutex_unlock(&sptr->mutex);
+
     skipunlock:;
     return ret;
 }
@@ -1235,6 +1230,10 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
 
     pthread_mutex_lock(&cptr->mutex);
 
+    if (cptr->completed) goto end;
+
+    cptr->last_ts = time(0);
+
     // if there are too many unvalidated outgoing buffered packets in queue and this connection is blocking..
     // lets wait for at least 1 more to validate before we continue
     // some apps may break, or transmit too much data if this doesnt take plaace
@@ -1250,8 +1249,6 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
                 if ((cptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
 
                 pthread_mutex_lock(&cptr->mutex);
-                
-                if (cptr->completed) goto end;
 
                 // if count of validated (sent successful) changed.. then we are ready to move on
                 if (count != NetworkAPI_Count_Outgoing_Queue(cptr->out_buf))
@@ -1260,15 +1257,8 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
         }
     }
 
-    
-
-    cptr->last_ts = time(0);
-
     // loop adding all data at max to the tcp window...
     while (len > 0) {
-        
-        if (cptr->completed) goto end;
-
         size = min(cptr->window_size, len);
         // allocate memory for this <fragmented> packet
         if ((ioptr = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
@@ -1329,15 +1319,12 @@ end:;
 IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd, SocketContext *sptr) {
     AS_context *ctx = NetworkAPI_CTX;
     //SocketContext *sptr = NULL;
-    IOBuf *ioptr = NULL, *ionext = NULL;
+    IOBuf *ioptr = NULL;
     IOBuf *ret = NULL;
     int size = 0;
     char *bufptr = NULL, *iptr = NULL;
 
-    // did we get a connection from this socket?
-    //if ((cptr = NetworkAPI_ConnectionByFD(ctx, sockfd)) == NULL) return NULL;
-
-    // first get the full size
+    // first get the full size by sum of all buffers in queue
     ioptr = sptr->in_buf;
     while (ioptr != NULL) {
         size += (ioptr->size - ioptr->ptr);
@@ -1348,41 +1335,48 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd, SocketContext *sptr) {
     // if nothing there.. we are done
     if (!size) goto end;
 
-    // now build a single buffer to handle everything
+    // allocate space for a new IOBuf for this single buffer which will contain all data
     if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
 
+    // allocate space within this new structure for the buffer itself
     if ((ret->buf = malloc(size)) == NULL) {
         PtrFree(&ret);
         goto end;
     }
 
+    // the single buffer must have the full size
     ret->size = size;
+    // we want a pointer to the new buffer
     bufptr = ret->buf;
 
-    // copy all data into the  new one now..
+    // copy all data into the new IObuf
     ioptr = sptr->in_buf;
     while (ioptr != NULL) {
         // if this specific IO buf has data still (otherwise its here for ensure we dont repeat data
         // which is sent again due to ACK being slow)
         if (ioptr->buf) {
+            // get a buffer to the location of the current IObuf we will copy excluding any prior data that was read
             iptr = ioptr->buf + ioptr->ptr;
+            // copy into the new buffer
             memcpy(bufptr, iptr, ioptr->size - ioptr->ptr);
 
+            // increase the pointer of our new buffer beyond everything we had just copied
             bufptr += (ioptr->size - ioptr->ptr);
+            // increase the current buffer we are copyings pointer for what we had copied
             ioptr->ptr += (ioptr->size - ioptr->ptr);
         }
-        ionext = ioptr->next;
 
         if (ioptr->buf) {
-            // we wont reuse the data.. mainly just the sequence identifiers
-            free(ioptr->buf);
-            ioptr->buf = NULL;
+            //free(ioptr->buf);
+            //ioptr->buf = NULL;
 
-            //PtrFree(&ioptr->buf);
+            // we wont reuse the data.. mainly just the sequence identifiers
+            PtrFree(&ioptr->buf);
+
             ioptr->ptr = 0;
             ioptr->size = 0;
         }
-        ioptr = ionext;
+        ioptr = ioptr->next;
     }
     
     // put the older structures behind the consolidated (so that we dont keep accepting the same data by not finding their SEQs)
@@ -1391,7 +1385,6 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd, SocketContext *sptr) {
     sptr->in_buf = ret;
 
 end:;
-    //if (cptr) pthread_mutex_unlock(&cptr->mutex);
 
     return ret;
 }
@@ -1451,8 +1444,6 @@ ssize_t NetworkAPI_RecvBlocking(int sockfd, void *buf, size_t len) {
     ssize_t ret = 0;
     int max_wait = 0;
     int start = 0;
-    
-    //printf("start recv\n");
 
     // first we attempt to read without locking the connection structure.. and we return if that was OK
     if ((ret = NetworkAPI_ReadSocket(sockfd, buf, len)) > 0) {
@@ -1486,8 +1477,6 @@ ssize_t NetworkAPI_RecvBlocking(int sockfd, void *buf, size_t len) {
 
         start = time(0);
         while(1) {
-            //printf("socket %d read loop\n", sockfd);
-
             // we dont want this to be too low since other threads are going to lock/unlock the connection structure
             usleep(50000);
 
@@ -1496,18 +1485,12 @@ ssize_t NetworkAPI_RecvBlocking(int sockfd, void *buf, size_t len) {
 
             // if ret is -1, or more than zero then we return
             if ((ret == -1) || (ret > 0)) goto end;
-            
-            // if not successful we just continue waiting for a change
 
             // but if we have a max wait till protocol is 100%.. then we use it
             if (max_wait && ((time(0) - start) >= max_wait)) {
                 ret = 0;
                 break;
             }
-
-
-            // we must also check if the socket state  has changed...
-
         }
     }
 
@@ -1547,7 +1530,7 @@ int NetworkAPI_ConnectSocket(int sockfd, const struct sockaddr_in *addr, socklen
     // make sure the original socket context has this port we just chose
     //sptr->port = cptr->port;
 
-    // ensure that the filter gets reinitialized
+    // ensure that the filter gets reinitialized since we could easily be reusing a socket
     sptr->flt.init = 0;
     // prepare the filter so that this socket only receives packets for its local port
     FilterPrepare(&sptr->flt, FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, sptr->port);
@@ -1622,7 +1605,6 @@ int NetworkAPI_AcceptConnection(int sockfd) {
     AS_context *ctx = NetworkAPI_CTX;
     SocketContext *sptr = NULL;
     SocketContext *connptr = NULL;
-    //return -1;
 
     // if we cannot find this socket... then return error
     if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
@@ -1707,6 +1689,9 @@ int NetworkAPI_Listen(int sockfd) {
 
     // enable listening on the socket
     sptr->state |= SOCKET_TCP_LISTEN;
+
+    // lets ensure filter gets reinitialized
+    sptr->flt.init = 0;
 
     // prepare filter for it just so we dont have to process packets which arent used by this socket context
     FilterPrepare(&sptr->flt, FILTER_PACKET_TCP|FILTER_SERVER_PORT, sptr->port);
@@ -1835,6 +1820,8 @@ int my_socket(int domain, int type, int protocol) {
     // if we were unable to get a file descriptor then we return -1
     if ((sptr = NetworkAPI_SocketNew(NetworkAPI_CTX)) == NULL) return -1;
 
+    pthread_mutex_lock(&sptr->mutex);
+
     // ensure socket has details  of the type we expect it to be
     sptr->domain = domain;
     sptr->type = type;
@@ -1866,6 +1853,8 @@ int my_socket(int domain, int type, int protocol) {
         else if (sptr->state & PACKET_TYPE_IPV4) sptr->state |= PACKET_TYPE_ICMP_4;
     }
 
+    pthread_mutex_unlock(&sptr->mutex);
+
     return sptr->socket_fd;
 }
 
@@ -1884,8 +1873,6 @@ ssize_t my_sendto(int sockfd, const void *buf, size_t len, int flags, const stru
     struct sockaddr_in *conninfo;
     struct sockaddr_in6 *conninfo6;
     SocketContext *sptr = NULL;
-
-
 
     // if we cannot add this information as a buffered IO queue entry.. then we return an error
     if ((ioptr = NetworkAPI_BufferOutgoing(sockfd, (char *)buf, (int)len)) == NULL)
@@ -1997,7 +1984,6 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
     struct sockaddr_in6 *addr_ipv6;
     SocketContext *sptr = NULL;
     int ret = 0;
-    
 
     // if it was successful, then find the connection structure by its file descriptor
     if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) return -1;
@@ -2022,6 +2008,8 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
         ret = 1;
     }
+
+    pthread_mutex_unlock(&sptr->mutex);
 
     return ret;
 }
