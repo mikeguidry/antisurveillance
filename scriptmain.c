@@ -5,6 +5,15 @@ The version which is based around being controlled by python, and/or executing p
 This is proof that some lines of code on the Internet without anyone agreeing can change the world.  Money cannot solve
 the issues that allow these attacks.
 
+
+scripting w network API:
+have connections havev ability to prepqare packets/connections ahead (to have attack interface for performing attacks)
+ie: 
+python just configures, and the rest of the system is in C
+for regular connections.. a python code can prepare some 'expect' or strstr needle which if it finds in a connection data then it will send somme data
+have somme amount of timeout, and then close the connection... this can allow basic web servers across virtual stack, and other interfaces
+
+
 */
 
 #include <stdio.h>

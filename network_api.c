@@ -66,6 +66,10 @@ spoof
 *** - if doing algorithm changes in real time..  cptr->port, and sptr->port should be changed..
 and both need to be supported for IncomingTCP, etc (along with addresses that can change, etc)
 
+
+source port
+seq split up by 20000
+
 */
 
 
@@ -745,7 +749,10 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
             
             if ((ret = NetworkAPI_IncomingSocket(ctx, sptr, iptr)) > 0) goto end;
 
-            if ((connptr = sptr->connections) != NULL) {
+            if (sptr->connections) {
+            // performance wise this  was setting AND checking a highly unlikely situation (perf top -p `pidof -s connecttest`)
+            //if ((connptr = sptr->connections) != NULL) {
+                connptr = sptr->connections;
                 while (connptr != NULL) {
                     if ((ret = NetworkAPI_IncomingSocket(ctx, connptr, iptr)) > 0) goto end;
                     
@@ -997,7 +1004,8 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
 
 
     // is this attempting to close the connection using a reset packet?
-    if ((iptr->flags & TCP_FLAG_RST) || (iptr->flags & TCP_FLAG_FIN)) {
+    // we only perform this here if it does NOT have data... otherwise it has to be below (acks will be wrong)
+    if (1==1 && !iptr->data_size && ((iptr->flags & TCP_FLAG_RST) || (iptr->flags & TCP_FLAG_FIN))) {
         //printf("handling FIN or RST\n");
         // connection is completed.. keep buffers for our program reading until here
         sptr->completed = 1;
@@ -1206,7 +1214,7 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
     if ((cptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
 
     pthread_mutex_lock(&cptr->mutex);
-    
+
     // if there are too many unvalidated outgoing buffered packets in queue and this connection is blocking..
     // lets wait for at least 1 more to validate before we continue
     // some apps may break, or transmit too much data if this doesnt take plaace
@@ -1670,10 +1678,7 @@ int NetworkAPI_Listen(int sockfd) {
     SocketContext *pptr = NULL;
 
     // if we cannot find this socket... then return error
-    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) {
-        printf("caannot find sock\n");
-        return -1;
-    }
+    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) return -1;
 
     // verify no other socket is listening.. if we find another return an error
     if ((pptr = NetworkAPI_SocketByStatePort(ctx, SOCKET_TCP_LISTEN, sptr->port)) != NULL) goto end;
@@ -1685,8 +1690,6 @@ int NetworkAPI_Listen(int sockfd) {
 
     // prepare filter for it just so we dont have to process packets which arent used by this socket context
     FilterPrepare(&sptr->flt, FILTER_PACKET_TCP|FILTER_SERVER_PORT, sptr->port);
-
-    printf("filter prepare for port %d\n", sptr->port);
 
 end:;
     if (sptr) pthread_mutex_unlock(&sptr->mutex);

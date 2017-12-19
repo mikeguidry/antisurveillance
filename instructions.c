@@ -1102,7 +1102,7 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
-    printf("ICMP6 processing\n");
+    //printf("ICMP6 processing\n");
 
     // allocate space for an instruction structure which analysis of this packet will create
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) {
