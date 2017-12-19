@@ -1824,6 +1824,8 @@ PacketBuildInstructions *InstructionsDuplicate(PacketBuildInstructions *sptr) {
 
     iptr->aptr = sptr->aptr;
 
+    iptr->next = NULL;
+
     end:;
     return iptr;
 }

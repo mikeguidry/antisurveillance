@@ -391,11 +391,10 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
         sptr = ctx->socket_list[i];
         while (sptr != NULL) {
             if (pthread_mutex_lock(&sptr->mutex) == 0) {
-                if ((ts - sptr->last_ts) > 30) {
+                if ((ts - sptr->last_ts) > 30)
                     // send ACK to attempt to keep connection open..
-                    if (NetworkAPI_GeneratePacket(ctx, sptr, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP) != NULL)
-                        sptr->last_ts = ts;
-                }
+                    NetworkAPI_GeneratePacket(ctx, sptr, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP);
+
                 //timeout = 5 min.. (we can probably remove this for ourselves.. it could be infinite)
                 if ((ts - sptr->last_ts) > 300) {
                     if (!sptr->completed)
@@ -404,14 +403,12 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
 
                 // we can only cleanup this socket context if all connections are over (they are linked directly)
                 if (sptr->completed == 2) {
-                    //printf("cleaning socket\n");
                     snext = sptr->next;
 
-                    if (ctx->socket_list[i] == sptr) {
+                    if (ctx->socket_list[i] == sptr)
                         ctx->socket_list[i] = snext;
-                    } else {
+                    else
                         slast->next = snext;
-                    }
 
                     NetworkAPI_FreeBuffers(&sptr->in_buf);
                     NetworkAPI_FreeBuffers(&sptr->out_buf);
@@ -426,10 +423,9 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
                 if (sptr->completed == 1) {
                     // we are giving 10 seconds to allow for the application to grab data after something caused the socket to error
                     // maybe support better but for now this system should work, and also allow massive connections simultaneously
-                    if ((ts - sptr->last_ts) > 2) {
-                        //printf("turning to completed\n");
+                    // CPU was too high for 10.. moved to 2
+                    if ((ts - sptr->last_ts) > 2)
                         sptr->completed = 2;
-                    }
                 }
 
                 pthread_mutex_unlock(&sptr->mutex);
@@ -814,6 +810,8 @@ PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContex
 
         bptr->ack = sptr->remote_seq;
         bptr->seq = sptr->seq;
+
+        sptr->last_ts = time(0);
 
         //printf("ACK %X SEQ %X\n", htons(bptr->ack), htons(bptr->seq));
         L_link_ordered((LINK **)&sptr->out_instructions, (LINK *)bptr);

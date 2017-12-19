@@ -102,7 +102,7 @@ void PtrFree(char **ptr) {
 
 // allocates & copies data into a new pointer
 int DataPrepare(char **data, char *ptr, int size) {
-    char *buf = (char *)calloc(1, size );
+    char *buf = (char *)malloc(size );
     if (buf == NULL) return -1;
 
     memcpy(buf, ptr, size);
@@ -392,12 +392,10 @@ char *getgatewayandiface() {
         /* Break if its not a multi part message */
         if ((nlmsg->nlmsg_flags & NLM_F_MULTI) == 0)
             break;
-    }
-    while ((nlmsg->nlmsg_seq != msgseq) || (nlmsg->nlmsg_pid != getpid()));
+    } while ((nlmsg->nlmsg_seq != msgseq) || (nlmsg->nlmsg_pid != getpid()));
 
     /* parse response */
-    for ( ; NLMSG_OK(nlh, received_bytes); nlh = NLMSG_NEXT(nlh, received_bytes))
-    {
+    for ( ; NLMSG_OK(nlh, received_bytes); nlh = NLMSG_NEXT(nlh, received_bytes)) {
         /* Get the route data */
         route_entry = (struct rtmsg *) NLMSG_DATA(nlh);
 
@@ -410,8 +408,7 @@ char *getgatewayandiface() {
 
         /* Loop through all attributes */
         for ( ; RTA_OK(route_attribute, route_attribute_len);
-              route_attribute = RTA_NEXT(route_attribute, route_attribute_len))
-        {
+              route_attribute = RTA_NEXT(route_attribute, route_attribute_len)) {
             switch(route_attribute->rta_type) {
             case RTA_OIF:
                 if_indextoname(*(int *)RTA_DATA(route_attribute), interface);
@@ -427,9 +424,8 @@ char *getgatewayandiface() {
 
         if (*interface) ret = strdup(interface);
 
-        if ((*gateway_address) && (*interface)) {
+        if ((*gateway_address) && (*interface))
             break;
-        }
     }
 
     

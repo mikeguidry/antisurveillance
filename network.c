@@ -135,8 +135,6 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
 
                 // calculate the size of this particular packet we are going to process
                 packet_size = optr->packet_ends[cur_packet] - optr->packet_starts[cur_packet];
-
-
                 
                 if (optr->dest_ip[cur_packet]) {
                     // IPv4
@@ -179,12 +177,14 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         optr = onext;
     }
 
-    // put back into pool after for use again.. without requiring infinite reallocations
-    pthread_mutex_lock(&ctx->network_pool_mutex);
+    if (pool) {
+        // put back into pool after for use again.. without requiring infinite reallocations
+        pthread_mutex_lock(&ctx->network_pool_mutex);
 
-    L_link_ordered((LINK **)&ctx->outgoing_pool_waiting, (LINK *)pool);
+        L_link_ordered((LINK **)&ctx->outgoing_pool_waiting, (LINK *)pool);
 
-    pthread_mutex_unlock(&ctx->network_pool_mutex);
+        pthread_mutex_unlock(&ctx->network_pool_mutex);
+    }
 
     return count;
 }
@@ -501,10 +501,10 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     char fname[1024];
     int r = 0;
 
-    if (size == 0) goto end;
+    //if (size == 0) goto end;
 
     // if we dont have any subsystems waiting for packets.. no point
-    if (nptr == NULL) goto end;
+    //if (nptr == NULL) goto end;
 
     /*if (1==2 && (fd = fopen(fname, "wb")) != NULL) {
         fwrite(packet, size, 1, fd);
@@ -582,14 +582,15 @@ int network_process_incoming_buffer(AS_context *ctx) {
 
     // now lets process all packets we have.. each is a cluster of packets
     while (nptr != NULL) {
+        cur_packet = 0;
+
+        // sptr starts at the beginning of the buffer
+        sptr = (char *)(&nptr->buf);
 
         // lets loop for every packet in this structure..
         while (cur_packet < nptr->cur_packet) {
-            // sptr starts at the beginning of the buffer
-            sptr = (char *)(&nptr->buf);
-
             //increase it to the startinng place of this packet
-            sptr += nptr->packet_starts[cur_packet];
+            //sptr += nptr->packet_starts[cur_packet];
 
             // calculate the size of this particular packet we are going to process
             packet_size = nptr->packet_ends[cur_packet] - nptr->packet_starts[cur_packet];
@@ -600,6 +601,9 @@ int network_process_incoming_buffer(AS_context *ctx) {
             // it will then send to the correct functions for analysis, and processing afterwards
             // for whichever subsystem may want it
             process_packet(ctx, sptr, packet_size);
+
+            // increase poointer by size of the packet
+            sptr += packet_size;
 
             // move to the next packet
             cur_packet++;
@@ -619,16 +623,18 @@ int network_process_incoming_buffer(AS_context *ctx) {
         nptr = nnext;
     }
 
-    // lets the empty queue 
-    pthread_mutex_lock(&ctx->network_pool_mutex);
+    if (pool) {
+        // lets the empty queue 
+        pthread_mutex_lock(&ctx->network_pool_mutex);
 
-    //printf("1 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
-    // put back into waiting pool so we dont allocate over and over
-    L_link_ordered((LINK **)&ctx->incoming_pool_waiting, (LINK *)pool);
+        //printf("1 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
+        // put back into waiting pool so we dont allocate over and over
+        L_link_ordered((LINK **)&ctx->incoming_pool_waiting, (LINK *)pool);
 
-    //printf("2 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
+        //printf("2 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
 
-    pthread_mutex_unlock(&ctx->network_pool_mutex);
+        pthread_mutex_unlock(&ctx->network_pool_mutex);
+    }
 
     end:;
     return ret;
@@ -685,14 +691,13 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
     // clean up the packet queue structure (counts must be zero first time callling NetworkReadSocket())
     //memset(nptr, 0, sizeof(IncomingPacketQueue));
 
-    // no need since calloc
+    // moved to malloc to lower perf mon on calloc/memset
     nptr->max_buf_size = MAX_BUF_SIZE;
     nptr->cur_packet = 0;
     nptr->size = 0;
 
     // lets read old socket (All in one)
-    if (ctx->raw_socket)
-        NetworkReadSocket(nptr, ctx->raw_socket, 100, 100);
+    //if (ctx->raw_socket) NetworkReadSocket(nptr, ctx->raw_socket, 100, 100);
 
     // enumerate for each protocol and packet type to read into our buffer
     do {
@@ -843,7 +848,7 @@ void *thread_read_network(void *arg) {
             }
 
             // get paused variable from network disabled
-            paused = (ctx->network_disabled || ctx->paused);
+            //paused = (ctx->network_disabled || ctx->paused);
 
             // no more variables which we have to worry about readwrite from diff threads
             pthread_mutex_unlock(&ctx->network_incoming_mutex);
