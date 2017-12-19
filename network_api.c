@@ -70,6 +70,23 @@ and both need to be supported for IncomingTCP, etc (along with addresses that ca
 source port
 seq split up by 20000
 
+also the incoming ACK can be used to determine directly which packet we are on
+so almost all processing can be done completely auotmated by a router with almost no memory usage, and on the router
+
+using incoming ACK to know which packet
+source port to help determine which data to use
+and our own seq (becommes ack on incoming) ann be used to store some other variable ass well
+
+this removes all linked lists, and any major processing which currently is taking up 50-70% of the process CPU time
+
+the source port esp on major routers could cause somme concern because it would filter in a lot of unnnecessary traffic
+so they can be very small, and 2 bytes of the 4 byte sec can be used to checksum the IP+source port
+this should  lower substantially the false/traffic we shouldnt have
+also we can filter out immediately all packet types, and flags we dont concern ourselves w
+we can also notify the router to only allow certain webservers (if we are  going to use some anycast servers,
+google, etc) we can ensure it only sends us ones fromm a particular IP if we dont want to checksum in
+all ips
+
 */
 
 
