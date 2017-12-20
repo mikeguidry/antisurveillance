@@ -2943,6 +2943,7 @@ int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_ad
 
         // add ip into the list
         iptr->v4_addresses[iptr->v4_count++] = ip;
+        ret = 1;
     } else {
 
         for (i = 0; i < iptr->v6_count; i++)
@@ -2959,6 +2960,7 @@ int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_ad
 
         // copy ipv6 addresss into the list
         CopyIPv6Address(&iptr->v6_addresses[iptr->v6_count++], ipv6);
+        ret = 1;
     }
 
     end:;

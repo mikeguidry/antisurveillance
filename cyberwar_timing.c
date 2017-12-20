@@ -28,11 +28,12 @@ int minutes = epoch % 60;
 #include <arpa/inet.h>
 
 typedef struct _seq_oracle {
-    unsigned char a : 4;
-    unsigned char b : 4;
-    unsigned short c : 8;
-    unsigned short d : 8;
-    unsigned short e : 8;
+    unsigned char a : 4; // secs/2 & f
+    unsigned char b : 4; // secs%2 & f
+    unsigned short c : 4; // IP & ff
+
+    unsigned short d : 8; // port & ff
+    unsigned short e : 4; // chk
 } SequenceOracle;
 
 typedef union {
@@ -49,12 +50,15 @@ int packet_filter(uint32_t seq, uint32_t ip, int port, uint32_t ts) {
 
     xyz.b=0;
     xyz.a.c = ((ip%1024) & 0x000000ff);
+
     xyz.a.d = port & 0x000000ff;
+    
 
     ts -= 3;
     for (i =0; i < 5; i++) {
         xyz.a.a = ((ts+i)/2)& 0x0000000f;
         xyz.a.b = ((ts+i)%2)& 0x0000000f;
+        xyz.a.e = ((xyz.a.c+xyz.a.d)&0x000000ff);
         if (xyz.b == seq) {
             printf("match at %d\n", i);
             return 1;
@@ -81,8 +85,9 @@ int main(int argc, char *argv[]) {
     uint32_t seq = 0;
     unsigned char a = secs/2 & 0x0000000f;
     unsigned char b = secs%2 & 0x0000000f;
-    unsigned short c = ((inet_addr("4.2.2.1") % 1024) & 0x000000ff);
+    unsigned short c = ((inet_addr("8.8.8.8") % 1024) & 0x000000ff);
     unsigned short d = 60000 & 0x000000ff; 
+    unsigned short e = 0;
 t = time(0);
     if (argc == 1) {
 t+=2;
@@ -93,13 +98,16 @@ t+=2;
 
 a = ((t+i)/2) &  0x0000000f;
 b = ((t+i)%2) & 0x0000000f;
-c = ((inet_addr("4.2.2.1") % 1024) & 0x000000ff);
+c = ((inet_addr("8.8.8.8") % 1024) & 0x000000ff);
 d = 60000 & 0x000000ff; 
+e = ((c+d)&0x000000ff);
 
+printf("a %d b %d c %d d %d e %d\n", a, b, c, d, e);
         abc.a.a = a;
         abc.a.b = b;
         abc.a.c = c;
         abc.a.d = d;
+        abc.a.e = e&0x000000ff;
 
 
         printf("%08X i:%d t:%d\n", (uint32_t)abc.b, i, t);
@@ -108,7 +116,9 @@ d = 60000 & 0x000000ff;
         c = abc.a.c;
         b = abc.a.b;
         a = abc.a.a;
+        e = abc.a.e;
 
+        printf("a %d b %d c %d d %d e %d\n", a, b, c, d, e);
         
     }
     exit(0);
