@@ -397,6 +397,8 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     NetworkQueueInstructions(ctx, bptr, &optr);
 
+    PacketBuildInstructionsFree(bptr);
+
     // now build packet for http request (GET .....)
     bptr = CW_BasePacket(iptr->destination_ip, iptr->destination_port, iptr->source_ip, iptr->source_port, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
     if (!bptr) return 0;    
@@ -414,6 +416,8 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     NetworkQueueInstructions(ctx, bptr, &optr);
     
     if (optr) OutgoingQueueLink(ctx, optr);
+    
+    PacketBuildInstructionsFree(bptr);
 
     return 1;
 }
