@@ -2907,6 +2907,7 @@ IPAddresses *IPAddressesPtr(AS_context *ctx, char *country) {
         if ((iptr = (IPAddresses *)calloc(1, sizeof(IPAddresses))) == NULL) return NULL;
 
         iptr->country = country_id;
+
         iptr->next = ctx->ip_list;
         ctx->ip_list = iptr;
     }
@@ -2919,10 +2920,12 @@ IPAddresses *IPAddressesPtr(AS_context *ctx, char *country) {
 int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6) {
     int ret = 0;
     IPAddresses *iptr = IPAddressesPtr(ctx,country);
+    IPAddresses *iptr2 = NULL;
     uint32_t *new_ipv4 = NULL;
     struct in6_addr *new_ipv6 =  NULL;
     int i = 0;
 
+    
     if (iptr == NULL) return -1;
 
     if (ip) {
@@ -2945,7 +2948,6 @@ int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_ad
         iptr->v4_addresses[iptr->v4_count++] = ip;
         ret = 1;
     } else {
-
         for (i = 0; i < iptr->v6_count; i++)
             if (CompareIPv6Addresses(&iptr->v6_addresses[i], ipv6)) return 0;
 

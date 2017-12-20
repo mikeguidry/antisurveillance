@@ -76,7 +76,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.182");
+    dest.sin_addr.s_addr = inet_addr("192.168.72.183");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);

