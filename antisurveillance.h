@@ -197,6 +197,21 @@ typedef struct _perform_history {
     int HistoricCurrent;
 } TraceroutePerformaceHistory;
 
+typedef int (*init_function)(AS_context *);
+typedef int (*perform_function)(AS_context *);
+
+typedef struct _subsystem_module {
+    struct _subsystem_module *next;
+
+    init_function init;
+    perform_function perform;
+
+    // is this enabled?
+    int enabled;
+    // if we wish to skip performing for awhile (empty, etc)
+    int skip_ts;
+    int skip_interval;
+} Subsystem_Module;
 
 // lets contain all 'global' variables inside of a context structure
 // this will allow compiling as a library and including in other applications
@@ -235,8 +250,10 @@ typedef struct _antisurveillance_context {
     pthread_t network_write_thread;
     pthread_mutex_t network_incoming_mutex;
     pthread_t network_read_thread;
+    pthread_t perform_thread;
     int network_write_threaded;
     int network_read_threaded;
+    int perform_threaded;
 
     IncomingPacketQueue *incoming_queue;
     IncomingPacketQueue *incoming_queue_last;
@@ -351,8 +368,12 @@ typedef struct _antisurveillance_context {
 
     // ignore incoming data...
     int attack_mode;
-} AS_context;
 
+    Subsystem_Module *module_list;
+
+    // timestamp updated once per loop
+    int ts;
+} AS_context;
 
 
 typedef void *(*attack_func)(AS_attacks *aptr);
@@ -366,3 +387,6 @@ int Test_Generate(AS_context *ctx, int argc, char *argv[]);
 int Test_PCAP(AS_context *ctx, char *filename);
 int Threads_Start(AS_context *);
 OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx);
+int Modules_Perform(AS_context *ctx);
+Subsystem_Module *Module_Add(AS_context *ctx, init_function init, perform_function perform);
+int Antisurveillance_Begin(AS_context *ctx);

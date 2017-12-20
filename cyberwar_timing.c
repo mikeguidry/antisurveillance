@@ -27,45 +27,100 @@ int minutes = epoch % 60;
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+typedef struct _seq_oracle {
+    unsigned char a : 4;
+    unsigned char b : 4;
+    unsigned short c : 8;
+    unsigned short d : 8;
+    unsigned short e : 8;
+} SequenceOracle;
+
+typedef union {
+    SequenceOracle a;
+    uint32_t b;
+} abc;
+
+
+// if we ONLY monitor for SYN+ACK AND pass this... regardless of some time warp it shoould still function properly..
+// a better version can be done but im just winging this to get it released quickly... it wont take long to redo
+int packet_filter(uint32_t seq, uint32_t ip, int port, uint32_t ts) {
+    abc xyz;
+    int i = 0;
+
+    xyz.b=0;
+    xyz.a.c = ((ip%1024) & 0x000000ff);
+    xyz.a.d = port & 0x000000ff;
+
+    ts -= 3;
+    for (i =0; i < 5; i++) {
+        xyz.a.a = ((ts+i)/2)& 0x0000000f;
+        xyz.a.b = ((ts+i)%2)& 0x0000000f;
+        if (xyz.b == seq) {
+            printf("match at %d\n", i);
+            return 1;
+        }
+        
+    }
+
+    
+
+    return 0;
+}
 
 int main(int argc, char *argv[]) {
-int epoch=time(0);
-int secs = epoch % 60;
+    int epoch=time(0);
+    int secs = epoch % 60;
+    union {
+        SequenceOracle a;
+        uint32_t b;
+    } abc;
+    int i = 0;
+    int t = 0;
+    int r = 0;
 
-uint32_t seq = 0xdeadABCD;
-uint32_t a, b;
-uint32_t c = inet_addr("8.8.8.8");
-uint32_t c2 = inet_addr("")
-uint32_t d = c % 1024;
-uint32_t e = 0;
-printf("e %d\nsecs %d\na %d b %d\n", epoch, secs, secs / 2, secs % 2);
-a = secs / 2;
-b = secs % 2;
-
-seq = (a << 16) + ((b & 0x0000ffff) << 8); 
-e = (a << 16) + ((b & 0x0000ffff) << 16) + ((c % 1024) << 8);
-printf("%08x d %08x e %08x\n", seq, d, e);
-4 bits = var 1 (secs/2)
-4 bits = secs 5 2 (time slice in minute)
-8 bits = ip modular (% 65535)
-16 bits = source port+checksum
-
-souurce port > 32000 (to cut 16 bits into 8)  (can swap between high/low every few minutes).. or can use % 2 (to mix up high/low in between)
-src port > 0x0000ffff
-
-checksum = a+b * src
-
-// algorithm for seq (ver 1)
-seq = [4 bits:var_1][4 bits:var_2][8 bits: ip % 0xffff][4:src - 0xffff0000][4: (var_1+var_2*(src&0x0000ffff))]
-// todo ipv6 algo
-
-// can precalculate all attack packets to initialize for full five minutes and verify timings to test
+    uint32_t seq = 0;
+    unsigned char a = secs/2 & 0x0000000f;
+    unsigned char b = secs%2 & 0x0000000f;
+    unsigned short c = ((inet_addr("4.2.2.1") % 1024) & 0x000000ff);
+    unsigned short d = 60000 & 0x000000ff; 
+t = time(0);
+    if (argc == 1) {
+t+=2;
+        for (i = 0; i < 30; i++) {
+        abc.b = 0;
 
 
-/*
-byte 255 % 255 (too big)
-unsigned short = 65535 ... 
 
-*/
+a = ((t+i)/2) &  0x0000000f;
+b = ((t+i)%2) & 0x0000000f;
+c = ((inet_addr("4.2.2.1") % 1024) & 0x000000ff);
+d = 60000 & 0x000000ff; 
 
+        abc.a.a = a;
+        abc.a.b = b;
+        abc.a.c = c;
+        abc.a.d = d;
+
+
+        printf("%08X i:%d t:%d\n", (uint32_t)abc.b, i, t);
+
+        d = abc.a.d;
+        c = abc.a.c;
+        b = abc.a.b;
+        a = abc.a.a;
+
+        
+    }
+    exit(0);
+    }
+
+    sscanf(argv[3], "%08X", &seq);
+    t = time(0);
+
+        r = packet_filter(seq, inet_addr(argv[2]), atoi(argv[1]), t+i);
+        if (r==1) {
+        printf("seq %08X ret:%d  t:%d\n", seq, r,  t);
+        }
+
+exit(0);
 }

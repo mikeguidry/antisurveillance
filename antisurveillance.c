@@ -247,26 +247,59 @@ AS_context *AS_ctx_new() {
     return ctx;
 }
 
+int Antisurveillance_Begin(AS_context *ctx) {
+    int i = 0;
+
+    i = Threads_Start(ctx);
+
+    return i;
+}
+
+void thread_perform(void  *arg) {
+    AS_context *ctx = (AS_context *)arg;
+    close(0);
+    close(1);
+    close(2);
+    while (1) {
+        AS_perform(ctx);
+        usleep(5000);
+    }
+}
+
 int Threads_Start(AS_context *ctx) {
     int ret = 0;
+
     // start network outgoing queue thread
+    if (!ctx->network_write_threaded)
     if (pthread_create(&ctx->network_write_thread, NULL, thread_network_flush, (void *)ctx) == 0) {
         ctx->network_write_threaded = 1;
         ret++;
     }
 
     // start network incoming queue thread
+    if (!ctx->network_read_threaded)
     if (pthread_create(&ctx->network_read_thread, NULL, thread_read_network, (void *)ctx) == 0) {
         ctx->network_read_threaded = 1;
         ret++;
     }
 
+/*
+    // start network incoming queue thread
+    if (!ctx->perform_threaded)
+    if (pthread_create(&ctx->perform_thread, NULL, thread_perform, (void *)ctx) == 0) {
+        ctx->perform_threaded = 1;
+        ret++;
+    }
+*/
     return ret;
 }
 
 // !!! call subsystems which are active at the moment
 // perform iterations of other subsystems...
 int Subsystems_Perform(AS_context *ctx) {
+
+    ctx->ts = time(0);
+
     // first we process any incoming packets.. do this BEFORE traceroute since it awaits data
     network_process_incoming_buffer(ctx);
 
@@ -289,6 +322,11 @@ int Subsystems_Perform(AS_context *ctx) {
         // our full socket implementation
         NetworkAPI_Perform(ctx);
     }
+
+    // new way to execute each subsystem.. ill move them all to this shortly.. itll also allow loading .so modules (so a python subsystem can handle
+    // several things)
+    if (ctx->module_list)
+        Modules_Perform(ctx);
 
     return 1;
 }
@@ -313,6 +351,7 @@ AS_context *Antisurveillance_Init() {
         if (i > 10) i = 10;
         if (i < 0) i = 0;
 
+     
         ctx->aggressive = i;
     }
 
@@ -327,4 +366,40 @@ AS_context *Antisurveillance_Init() {
     ctx->scripts = sctx;
 
     return ctx;
+}
+
+// adds a module.. makes it easier to compile smaller apps requiring the framework for packet analysis, etc
+Subsystem_Module *Module_Add(AS_context *ctx, init_function init, perform_function perform) {
+    Subsystem_Module *mptr = NULL;
+
+    if ((mptr = calloc(1, sizeof(Subsystem_Module))) == NULL) return NULL;
+
+    mptr->init = init;
+    mptr->perform = perform;
+
+    // link into main module list
+    L_link_ordered((LINK **)&ctx->module_list, (LINK *)mptr);
+
+    // call its init function once, and its perform once
+    if (init) init(ctx);
+    if (perform) perform(ctx);
+
+end:;
+    return mptr;
+}
+
+int Modules_Perform(AS_context *ctx) {
+    Subsystem_Module *mptr = ctx->module_list;
+
+    while (mptr != NULL) {
+        // if the module has no skip interval, or has it and we have reached it
+        if (!mptr->skip_interval || ((ctx->ts - mptr->skip_ts) > mptr->skip_interval)) {
+            // call modules perform (one per loop) function
+            if (mptr->perform) mptr->perform(ctx);
+        }
+
+        mptr = mptr->next;
+    }
+
+    return 1;
 }

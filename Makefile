@@ -18,6 +18,9 @@ $(ODIR)/%.o: %.c $(DEPS) scriptmain.o
 connecttest: $(OBJ) connecttest.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
+cyberwar_findips: $(OBJ) cyberwar_findips.o
+	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+
 listentest: $(OBJ) listentest.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 

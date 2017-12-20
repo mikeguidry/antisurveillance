@@ -880,6 +880,8 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
         
     // moved other analysis to the next function which builds the attack structure
     end:;
+    
+    //printf("iptr %p\n", iptr);
 
     return iptr;
 }
@@ -1268,6 +1270,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                     // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
                     // rather than L_link_ordered()
                     // not as pretty although it was required whenever incoming packet counts go into the millions..
+                    //printf("--iptr %p\n", iptr);
                     if (llast == NULL)
                         ret = llast = iptr;
                     else {
@@ -1302,12 +1305,13 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
 
 
     // if something got us here without ret, and some list.. remove it
-    if (ret == NULL && list != NULL) {
+    /*if (ret == NULL && list != NULL) {
       //  PacketBuildInstructionsFree(&list);
-    }
+    } */
 
     // this gets freed on calling function.. since a pointer to the pointer (to mark as freed) wasnt passed
     //PacketsFree(&packets);
+    //printf("ret %p --iptr %p\n", ret, iptr);
 
     return ret;
 }

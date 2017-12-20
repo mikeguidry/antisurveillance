@@ -108,7 +108,7 @@ SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd);
 SocketContext *NetworkAPI_SocketByStatePort(AS_context *ctx, int state, int port);
 int NetworkAPI_NewFD(AS_context *ctx);
 SocketContext *NetworkAPI_SocketNew(AS_context *ctx);
-SocketContext *NetworkAPI_ConnectionNew(AS_context *, SocketContext *sptr);
+SocketContext *NetworkAPI_ConnectionNew(AS_context *, SocketContext *sptr, int);
 void NetworkAPI_FreeBuffers(IOBuf **ioptr);
 void NetworkAPI_ConnectionsCleanup(AS_context *, SocketContext *sptr);
 int NetworkAPI_Cleanup(AS_context *ctx);

@@ -70,16 +70,78 @@ I bet in the future you don't take me as doing nothing as the end of things.  It
 #include "cyberwarfare.h"
 
 
+typedef struct _seq_oracle {
+    unsigned char a : 4;
+    unsigned char b : 4;
+    unsigned short c : 8;
+    unsigned short d : 8;
+    unsigned short e : 8;
+} SequenceOracle;
+
+typedef union {
+    SequenceOracle a;
+    uint32_t b;
+} abc;
 
 
-// correleation between incomming packets source ports, and the probable attacks
-typedef struct _cw_source_port_info {
-    int attack_id;
-} CW_SourcePortOracles;
+// if we ONLY monitor for SYN+ACK AND pass this... regardless of some time warp it shoould still function properly..
+// a better version can be done but im just winging this to get it released quickly... it wont take long to redo
+// keeping this.. will prob do a libnet/libpcap version so people can use immediately tomorrow
+int packet_filter(uint32_t seq, uint32_t ip, int port, uint32_t ts) {
+    abc xyz;
+    int i = 0;
 
-typedef struct _cw_seq_info {
-    int attack_id;
-} CW_SeqOracles;
+    xyz.b=0;
+    xyz.a.c = ((ip%1024) & 0x000000ff);
+    xyz.a.d = port & 0x000000ff;
+
+    ts -= 3;
+    
+    for (i =0; i < 5; i++) {
+        xyz.a.a = ((ts+i)/2)& 0x0000000f;
+        xyz.a.b = ((ts+i)%2)& 0x0000000f;
+        if (xyz.b == seq) {
+            printf("match at %d\n", i);
+            return 1;
+        }
+        
+    }
+
+    return 0;
+}
+
+// determine if a packet was sent by us, or a helper box which is initiating all attacks...
+// this will keep minimal CPU usage... these few mathematics are much more efficient than doing linked lists, or arrays
+int FilterIsOurPacket(PacketBuildInstructions *iptr) {
+    abc xyz;
+    int i = 0;
+    // later usse time(0) once for thousands/millions of packets (depending on the network setup)
+    int ts = time(0);
+
+    // first we ensure its SYN|ACK
+    if (!(iptr->flags & TCP_FLAG_SYN) && (iptr->flags & TCP_FLAG_ACK)) return 0;
+
+    // now lets use the checksum designed for it
+    // set memory to 0 for our structure
+    xyz.b=0;
+    // first we get an identifier for the IP
+    xyz.a.c = ((iptr->source_ip%1024) & 0x000000ff);
+    // then we get an identifier for the port
+    xyz.a.d = iptr->source_port & 0x000000ff;
+    
+    // now we check against the current time, and allow a little variation
+    ts -= 3;
+    for (i =0; i < 5; i++) {
+        xyz.a.a = ((ts+i)/2)& 0x0000000f;
+        xyz.a.b = ((ts+i)%2)& 0x0000000f;
+        // if it matches then its golden.. we proceed with the attack
+        if (xyz.b == seq)
+            return 1;
+    }
+
+    return 0;
+}
+
 
 // current attacks must be listed somewhere.. lets  have a small list so that we can just initialize connections to the router
 // and itll find the proper data when that moment arrives and generate the bytes required to get the full HTTP response back to the client
@@ -186,7 +248,7 @@ This is the ONLY packet we care about... the rest is calculated.
 3: ACK seq:1 ack:1
 4: Request (GET / fjdofjofjd)  ack:1 seq:1
 
-3 & 4 are both ours, and possibly can be turned into one.. ill check into it
+3 & 4 are both ours, and possibly can be turned into a single PACKET.. but always can be a single transmission.. ill check into single packet but for now who cares
 maybe  not if the tcp/ip protocols dont process it the same until its literallly activated
 --- everything below is irrelevant --
 5: ACK
@@ -256,15 +318,32 @@ instead of using queue with timers.. and  loops.. we can put the delay till the 
 so its a single stream (but must test output buffer ability)
 
 
-
+time slices of a single second should be fine for the entire operation... any host that are slower we probably wont use for attacks, although it may be plausible
+to increase time slice over time depending on amount of IPs being pushed to the web server
 */
-typedef struct _seq_oracle {
-    unsigned seq_a : 4;
-    unsigned seq_b : 4;
-    unsigned seq_c : 8;
-    unsigned seq_d : 8:
-    unsigned seq_e : 8;
-} SequenceOracle;
+
+// to find either web servers which respond in an area for targeting some IP...
+// so it goes liek this: we need to choose some IP we have access to for either attacking, or receiving the attack
+// either side needs to be on one side of the passive tap
+// if we are at a big backbone somewhere, or an ISP router then we can use virtually all traffic without being directly inside of boxes in that network...
+// up to the services we are spoofing (http is most effective for this right now for this example) but is limited by X connections per server
+// we can always just find more IPs that pass through the router...passive monitors which employ quantum insert could essentially
+// manipulate, and give that SEQ (one single packet we need to perform the spoofed HTTP request) for a lot of IPs
+
+// okk so leets say you want to attack some datacenter in miami to knock some service offline..
+// takke the range, and scan with it to a  webserver under your control.. the scan shoudl spoof packets fromm that service, and you should be under control of a router
+// either around the web servers your spoofing the connection to, or near the place your attacking (either way is untracable)
+// as long as you can get that single SEQ you are good to go for but this we need to find dead IPs which will not respond with RST whenever they receive packets
+// foro things they have not had anything to do with
+// so for now the whole concept is TO send them  SYN/ACK packets and monitor for their RST to gather IPs under their ranges which are acceptable spoofing IPs
+// without having to worry about another mechanism i use
+// it does mean that a form of quick protection is to respond with RST, but you could also include a firewall in the rouuters passing the traffic to filter this
+// by specific SEQ/source ports which will not be passed through
+// once you have the IP list.. then those aree the IPs you rotate for this attack.. and depending  on where you are located to get the SEQ
+// you can rotate web servers as well (unless you are  only monitoring an isp with  major web traffic then you have  to pick ranges on their network specifically)
+// to the web traffic itll look like real requests fromm the clients, and  to them they'll see the packets comming  back and not understand why initially
+// the person receiving the transmissions will assume they are  being hacked.. nobody will really knnow whats going on .. for awhile anyways
+// manipulate TTL to push concepts away fromm the routers
 
 
 // for now we will use my network.c but it should be easy to modify incoming to receive all packets which match a criteria later...

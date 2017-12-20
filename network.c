@@ -317,7 +317,7 @@ int prepare_write_sockets(AS_context *ctx) {
             mreq.mr_alen = 6;
 
             // enable promisc -- !!! not working properly.. come fix.. for now ip addr add <1-255>
-            setsockopt(ctx->write_socket[proto][ip_ver],SOL_PACKET,PACKET_ADD_MEMBERSHIP,(void*)&mreq,(socklen_t)sizeof(mreq));
+            //setsockopt(ctx->write_socket[proto][ip_ver],SOL_PACKET,PACKET_ADD_MEMBERSHIP,(void*)&mreq,(socklen_t)sizeof(mreq));
 
             setsockopt(ctx->write_socket[proto][ip_ver], SOL_SOCKET, SO_SNDBUFFORCE, &bufsize, sizeof(bufsize));
 
@@ -449,10 +449,11 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     // analyze that packet, and turn it into a instructions structure
     if ((iptr = PacketsToInstructions(pptr)) == NULL) goto end;
     
-    //printf("processing packet\n");
+    //printf("processing packet %p\n", iptr);
     
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
+        //printf("nptr %p iptr %p\n", nptr, iptr);
         // if the packet passes the filter then call its processing function
         if (!nptr->flt || FilterCheck(ctx, nptr->flt, iptr)) {
             // maybe verify respoonse, and break the loop inn some case

@@ -76,7 +76,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.178");
+    dest.sin_addr.s_addr = inet_addr("192.168.72.182");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
@@ -142,10 +142,12 @@ void thread_network_test(void  *arg) {
     while (1) {
         ret = network_code_start((AS_context *)Gctx, tid);
         if (ret) {
+            pthread_mutex_lock(&Gctx->socket_list_mutex);
             printf("tid %d c %d success\n", tid, ++c);
+            pthread_mutex_unlock(&Gctx->socket_list_mutex);
         }
         if (tid == 0) {
-            printf("tid 0 ret %d\n", ret);
+            //printf("tid 0 ret %d\n", ret);
             break;
         }
 
@@ -153,7 +155,7 @@ void thread_network_test(void  *arg) {
     }
 
     
-    printf("network code completed\n");
+    //printf("network code completed\n");
 
     sleep(10);
 
@@ -193,6 +195,8 @@ int main(int argc, char *argv[]) {
     ctx->http_discovery_enabled = 0;
     ctx->http_discovery_max = 0;
 
+    Antisurveillance_Begin(ctx);
+
     for (i = 0; i < count; i++) {
         // at this  point we should be fine to run our network code.. it should be in another thread..
         if (pthread_create(&ctx->network_write_thread, NULL, thread_network_test, (void *)i) != 0) {
@@ -202,11 +206,11 @@ int main(int argc, char *argv[]) {
     }
 
     while (1) {
-        AS_perform(ctx);
-        // sleep half a second.. for testing this is OK.. packet retransmit is 3 seconds for tcp/ip stack
-        usleep(5000);
-    }
 
+        AS_perform(ctx);
+        usleep(5000);
+        //sleep(10);
+     }
 
     // completed... finish routines to free all memory, scripting, and other subsystems..
     // this will allow this to be used as a library easier (inn other apps)
