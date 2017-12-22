@@ -188,7 +188,7 @@ AS_context *AS_ctx_new() {
     srand(time(0));
 
     // allocate memory for the main context
-    if ((ctx = (AS_context *)calloc(1, sizeof(AS_context))) == NULL) return NULL;
+    if ((ctx = (AS_context *)calloc(2, sizeof(AS_context))) == NULL) return NULL;
 
 
     if ((ctx->network_interface = getgatewayandiface()) == NULL) {
@@ -272,12 +272,14 @@ void thread_perform(void  *arg) {
 int Threads_Start(AS_context *ctx) {
     int ret = 0;
 
+
     // start network outgoing queue thread
+    /*
     if (!ctx->network_write_threaded)
     if (pthread_create(&ctx->network_write_thread, NULL, thread_network_flush, (void *)ctx) == 0) {
         ctx->network_write_threaded = 1;
         ret++;
-    }
+    }*/
 
     // start network incoming queue thread
     if (!ctx->network_read_threaded)
@@ -370,7 +372,7 @@ AS_context *Antisurveillance_Init() {
 
     if ((sctx = Scripting_New(ctx)) == NULL) {
         printf("Initialize scripting failed.\n");
-        return NULL;
+        //return NULL;
     }
 
     ctx->scripts = sctx;

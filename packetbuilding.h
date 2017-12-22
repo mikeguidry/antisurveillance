@@ -1,7 +1,7 @@
 #include <netinet/ip6.h>
 #include <netinet/icmp6.h>
 
-#pragma pack(push,1)
+
 // PacketInfo is the first structure packets get prepared into being read either from the wire, or from a PCAP.
 // It is also the last structure outgoing buffers will be contained within before being added to the final outgoing
 // queue which flushes directly to the network.  It is also where you could save to a PCAP rather than flush to the network.
@@ -109,7 +109,7 @@ typedef struct _packet_instructions {
 
 
 
-
+#pragma pack(push,1)
 
 // pseudo structure for calculating checksum
 struct pseudo_tcp4

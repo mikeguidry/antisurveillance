@@ -4,12 +4,15 @@ CFLAGS=-I. -ggdb -Wall -I/usr/include/python2.7_d -I/usr/include/x86_64-linux-gn
 DEPS = antisurveillance.h
 ODIR=obj
 LIBS=-lz -lpthread -ggdb -lpython2.7_d -lpthread -ldl  -lutil -lm   -L/usr/lib -lpython2.7_d -lpthread -ldl  -lutil -lm  -Xlinker -export-dynamic -Wl,-O1 -Wl,-Bsymbolic-functions -L/home/mike/antisurveillance/deps/geoip-api-c/libGeoIP/.libs -lGeoIP
-
+LIBS2=-lz -lpthread -ggdb  -lpthread -ldl  -lutil -lm   -L/usr/lib -lpython2.7_d -lpthread -ldl  -lutil -lm  -Xlinker -export-dynamic -Wl,-O1 -Wl,-Bsymbolic-functions -L/home/mike/antisurveillance/deps/geoip-api-c/libGeoIP/.libs -lGeoIP
 
 
 
 _OBJ = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o  identities.o macro.o network_api.o network_api.o
+_OBJ2 = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o   attacks.o  identities.o macro.o network_api.o network_api.o noscripting.o
+
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
+OBJ2 = $(patsubst %,$(ODIR)/%,$(_OBJ2))
 
 
 $(ODIR)/%.o: %.c $(DEPS) scriptmain.o 
@@ -21,8 +24,8 @@ connecttest: $(OBJ) connecttest.o
 cyberwar_findips: $(OBJ) cyberwar_findips.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
-cyberwar_ddos: $(OBJ) cyberwarfare.c
-	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+cyberwar_ddos: $(OBJ2) cyberwarfare.c
+	gcc -o $@ $^ $(CFLAGS) $(LIBS2)
 
 listentest: $(OBJ) listentest.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)

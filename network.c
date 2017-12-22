@@ -311,12 +311,12 @@ int prepare_write_sockets(AS_context *ctx) {
             }
 
             //https://stackoverflow.com/questions/12177708/raw-socket-promiscuous-mode-not-sniffing-what-i-write
-            memcpy(&ifr.ifr_name, ctx->network_interface, IFNAMSIZ);
-            ioctl(ctx->write_socket[proto][ip_ver], SIOCGIFINDEX, &ifr);
+            //memcpy(&ifr.ifr_name, ctx->network_interface, IFNAMSIZ);
+            //ioctl(ctx->write_socket[proto][ip_ver], SIOCGIFINDEX, &ifr);
 
-            mreq.mr_ifindex = ifr.ifr_ifindex;
-            mreq.mr_type = PACKET_MR_PROMISC;
-            mreq.mr_alen = 6;
+            //mreq.mr_ifindex = ifr.ifr_ifindex;
+            //mreq.mr_type = PACKET_MR_PROMISC;
+            //mreq.mr_alen = 6;
 
             // enable promisc -- !!! not working properly.. come fix.. for now ip addr add <1-255>
             //setsockopt(ctx->write_socket[proto][ip_ver],SOL_PACKET,PACKET_ADD_MEMBERSHIP,(void*)&mreq,(socklen_t)sizeof(mreq));

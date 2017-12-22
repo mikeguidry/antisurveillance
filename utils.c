@@ -367,6 +367,7 @@ char *getgatewayandiface() {
     nlmsg->nlmsg_seq = msgseq++; // Sequence of the message packet.
     nlmsg->nlmsg_pid = getpid(); // PID of process sending the request.
 
+    memset(&tv, 0, sizeof(struct timeval));
     /* 1 Sec Timeout to avoid stall */
     tv.tv_sec = 1;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (struct timeval *)&tv, sizeof(struct timeval));
