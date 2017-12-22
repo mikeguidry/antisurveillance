@@ -76,7 +76,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.182");
+    dest.sin_addr.s_addr = inet_addr("192.168.72.184");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
@@ -195,7 +195,12 @@ int main(int argc, char *argv[]) {
     ctx->http_discovery_enabled = 0;
     ctx->http_discovery_max = 0;
 
-    Antisurveillance_Begin(ctx);
+    // its better to enable threads with the next function because of the way this processes..
+    // we are using pthreads instead of nonblocking.. which means an extra thread for reading/writing is a better system
+    // for the cyberwar ddos attack it is all done in a single thread and was substantially higher otherwise
+    // it all depends  on how you use the API .. much like regular socket programming.. essentially its going to be a bit slower than
+    // kernel but not by too much (well ideally)
+    //Antisurveillance_Begin(ctx);
 
     for (i = 0; i < count; i++) {
         // at this  point we should be fine to run our network code.. it should be in another thread..

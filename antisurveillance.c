@@ -115,7 +115,7 @@ int AS_perform(AS_context *ctx) {
     if (optr)
         OutgoingQueueLink(ctx, optr);
 
-    if (!ctx->network_write_threaded) { OutgoingQueueProcess(ctx); }
+    //if (!ctx->network_write_threaded) { OutgoingQueueProcess(ctx); }
 
     // traceroute, blackhole, scripting?, timers?
     Subsystems_Perform(ctx);
@@ -199,7 +199,7 @@ AS_context *AS_ctx_new() {
     ctx->network_interface = strdup("vmnet8");
 
     // 25 pools waiting initially for reading packets..
-    ctx->initial_pool_count = 50;
+    ctx->initial_pool_count = 0;
     ctx->iterations_per_loop = 5;
     ctx->http_discovery_add_always = 1;
     ctx->ipv6_gen_any = 1;
@@ -218,30 +218,30 @@ AS_context *AS_ctx_new() {
     NetworkAllocateWritePools(ctx);
 
     // initialize anything related to special attacks in attacks.c
-    attacks_init(ctx);
+    //attacks_init(ctx);
 
     // initialize traceroute filter & packet analysis function
-    Traceroute_Init(ctx);
+    //Traceroute_Init(ctx);
 
     // other things in research.c (geoip, etc) maybe move later or redo init/deinit
-    Research_Init(ctx);
+    //Research_Init(ctx);
 
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
     // initialize pcap network plugin for saving data from the wire
     // now we're a full fledge sniffer.
-    PCAP_Init(ctx);
+    //PCAP_Init(ctx);
 
     // start threads after loading.. so we dont have useless packets to process
     //Threads_Start(ctx);
 
     // initialize real time http session discovery.. so we can automatically geenerate attacks for mass surveillance from live arbitrary traffic
     // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
-    WebDiscover_Init(ctx);
+    //WebDiscover_Init(ctx);
 
     // this is a subsystem which will get access to all packets to add IPv6 (mainly) addreses to use for generating new random-ish  addresses
-    IPGather_Init(ctx);
+    //IPGather_Init(ctx);
 
     pthread_mutex_init(&ctx->socket_list_mutex, NULL);
 
@@ -260,9 +260,11 @@ int Antisurveillance_Begin(AS_context *ctx) {
 
 void thread_perform(void  *arg) {
     AS_context *ctx = (AS_context *)arg;
+    // valgrind reported somme printf interferrence.. i dont always use  them so decided to cut it off in case i add it and forget
     close(0);
     close(1);
     close(2);
+
     while (1) {
         AS_perform(ctx);
         usleep(5000);
@@ -274,12 +276,11 @@ int Threads_Start(AS_context *ctx) {
 
 
     // start network outgoing queue thread
-    /*
     if (!ctx->network_write_threaded)
     if (pthread_create(&ctx->network_write_thread, NULL, thread_network_flush, (void *)ctx) == 0) {
         ctx->network_write_threaded = 1;
         ret++;
-    }*/
+    }
 
     // start network incoming queue thread
     if (!ctx->network_read_threaded)
@@ -289,6 +290,8 @@ int Threads_Start(AS_context *ctx) {
     }
 
 /*
+
+    // performing this AS_perform() in a thread will segfault right now.. no obvious reasons..
     // start network incoming queue thread
     if (!ctx->perform_threaded)
     if (pthread_create(&ctx->perform_thread, NULL, thread_perform, (void *)ctx) == 0) {
@@ -302,10 +305,8 @@ int Threads_Start(AS_context *ctx) {
 // !!! call subsystems which are active at the moment
 // perform iterations of other subsystems...
 int Subsystems_Perform(AS_context *ctx) {
-
     ctx->ts = time(0);
 
-    // first we process any incoming packets.. do this BEFORE traceroute since it awaits data
     network_process_incoming_buffer(ctx);
 
     if (ctx->traceroute_enabled && L_count((LINK *)ctx->traceroute_queue)) {
@@ -405,10 +406,10 @@ int Modules_Perform(AS_context *ctx) {
 
     while (mptr != NULL) {
         // if the module has no skip interval, or has it and we have reached it
-        if (!mptr->skip_interval || ((ctx->ts - mptr->skip_ts) > mptr->skip_interval)) {
+       //if (!mptr->skip_interval || ((ctx->ts - mptr->skip_ts) > mptr->skip_interval)) {
             // call modules perform (one per loop) function
             if (mptr->perform) mptr->perform(ctx);
-        }
+        //}
 
         mptr = mptr->next;
     }

@@ -14,7 +14,7 @@ typedef struct _packet_instructions PacketBuildInstructions;
 struct _filter_information;
 typedef struct _filter_information FilterInformation;
 
-#define MAX_BUF_SIZE 1024*1024*1
+#define MAX_BUF_SIZE 1024*1024
 #define MAX_PACKETS 1000
 
 // this is the queue which shouldnt have anything to do with processing, or other functions.. its where
@@ -34,8 +34,8 @@ typedef struct _outgoing_packet_queue {
     int max_buf_size;
     int packet_starts[MAX_PACKETS];
     int packet_ends[MAX_PACKETS];
-    int packet_protocol[MAX_PACKETS];
-    int packet_ipversion[MAX_PACKETS];
+    //int packet_protocol[MAX_PACKETS];
+    //int packet_ipversion[MAX_PACKETS];
 
     // this port is necessary for sendto() to handle missing structures relating to the packet
     uint16_t dest_port[MAX_PACKETS];

