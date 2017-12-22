@@ -91,7 +91,7 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
     // calculate full length of packet.. before we allocate memory for storage
     int final_packet_size = sizeof(struct iphdr) + TCPHSIZE + iptr->data_size;
-    unsigned char *final_packet = (unsigned char *)calloc(1, final_packet_size);
+    unsigned char *final_packet = (unsigned char *)malloc( final_packet_size);
     struct packet *p = (struct packet *)final_packet;
 
     // ensure the final packet was allocated correctly

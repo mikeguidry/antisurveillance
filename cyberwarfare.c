@@ -52,6 +52,16 @@ itself, and know which IPs are useful without anyone ever  updaating, or modifyi
 automation at its best.
 
 
+
+
+-----
+in my tests there is a certain timing that is almost perfect.. which means more testing needs to take place.. an automated verification of each router/passive monitor and the
+attacks its building can be made to perform the attacks.. its  probably just the TCP/IP engine, and it sending another retransmission if it does/doesnt receive a packet in time
+i w as able  to get the new system with SEQ up to 30k (which  means the other system should work at 60k) but when I fixed somme bugs(slow downs, etc) in the packet system for 
+sending/recv the connections overall requests dropped.. im assuming it became too fast... also this is slower than the other becausde it doesnt CLOSE connections...
+on a masasive  router you do noot wanna close every connecction.. now that  we are down to 2 packets especially... anyways
+ill try to work out the magic timings and then it can be built into an initial phase which tests all web servers before performing full blown attacks
+
 */
 
 #include <stdio.h>
@@ -369,6 +379,10 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
 /*
 
     // WOW.. at it goes you dont even need 2 packets to perform the attack.. just a single.. ACK+Request in same packet is enough.
+
+    // SEQ analysis of products may allow these attackss to take place with only a few initial connections to load balancers..
+    // thus allowing using any load balancers of the same types to produce attacks.. not sure how acccurate.. depending on their initial seq
+    
     
     // build ACK for the servers SYN|ACK
     bptr = CW_BasePacket(iptr->destination_ip, iptr->destination_port, iptr->source_ip, iptr->source_port, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);

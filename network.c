@@ -50,7 +50,7 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
     optr = ctx->outgoing_pool_waiting;
 
     // loop for all outgoing queues...
-    while (optr != NULL) {
+  /*  while (optr != NULL) {
 
         // if the memory is below 200 megabytes, then we do not hold it for 3 seconds...
         if (ctx->free_memory && ctx->free_memory < 200) break;
@@ -62,10 +62,10 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
         }
 
         optr = optr->next;
-    }
+    } */
 
-    if (optr != NULL)
-        L_unlink((void **)&ctx->outgoing_pool_waiting, (LINK *)optr);
+    if (optr) ctx->outgoing_pool_waiting = optr->next;
+    //if (optr != NULL) L_unlink((void **)&ctx->outgoing_pool_waiting, (LINK *)optr);
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
     
@@ -97,7 +97,7 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
 int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     int count = 0;
     OutgoingPacketQueue *onext = NULL;
-    OutgoingPacketQueue *pool = NULL;
+    OutgoingPacketQueue *pool = NULL, *plast = NULL;
     struct sockaddr_in raw_out_ipv4;
     struct sockaddr_in6 raw_out_ipv6;
     struct ether_header *ethhdr = NULL;
@@ -163,24 +163,29 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         optr->ts = time(0);
 
         onext = optr->next;
-
+        
+        optr->next = pool;
+        pool = optr;
+        plast = optr;
         //L_link_ordered((LINK **)&pool, (LINK *)optr);
 
-        free(optr);
+        //free(optr);
         
         // put into local stack pool to get moved to global pool at end of the function
-        /*optr->next = pool;
-        pool = optr; */
+        //optr->next = pool;
+        //pool = optr; 
 
         optr = onext;
     }
 
     if (pool) {
-        printf("pool\n");
+        //printf("pool\n");
         // put back into pool after for use again.. without requiring infinite reallocations
         pthread_mutex_lock(&ctx->network_pool_mutex);
 
-        L_link_ordered((LINK **)&ctx->outgoing_pool_waiting, (LINK *)pool);
+        //L_link_ordered((LINK **)&ctx->outgoing_pool_waiting, (LINK *)pool);
+        plast->next = ctx->outgoing_pool_waiting;
+        ctx->outgoing_pool_waiting = pool;
 
         pthread_mutex_unlock(&ctx->network_pool_mutex);
     }
@@ -486,7 +491,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 // this will process the incoming buffers
 int network_process_incoming_buffer(AS_context *ctx) {
     IncomingPacketQueue *nptr = NULL, *nnext = NULL;
-    IncomingPacketQueue *pool = NULL;
+    IncomingPacketQueue *pool = NULL, *plast = NULL;
     int ret = 0;
     char *sptr = NULL;
     int cur_packet = 0;
@@ -544,12 +549,15 @@ int network_process_incoming_buffer(AS_context *ctx) {
         // we are finished processing that cluster... we can free it
         nnext = nptr->next;
 
+        nptr->next = pool;
+        pool = nptr;
+        plast = nptr;
         // put in pool...
         //nptr->next = pool;
         //pool = nptr;
 
         // free this structure since we are finished with it
-        free(nptr);
+        //free(nptr);
         
         // go to the next cluster of packets we are processing
         nptr = nnext;
@@ -561,7 +569,9 @@ int network_process_incoming_buffer(AS_context *ctx) {
 
         //printf("1 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
         // put back into waiting pool so we dont allocate over and over
-        L_link_ordered((LINK **)&ctx->incoming_pool_waiting, (LINK *)pool);
+        //L_link_ordered((LINK **)&ctx->incoming_pool_waiting, (LINK *)pool);
+        plast->next = ctx->incoming_pool_waiting;
+        ctx->incoming_pool_waiting = pool;
 
         //printf("2 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
 
