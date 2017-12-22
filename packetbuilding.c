@@ -992,7 +992,7 @@ int PacketTCPBuildOptions(PacketBuildInstructions *iptr) {
     }*/
 
 
-    if ((current_options = (char *)calloc(1, current_options_size)) == NULL) return -1;
+    if ((current_options = (char *)malloc(current_options_size)) == NULL) return -1;
 
     PtrFree(&iptr->options);
 

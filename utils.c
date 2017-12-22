@@ -87,6 +87,9 @@ void L_unlink(LINK **list, LINK *ptr) {
 
         lptr = lptr->next;
     }
+
+    // now we remove link to next in this structure
+    ptr->next = NULL;
 }
 
 

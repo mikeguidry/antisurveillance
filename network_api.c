@@ -399,7 +399,8 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
     int i = 0;
     int ts = ctx->ts;
 
-    pthread_mutex_lock(&ctx->socket_list_mutex);
+    // done in perform
+    //pthread_mutex_lock(&ctx->socket_list_mutex);
 
     while (i < JTABLE_SIZE) {
         sptr = ctx->socket_list[i];
@@ -453,7 +454,7 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
         i++;
     }
 
-    pthread_mutex_unlock(&ctx->socket_list_mutex);
+    //pthread_mutex_unlock(&ctx->socket_list_mutex);
 }
 
 
@@ -711,6 +712,9 @@ int NetworkAPI_Perform(AS_context *ctx) {
         j++;
     }
 
+    // socket cleanup for completed sockets
+    NetworkAPI_Cleanup(ctx);
+
     pthread_mutex_unlock(&ctx->socket_list_mutex);
 
     // if we have some outgoing packets from somewhere...
@@ -718,8 +722,6 @@ int NetworkAPI_Perform(AS_context *ctx) {
         // chain it into active outgoing queue
         OutgoingQueueLink(ctx, optr);
 
-    // socket cleanup for completed sockets
-    NetworkAPI_Cleanup(ctx);
 }
 
 int NetworkAPI_IncomingSocket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr) {

@@ -39,7 +39,7 @@ to remove the 3second timmeout, and ram limitations I was going to use for remov
 
 
 OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
-    OutgoingPacketQueue *optr = NULL, *olast = NULL;
+    OutgoingPacketQueue *optr = NULL;
     int ts = time(0);
 
     // get outgoing packet queue structure from buffer
@@ -61,18 +61,11 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
             break;
         }
 
-        olast = optr;
         optr = optr->next;
     }
 
-    if (optr != NULL) {
-        if (olast != NULL) {
-            olast->next = optr->next;
-        } else {
-            // if we did obtain a structure, then we need to push the main pool to the next for the next call
-            ctx->outgoing_pool_waiting = optr->next;
-        }
-    }
+    if (optr != NULL)
+        L_unlink((void **)&ctx->outgoing_pool_waiting, (LINK *)optr);
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
     
@@ -114,6 +107,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     int cur_packet = 0;
     int packet_size = 0;
 
+/*
     // we need some raw sockets.
     if (ctx->write_socket[0][0] <= 0) {
         if (prepare_write_sockets(ctx) <= 0) {
@@ -121,8 +115,10 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
             return -1;
         }
     }
+*/
 
     while (optr != NULL) {
+        //printf("optr %p optr->next %p\n", optr, optr->next);
         cur_packet = 0;
         // be sure it wasnt marked to get ignored
         if (!optr->ignore) {
@@ -135,7 +131,6 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
 
                 // calculate the size of this particular packet we are going to process
                 packet_size = optr->packet_ends[cur_packet] - optr->packet_starts[cur_packet];
-                
                 if (optr->dest_ip[cur_packet]) {
                     // IPv4
                     raw_out_ipv4.sin_family       = AF_INET;
@@ -166,10 +161,13 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         // we set the timer here so we can use old outgoing  packet structures for X seconds to filter 'incoming' packet from our own
         // if the kernel decided to deliver them to use (i believe  it does, but it may depend on the type of socket.. so the protocol and domain)
         optr->ts = time(0);
-    
+
         onext = optr->next;
 
+        //L_link_ordered((LINK **)&pool, (LINK *)optr);
+
         free(optr);
+        
         // put into local stack pool to get moved to global pool at end of the function
         /*optr->next = pool;
         pool = optr; */
@@ -178,6 +176,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     }
 
     if (pool) {
+        printf("pool\n");
         // put back into pool after for use again.. without requiring infinite reallocations
         pthread_mutex_lock(&ctx->network_pool_mutex);
 
@@ -209,6 +208,7 @@ void ClearPackets(AS_context *ctx) {
 int OutgoingQueueProcess(AS_context *ctx) {
     OutgoingPacketQueue *optr = NULL;
     int count = 0;
+    //printf("out\n");
 
     if (!ctx->network_disabled) {
         pthread_mutex_lock(&ctx->network_queue_mutex);
@@ -219,6 +219,8 @@ int OutgoingQueueProcess(AS_context *ctx) {
         pthread_mutex_unlock(&ctx->network_queue_mutex);
 
         count = FlushOutgoingQueueToNetwork(ctx, optr);
+
+        optr = NULL;
     }
 
     return count;
@@ -710,29 +712,21 @@ int NetworkAllocateWritePools(AS_context *ctx) {
 
 
 // thread to read constantly from the network
-void *thread_read_network(void *arg) {
-    AS_context *ctx = (AS_context *)arg;
+int network_read_loop(AS_context *ctx) {
     int i = 0;
     IncomingPacketQueue *nptr = NULL;
     int paused = 0;
     int sleep_interval = 0;
-    struct sched_param params;
-    pthread_t this_thread = pthread_self();
 
     //printf("network reading thread\n");
     // open raw reading socket
     //prepare_read_socket_old(ctx);
-    i = prepare_read_sockets(ctx);
 
     // if sock didnt open, or we cant allocae space for reading packets
-    if (!i) goto end;
- 
-     // We'll set the priority to the maximum.
-    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
-    pthread_setschedparam(this_thread, SCHED_FIFO, &params);
+    //if (!i) goto end;
 
     // lets read forever.. until we stop it for some reason
-    while (1) {
+    //while (1) {
         if (nptr == NULL) {
             pthread_mutex_lock(&ctx->network_pool_mutex);
 
@@ -767,29 +761,14 @@ void *thread_read_network(void *arg) {
                 ctx->incoming_queue = ctx->incoming_queue_last = nptr;
             }
 
-            // get paused variable from network disabled
-            //paused = (ctx->network_disabled || ctx->paused);
-
             // no more variables which we have to worry about readwrite from diff threads
             pthread_mutex_unlock(&ctx->network_incoming_mutex);
 
             nptr = NULL;
         }
+    //}
 
-        // if paused.. lets sleep for 1/10th a second each time we end up here..
-        if (paused) {
-            usleep(50000);
-        } else {            
-            //sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
-            //sleep_interval /= 2;
-            //if (sleep_interval > 0)
-                // timing change w aggressive-ness
-              //  usleep(sleep_interval);
-              usleep(2000);
-              //sleep(1);
-            
-        }
-    }
+    //printf("in\n");
 
     end:;
 
@@ -807,6 +786,41 @@ void *thread_read_network(void *arg) {
     PtrFree(&nptr);
 
     //printf("network reading thread ending\n");
+}
+
+void *thread_read_network(void *arg) {
+    AS_context *ctx = (AS_context *)arg;
+    struct sched_param params;
+    pthread_t this_thread = pthread_self();
+    int paused = 0;
+ 
+     // We'll set the priority to the maximum.
+    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_setschedparam(this_thread, SCHED_FIFO, &params);
+
+    while (1) {
+        network_read_loop(ctx);
+
+                // get paused variable from network disabled
+            paused = (ctx->network_disabled || ctx->paused);
+
+
+        // if paused.. lets sleep for 1/10th a second each time we end up here..
+        if (paused) {
+            usleep(50000);
+        } else {            
+            //sleep_interval = (5000000 / 4) - (ctx->aggressive * 25000);
+            //sleep_interval /= 2;
+            //if (sleep_interval > 0)
+                // timing change w aggressive-ness
+              //  usleep(sleep_interval);
+              usleep(2000);
+              //sleep(1);
+            
+        }
+
+
+    }
 
     // exit thread
     pthread_exit(NULL);

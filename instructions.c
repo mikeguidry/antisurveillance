@@ -1271,6 +1271,7 @@ PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
                     // rather than L_link_ordered()
                     // not as pretty although it was required whenever incoming packet counts go into the millions..
                     //printf("--iptr %p\n", iptr);
+                    iptr->ts = time(0);
                     if (llast == NULL)
                         ret = llast = iptr;
                     else {
