@@ -162,7 +162,6 @@ int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, u
 
         if (xyz.b == seq) return 1;
 
-        //return 1;
     }
 
     return 0;
@@ -462,33 +461,6 @@ end:;
 }
 
 
-// turns a list of IP addresses on lines from a file into IPAddress type
-int file_to_iplist(AS_context *ctx, char *filename, char *country) {
-    char *sptr = NULL;
-    FILE *fd;
-    uint32_t ip = 0;
-    int count = 0;
-    char buf[1024];
-
-    // read web server IPs from file
-    if ((fd = fopen(filename, "r")) == NULL) return -1;
-
-    while (fgets(buf,1024,fd)) {
-        if ((sptr = strchr(buf, '\r')) != NULL) *sptr = 0;
-        if ((sptr = strchr(buf, '\n')) != NULL) *sptr = 0;
-
-        ip = inet_addr(buf);
-
-        if (ip)
-            // using random geo just for holding ips
-            count += IPAddressesAddGeo(ctx, country, ip, NULL);
-    }
-
-    fclose(fd);
-
-    return count;
-}
-
 
 // this sends the initial syn packets to the web server fromm each IP...
 // it does not handle logic of what side of passive tap, or whatever.. it expects  all that to be worked out ahead of time
@@ -534,9 +506,7 @@ void start_attack(AS_context *ctx) {
         network_process_incoming_buffer(ctx);
 
         // this has to be adjusted.. a better system to limit needs to be in place.. not yet
-        if (!(count++ % 500)) {
-            skip = 100;
-        }
+        if (!(count++ % 500)) skip = 5;
         //sleep(10);
     }
 
@@ -544,7 +514,7 @@ void start_attack(AS_context *ctx) {
 }
 
 int main(int argc, char *argv[]) {
-    AS_context *ctx = Antisurveillance_Init();
+    AS_context *ctx = Antisurveillance_Init(0);
     int i = 0, r = 0;
     int bad = 0;
     pthread_t attack_thread_handle;
@@ -553,7 +523,9 @@ int main(int argc, char *argv[]) {
     
     
     if (argc == 2) {
-        range = 10000 * atoi(argv[1]);
+        i = atoi(argv[1]);
+        if ((i < 1) && (i > 32)) i = 1+rand()%20;
+        range = i * 2000;
         srand(time(0) + range);
     }
 
@@ -570,11 +542,15 @@ int main(int argc, char *argv[]) {
     //Antisurveillance_Begin(ctx);
 
     // open and turn both files into IPaddress lists
+    i = 0;
     while (files[i] != NULL) {
         r = file_to_iplist(ctx, files[i], tag[i]);
 
         // if it failed.. bad=1
-        if (r <= 0) { bad = 1; break; }
+        if (r <= 0) { 
+            printf("failedd to load %s [%s]\n", tag[i], files[i]);
+            bad = 1; break;
+            }
 
         i++;
     }

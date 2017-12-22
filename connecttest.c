@@ -76,7 +76,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.184");
+    dest.sin_addr.s_addr = inet_addr("192.168.72.183");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
@@ -169,7 +169,7 @@ void thread_network_test(void  *arg) {
 
 int main(int argc, char *argv[]) {
     int i = 0, done = 0;
-    AS_context *ctx = Antisurveillance_Init();
+    AS_context *ctx = Antisurveillance_Init(1);
     // default script is "mgr.py"
     char *script = "net";
     AS_scripts *sctx = NULL;    
@@ -185,12 +185,10 @@ int main(int argc, char *argv[]) {
 
     Gctx = ctx;
 
-
     if (argc == 2) {
         count = atoi(argv[1]);
         printf("Using %d connections\n", count);
     }
-    
 
     ctx->http_discovery_enabled = 0;
     ctx->http_discovery_max = 0;

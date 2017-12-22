@@ -107,7 +107,7 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
 
         while (cur_packet < ptr->cur_packet) {
             // sptr starts at the beginning of the buffer
-            sptr = (char *)(&ptr->buffer);
+            sptr = (char *)(ptr->buf);
 
             //increase it to the startinng place of this packet
             sptr += ptr->packet_starts[cur_packet];

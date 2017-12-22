@@ -14,8 +14,6 @@ typedef struct _packet_instructions PacketBuildInstructions;
 struct _filter_information;
 typedef struct _filter_information FilterInformation;
 
-#define MAX_BUF_SIZE 1024*1024
-#define MAX_PACKETS 1000
 
 // this is the queue which shouldnt have anything to do with processing, or other functions.. its where
 // all attacks go to get submitted directly to the wire.. 
@@ -30,20 +28,21 @@ typedef struct _outgoing_packet_queue {
     int type;
     int proto;
 
-    char buffer[MAX_BUF_SIZE];
+    char *buf;
     int max_buf_size;
-    int packet_starts[MAX_PACKETS];
-    int packet_ends[MAX_PACKETS];
-    //int packet_protocol[MAX_PACKETS];
-    //int packet_ipversion[MAX_PACKETS];
+    int max_packets;
+    int *packet_starts;
+    int *packet_ends;
+    int *packet_protocol;
+    int *packet_ipversion;
 
     // this port is necessary for sendto() to handle missing structures relating to the packet
-    uint16_t dest_port[MAX_PACKETS];
+    uint16_t *dest_port;
     // we also need the source port to verify against connections laater so we dont keep readding ours..
-    uint16_t source_port[MAX_PACKETS];
-    uint32_t dest_ip[MAX_PACKETS];
-    struct in6_addr dest_ipv6[MAX_PACKETS];
-    AS_attacks *attack_info[MAX_PACKETS];
+    uint16_t *source_port;
+    uint32_t *dest_ip;
+    struct in6_addr *dest_ipv6;
+    AS_attacks **attack_info;
 
     int cur_packet;
     int size;
@@ -58,12 +57,13 @@ typedef struct _outgoing_packet_queue {
 typedef struct _incoming_packet_queue {
     struct _incoming_packet_queue *next;
 
-    char buf[MAX_BUF_SIZE];
+    char *buf;
     int max_buf_size;
-    int packet_starts[MAX_PACKETS];
-    int packet_ends[MAX_PACKETS];
-    int packet_protocol[MAX_PACKETS];
-    int packet_ipversion[MAX_PACKETS];
+    int max_packets;
+    int *packet_starts;
+    int *packet_ends;
+    int *packet_protocol;
+    int *packet_ipversion;
     int cur_packet;
     int size;
 } IncomingPacketQueue;

@@ -476,3 +476,4 @@ uint32_t IPv4SetRandom(AS_context *ctx, char *country);
 struct in6_addr *IPv6SetRandom(AS_context *ctx, char *country);
 int BorderScore(AS_context *ctx, TracerouteSpider *sptr);
 int fourteen_borderscore(AS_context *ctx, char *country);
+int file_to_iplist(AS_context *ctx, char *filename, char *country);

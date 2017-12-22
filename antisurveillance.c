@@ -181,7 +181,7 @@ void AS_Clear_All(AS_context *ctx) {
 }
 
 // create a new context, and initialize some things
-AS_context *AS_ctx_new() {
+AS_context *AS_ctx_new(int start_threads) {
     AS_context *ctx = NULL;
 
     // seed random number generator by current time (not secure but no biggie here)
@@ -234,7 +234,8 @@ AS_context *AS_ctx_new() {
     //PCAP_Init(ctx);
 
     // start threads after loading.. so we dont have useless packets to process
-    //Threads_Start(ctx);
+    if (start_threads)
+        Threads_Start(ctx);
 
     // initialize real time http session discovery.. so we can automatically geenerate attacks for mass surveillance from live arbitrary traffic
     // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
@@ -245,7 +246,10 @@ AS_context *AS_ctx_new() {
 
     pthread_mutex_init(&ctx->socket_list_mutex, NULL);
 
-    NetworkAPI_Init(ctx);
+    //NetworkAPI_Init(ctx);
+
+    ctx->queue_buffer_size = 1024*1024;
+    ctx->queue_max_packets = 1000;
 
     return ctx;
 }
@@ -308,7 +312,7 @@ int Subsystems_Perform(AS_context *ctx) {
     ctx->ts = time(0);
 
     network_process_incoming_buffer(ctx);
-
+/*
     if (ctx->traceroute_enabled && L_count((LINK *)ctx->traceroute_queue)) {
         // now move any current traceroute research forward
         Traceroute_Perform(ctx);
@@ -324,11 +328,11 @@ int Subsystems_Perform(AS_context *ctx) {
         WebDiscover_Perform(ctx);
     }
 
-    if (L_count((LINK *)ctx->socket_list)) {
+    if (ctx->socket_list_count) {
         // our full socket implementation
         NetworkAPI_Perform(ctx);
     }
-
+*/
     // new way to execute each subsystem.. ill move them all to this shortly.. itll also allow loading .so modules (so a python subsystem can handle
     // several things)
     if (ctx->module_list)
@@ -347,10 +351,10 @@ int Subsystems_Perform(AS_context *ctx) {
 
 
 // All binaries (revolving around scripting, or C loops) requires these initialization routines
-AS_context *Antisurveillance_Init() {
+AS_context *Antisurveillance_Init(int start_threads) {
     int i = 0;
     char *Eaggressive = NULL;
-    AS_context *ctx = AS_ctx_new();
+    AS_context *ctx = AS_ctx_new(start_threads);
     AS_scripts *sctx = NULL;
 
     if (ctx == NULL) {
@@ -372,11 +376,11 @@ AS_context *Antisurveillance_Init() {
     Scripting_Init();
 
     if ((sctx = Scripting_New(ctx)) == NULL) {
-        printf("Initialize scripting failed.\n");
+        //printf("Initialize scripting failed.\n");
         //return NULL;
+    } else {
+        ctx->scripts = sctx;
     }
-
-    ctx->scripts = sctx;
 
     return ctx;
 }
@@ -390,8 +394,10 @@ Subsystem_Module *Module_Add(AS_context *ctx, init_function init, perform_functi
     mptr->init = init;
     mptr->perform = perform;
 
+    mptr->next = ctx->module_list;
+    ctx->module_list = mptr;
     // link into main module list
-    L_link_ordered((LINK **)&ctx->module_list, (LINK *)mptr);
+    //L_link_ordered((LINK **)&ctx->module_list, (LINK *)mptr);
 
     // call its init function once, and its perform once
     if (init) init(ctx);

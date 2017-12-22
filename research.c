@@ -3784,3 +3784,32 @@ int ICMP_Send(AS_context *ctx, int type) {
     end:;
     return ret;
 }*/
+
+
+
+// turns a list of IP addresses on lines from a file into IPAddress type
+int file_to_iplist(AS_context *ctx, char *filename, char *country) {
+    char *sptr = NULL;
+    FILE *fd;
+    uint32_t ip = 0;
+    int count = 0;
+    char buf[1024];
+
+    // read web server IPs from file
+    if ((fd = fopen(filename, "r")) == NULL) return -1;
+
+    while (fgets(buf,1024,fd)) {
+        if ((sptr = strchr(buf, '\r')) != NULL) *sptr = 0;
+        if ((sptr = strchr(buf, '\n')) != NULL) *sptr = 0;
+
+        ip = inet_addr(buf);
+
+        if (ip)
+            // using random geo just for holding ips
+            count += IPAddressesAddGeo(ctx, country, ip, NULL);
+    }
+
+    fclose(fd);
+
+    return count;
+}

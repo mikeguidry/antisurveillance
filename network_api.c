@@ -319,6 +319,7 @@ SocketContext *NetworkAPI_SocketNew(AS_context *ctx) {
 
         pthread_mutex_lock(&ctx->socket_list_mutex);
         L_link_ordered((LINK **)&ctx->socket_list[NetworkAPI_IP_JTABLE(sptr->socket_fd,NULL)], (LINK *)sptr);
+        ctx->socket_list_count++;
         pthread_mutex_unlock(&ctx->socket_list_mutex);
     }
 
@@ -432,6 +433,7 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
                     pthread_mutex_unlock(&sptr->mutex);
 
                     free(sptr);
+                    ctx->socket_list_count--;
 
                     sptr = snext;
                     continue;

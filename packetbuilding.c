@@ -457,7 +457,7 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
 
     // copy packet into outgoing packet queue structure (many together)
     // for speed and to not use many threads, or malloc, etc
-    sptr = (char *)(&optr->buffer);
+    sptr = (char *)(optr->buf);
     sptr += optr->size;
     memcpy(sptr, pkt->buf, pkt->size);
 
@@ -476,9 +476,9 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
         which_protocol = PROTO_ICMP;
 
     // mark protocol
-    optr->packet_protocol[optr->cur_packet] = which_protocol;
+    //optr->packet_protocol[optr->cur_packet] = which_protocol;
     // mark if its ipv6 by checking if ipv4 is empty
-    optr->packet_ipversion[optr->cur_packet] = (pkt->dest_ip == 0);
+    //optr->packet_ipversion[optr->cur_packet] = (pkt->dest_ip == 0);
 
 
     optr->packet_starts[optr->cur_packet] = optr->size;

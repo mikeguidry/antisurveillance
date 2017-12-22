@@ -366,6 +366,8 @@ typedef struct _antisurveillance_context {
     int socket_fd_check;
     pthread_t socket_list_mutex;
 
+    int socket_list_count;
+
     // ignore incoming data...
     int attack_mode;
 
@@ -373,6 +375,9 @@ typedef struct _antisurveillance_context {
 
     // timestamp updated once per loop
     int ts;
+
+    int queue_buffer_size;
+    int queue_max_packets;
 } AS_context;
 
 
