@@ -2883,7 +2883,10 @@ SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
 
 // find generated, or loaded attack addresses by country
 IPAddresses *IPAddressesbyGeo(AS_context *ctx, int country) {
-    IPAddresses *iptr = ctx->ip_list;
+    IPAddresses *iptr = NULL;
+    
+    pthread_mutex_lock(&ctx->socket_list_mutex);
+    iptr = ctx->ip_list;
 
     while (iptr != NULL) {
 
@@ -2892,6 +2895,10 @@ IPAddresses *IPAddressesbyGeo(AS_context *ctx, int country) {
 
         iptr = iptr->next;
     }
+
+    if (iptr) pthread_mutex_lock(&iptr->mutex);
+
+    pthread_mutex_unlock(&ctx->socket_list_mutex);
 
     return iptr;
 }
@@ -2908,25 +2915,25 @@ IPAddresses *IPAddressesPtr(AS_context *ctx, char *country) {
 
         iptr->country = country_id;
 
-        iptr->next = ctx->ip_list;
-        ctx->ip_list = iptr;
+        pthread_mutex_init(&iptr->mutex, NULL);
+
+        pthread_mutex_lock(&iptr->mutex);
+
+        pthread_mutex_lock(&ctx->socket_list_mutex);
+        L_link_ordered((LINK **)&ctx->ip_list, (LINK *)iptr);
+        pthread_mutex_unlock(&ctx->socket_list_mutex);
     }
 
     return iptr;
     
 }
 
-
-int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6) {
-    int ret = 0;
+int IPAddressesMark(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6, int marker) {
+    int ret = -1;
     IPAddresses *iptr = IPAddressesPtr(ctx,country);
-    IPAddresses *iptr2 = NULL;
-    uint32_t *new_ipv4 = NULL;
-    struct in6_addr *new_ipv6 =  NULL;
-    int i = 0;
-
+    int i = 0, found = 0;
     
-    if (iptr == NULL) return -1;
+    if (iptr == NULL) goto end;
 
     if (ip) {
         // ipv4
@@ -2934,38 +2941,101 @@ int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_ad
         // first lets verify the IP address doesnt already exist... these are specific lists for attacks
         // either fromm research or live packets
         for (i = 0; i < iptr->v4_count; i++)
-            if (iptr->v4_addresses[i] == ip) return 0;
+            if (iptr->v4_addresses[i] == ip) {
+                found = 1;
+                break;
+            }
+
+        if (found == 0) goto end;
+
+        // return old marker..
+        ret = iptr->v4_marker[i];
+        // set new marker
+        iptr->v4_marker[i] = marker;
+
+    } else {
+        for (i = 0; i < iptr->v6_count; i++)
+            if (CompareIPv6Addresses(&iptr->v6_addresses[i], ipv6)) {
+                found = 1;
+                break;
+            }
+    
+        if (found == 0) goto end;
+
+        ret = iptr->v6_marker[i];
+        iptr->v6_marker[i] = marker;
+    }
+
+    end:;
+    if (iptr) pthread_mutex_unlock(&iptr->mutex);
+
+    return ret;
+
+}
+ 
+int IPAddressesAddGeo(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6) {
+    int ret = 0;
+    IPAddresses *iptr = IPAddressesPtr(ctx,country);
+    IPAddresses *iptr2 = NULL;
+    uint32_t *new_ipv4 = NULL;
+    struct in6_addr *new_ipv6 =  NULL;
+    int i = 0;
+    int *new_marker = NULL;
+
+    
+    if (iptr == NULL) goto end;
+
+    if (ip) {
+        // ipv4
+
+        // first lets verify the IP address doesnt already exist... these are specific lists for attacks
+        // either fromm research or live packets
+        for (i = 0; i < iptr->v4_count; i++)
+            if (iptr->v4_addresses[i] == ip) goto end;
 
         if (iptr->v4_count == iptr->v4_buffer_size) {
             // need more space (increase by 5000)
             new_ipv4 = (uint32_t *)realloc(iptr->v4_addresses, sizeof(uint32_t) * (iptr->v4_count + 5000));
-            if (!new_ipv4) return -1;
+            new_marker = (int *)realloc(iptr->v4_marker, sizeof(int) * (iptr->v4_count + 5000));
+            if (!new_ipv4 || !new_marker) { ret = -1; goto end; }
+            for (i = 0; i < 5000; i++) new_marker[iptr->v4_count + i] = 0;
             iptr->v4_addresses = new_ipv4;
+            iptr->v4_marker = new_marker;
             iptr->v4_buffer_size += 5000;
+            
         }
 
         // add ip into the list
-        iptr->v4_addresses[iptr->v4_count++] = ip;
+        iptr->v4_addresses[iptr->v4_count] = ip;
+        iptr->v4_marker[iptr->v4_count] = 0;
+        iptr->v4_count++;
         ret = 1;
     } else {
         for (i = 0; i < iptr->v6_count; i++)
-            if (CompareIPv6Addresses(&iptr->v6_addresses[i], ipv6)) return 0;
+            if (CompareIPv6Addresses(&iptr->v6_addresses[i], ipv6)) goto end;
 
         // ipv6
         if (iptr->v6_count == iptr->v6_buffer_size) {
             // need more space (increase by 5000)
             new_ipv6 = (uint32_t *)realloc(iptr->v6_addresses, sizeof(struct in6_addr) * (iptr->v6_count + 5000));
-            if (!new_ipv6) return -1;
+            new_marker = (int *)realloc(iptr->v6_marker, sizeof(int) * (iptr->v6_count + 5000));
+            if (!new_ipv6 || !new_marker) { ret = -1; goto end; }
+            for (i = 0; i < 5000; i++) new_marker[iptr->v6_count + i] = 0;
             iptr->v6_addresses = new_ipv6;
+            iptr->v6_marker = new_marker;
             iptr->v6_buffer_size += 5000;
         }
 
         // copy ipv6 addresss into the list
-        CopyIPv6Address(&iptr->v6_addresses[iptr->v6_count++], ipv6);
+        CopyIPv6Address(&iptr->v6_addresses[iptr->v6_count], ipv6);
+        iptr->v6_marker[iptr->v6_count] = 0;
+        iptr->v6_count++;
         ret = 1;
     }
 
     end:;
+    if (iptr) pthread_mutex_unlock(&iptr->mutex);
+
     return ret;
 }
 
@@ -2994,32 +3064,62 @@ IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int
 }
 
 
-struct in6_addr *IPv6SetRandom(AS_context *ctx, char *country) {
+int IPv6SetRandom(AS_context *ctx, char *country, struct in6_addr *addr6, int marker) {
     int country_id = country ? GEOIP_CountryToID(country) : 0;
     IPAddresses *iptr = IPAddressesbyGeo(ctx, country_id);
     int r = 0;
+    int ret = 0;
+    int retry = 500;
 
     // make sure it exists..
-    if (iptr == NULL) return NULL;
+    if (iptr == NULL) goto end;
 
-    // pick random IPv6
-    r = rand()%iptr->v6_count;
+    while (ret != 1 && retry--) {
+        // pick random IPv6
+        r = rand()%iptr->v6_count;
 
-    return &iptr->v6_addresses[r];
+        if (marker && (iptr->v6_marker[r] >= marker)) continue;
+
+        CopyIPv6Address(addr6, &iptr->v6_addresses[r]);
+
+        ret = 1;
+
+        if (marker) iptr->v6_marker[r] = marker;
+    }
+
+    
+end:;
+    if (iptr) pthread_mutex_unlock(&iptr->mutex);
+
+    return ret;
 }
 
-uint32_t IPv4SetRandom(AS_context *ctx, char *country) {
+uint32_t IPv4SetRandom(AS_context *ctx, char *country, int marker) {
     int country_id = country ? GEOIP_CountryToID(country) : 0;
     IPAddresses *iptr = IPAddressesbyGeo(ctx, country_id);
     int r = 0;
+    uint32_t ret = 0;
+    int retry = 500;
 
     // make sure it exists..
-    if (iptr == NULL) return NULL;
+    if (iptr == NULL) goto end;
 
-    // pick random IPv6
-    r = rand()%iptr->v4_count;
+    while (ret == 0 && retry--) {
+        // pick random IPv6
+        r = rand()%iptr->v4_count;
 
-    return iptr->v4_addresses[r];
+        if (marker && (iptr->v4_marker[r] >= marker)) continue;
+
+        ret = iptr->v4_addresses[r];
+
+        if (marker) iptr->v4_marker[r] = marker;
+    }
+
+end:;
+    if (iptr) pthread_mutex_unlock(&iptr->mutex);
+
+
+    return ret;
 }
 
 
@@ -3079,7 +3179,7 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
         }
 
         // return so we can try again later..
-        return 0;
+        goto end;
     }
 
 
@@ -3128,7 +3228,8 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
                     printf("IPv6: %s %X\n", IP, ctx->geoipv6_handle);
                     free(IP);
                 }
-                return 1;
+                ret = 1;
+                goto end;
             }
         }
     }
@@ -3137,9 +3238,13 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
     if (address != NULL)
         // copy the address
         CopyIPv6Address(address, &ipv6);
+    ret = 1;
+
+    end:;
+    if (iptr) pthread_mutex_unlock(&iptr->mutex);
 
     // return success
-    return 1;
+    return ret;
 }
 
 
@@ -3799,6 +3904,7 @@ int file_to_iplist(AS_context *ctx, char *filename, char *country) {
     if ((fd = fopen(filename, "r")) == NULL) return -1;
 
     while (fgets(buf,1024,fd)) {
+        if (strlen(buf) < 4) continue;
         if ((sptr = strchr(buf, '\r')) != NULL) *sptr = 0;
         if ((sptr = strchr(buf, '\n')) != NULL) *sptr = 0;
 
@@ -3812,4 +3918,38 @@ int file_to_iplist(AS_context *ctx, char *filename, char *country) {
     fclose(fd);
 
     return count;
+}
+
+
+
+// turns a list of IP addresses on lines from a file into IPAddress type
+int iplistv4_to_file(AS_context *ctx, char *filename, char *country, int marker) {
+    FILE *fd;
+    IPAddresses *iptr = NULL;
+    int ret = 0;
+    int i = 0;
+    struct in_addr addr;
+    char *ipstr = NULL;
+
+    if ((iptr = IPAddressesPtr(ctx, country)) == NULL) goto end;
+
+    // read web server IPs from file
+    if ((fd = fopen(filename, "w")) == NULL) { ret = -1; goto end; }
+
+    for (i = 0; i < iptr->v4_count; i++) {
+        if (iptr->v4_marker[i] != marker) continue;
+
+        addr.s_addr = iptr->v4_addresses[i];
+        ipstr = (char *)inet_ntoa(addr);
+        fprintf(fd, "%s\n", ipstr);
+    }
+
+    ret = 1;
+    
+end:;
+    if  (fd) fclose(fd);
+    
+    if (iptr) pthread_mutex_unlock(&iptr->mutex);
+
+    return ret;
 }

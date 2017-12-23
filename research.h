@@ -404,6 +404,8 @@ typedef struct _languages {
 typedef struct _ip_addresses {
     struct _ip_addresses *next;
 
+    pthread_mutex_t mutex;
+
     // easy geo?
     int country;
 
@@ -415,16 +417,20 @@ typedef struct _ip_addresses {
     int time_restrictions;
 
     uint32_t *v4_addresses;
+    int *v4_marker;
     int v4_count;
     int v4_buffer_size;
 
     struct in6_addr *v6_addresses;
+    int *v6_marker;
     int v6_count;  
     int v6_buffer_size;
 
     // so we have easy access to all traceroutes relating to these IP addresses
     // *** maybe dont need?
-    TracerouteQueue *ip_traces;  
+    TracerouteQueue *ip_traces;
+
+    
 } IPAddresses;
 
 
@@ -472,8 +478,10 @@ int Generic_CallbackQueueCheck(AS_context *ctx, int);
 int Traceroute_FillAll(AS_context *ctx);
 int IPGather_Init(AS_context *ctx);
 
-uint32_t IPv4SetRandom(AS_context *ctx, char *country);
-struct in6_addr *IPv6SetRandom(AS_context *ctx, char *country);
+uint32_t IPv4SetRandom(AS_context *ctx, char *country, int);
+int IPv6SetRandom(AS_context *ctx, char *country, struct in6_addr *, int);
 int BorderScore(AS_context *ctx, TracerouteSpider *sptr);
 int fourteen_borderscore(AS_context *ctx, char *country);
 int file_to_iplist(AS_context *ctx, char *filename, char *country);
+int IPAddressesMark(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6, int marker);
+int iplistv4_to_file(AS_context *ctx, char *filename, char *country, int marker);

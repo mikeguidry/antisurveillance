@@ -39,6 +39,9 @@ then they are good options for spoofing to web servers to attack the ranges we a
 #include "instructions.h"
 #include <math.h>
 
+
+char *tag[] = { "A1", "00", NULL };
+
 PacketBuildInstructions *BasePacket(uint32_t src, uint32_t src_port, uint32_t dst, uint32_t dst_port, int client, int flags) {
     PacketBuildInstructions *bptr = NULL;
 
@@ -63,22 +66,16 @@ PacketBuildInstructions *BasePacket(uint32_t src, uint32_t src_port, uint32_t ds
     return bptr;
 }
 
-int r_count = 0;
-FILE *fd2 = NULL;
 
 int CW_FindIP_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
-    struct in_addr src;
     // we will use >60000 ports for scanning.. to make it quick here
-    if (iptr->source_port < 60000 && iptr->destination_port < 60000) return 0;
+    if (iptr->destination_port < 60000) return 0;
 
     // we only care about RST...
     if (!(iptr->flags & TCP_FLAG_RST)) return 0;
 
-    if (fd2) {
-        r_count++;
-        src.s_addr = iptr->source_ip;
-        fprintf(fd2, "%s\n", inet_ntoa(src));
-    }
+    // mark the IP as 2
+    IPAddressesMark(ctx, tag[0], iptr->source_ip, NULL, 2);
 
     return 0;
 }
@@ -107,71 +104,89 @@ int CW_FindIP_Init(AS_context *ctx) {
 
 
 int main(int argc, char *argv[]) {
-    AS_context *ctx = Antisurveillance_Init();
+    AS_context *ctx = Antisurveillance_Init(1);
     char buf[1024];
     char *sptr = NULL;
     uint32_t ip = 0;
     PacketBuildInstructions *bptr = NULL;
     OutgoingPacketQueue *optr = NULL;
-    int count = 0;
+    int count = 0, r_count = 0;
     int start = 0;
     uint32_t our_ip = get_local_ipv4();
-
-    // input IPs to check
-    FILE *fd = fopen("input_ip","r");
-    // store which ones respond (they are NOT to be used)
-    fd2 = fopen("output_ip","w");
-    // initialize the module
-
-    if (fd == NULL || fd2 == NULL) {
-        fprintf(stderr, "couldnt open file\n");
+    IPAddresses *ip_list = NULL;
+    //int file_to_iplist(AS_context *ctx, char *filename, char *country);
+    IPAddresses *webservers = NULL;
+    int i = 0;
+    
+    // fill IPAddresses structure from a file
+    if (!file_to_iplist(ctx, "input_ip", tag[0])) {
+        fprintf(stderr, "couldnt open input file or load IP addresses properly\n");
         exit(-1);
     }
 
     // prepare the function above to receive packets
     Module_Add(ctx, &CW_FindIP_Init, NULL);
 
-    while (fgets(buf,1024,fd)) {
-        if ((sptr = strchr(buf,'\n')) != NULL) *sptr = 0;
-        if ((sptr = strchr(buf,'\r')) != NULL) *sptr = 0;
+    // loop randommly for each IP address sending a SYN+ACK (2nd portion of tcp/ip handshake)
+    while (1) {
+        // pull a new unmarked IP (we mark after 1 use)
+        ip = IPv4SetRandom(ctx, tag[0], 1);
+        if (ip) {
+            // create packet 2 of 3 way handshake.. so the target should respond with RST if its alive
+            bptr = BasePacket(our_ip, 60000 + rand()%5000, ip, 80, 1, TCP_FLAG_ACK|TCP_FLAG_SYN);
+            bptr->ack = rand()%0xffffffff;
+            bptr->seq = rand()%0xffffffff;
+            if (bptr != NULL) {
+                NetworkQueueInstructions(ctx, bptr, &optr);
 
-        ip = inet_addr(buf);
-        
-        // create packet 2 of 3 way handshake.. so the target should respond with RST if its alive
-        bptr = BasePacket(our_ip, 60000 + rand()%5000, ip, 80, 1, TCP_FLAG_ACK|TCP_FLAG_SYN);
-        bptr->ack = rand()%0xffffffff;
-        bptr->seq = rand()%0xffffffff;
-        if (bptr != NULL) {
-            NetworkQueueInstructions(ctx, bptr, &optr);
-
-            if (((++count % 100)==0) && optr) {
-                OutgoingQueueLink(ctx, optr);
-                optr = NULL;
+                if (((++count % 100)==0) && optr) {
+                    OutgoingQueueLink(ctx, optr);
+                    optr = NULL;
+                }
             }
+        } else {
+            // probably finished.. we only retry 500.. maybe make configurable for mass hacking/scans
+            break;
         }
     }
 
-    // anytjing  left
     if (optr) OutgoingQueueLink(ctx, optr);
 
-    // close input files
-    fclose(fd);
-    
     // process packets for 3 seconds
     start = time(0);
     while(1) {
         AS_perform(ctx);
         usleep(5000);
 
-        if ((time(0) - start) > 3) break;
+        if ((time(0) - start) > 2) break;
+    }
+
+    // retrieve the list again (it relocks the mutex)
+    if ((ip_list = IPAddressesPtr(ctx, tag[0])) == NULL) {
+        exit(-1);
+    }
+
+    // the unmarked ones are the good ones...
+    for (i = 0; i < ip_list->v4_count; i++) {
+        // skip ones marked with 2 (it means they responded)
+        if (ip_list->v4_marker[i] == 2) continue;
+
+        r_count++;
     }
 
     // done
-    printf("Done. %d responded\n", r_count);
+    printf("Done. %d didnt respond, and are usable.... dumping to output_ip the usable\n", r_count);
 
-    // close output file
-    fflush(fd2);
-    fclose(fd2);
+    pthread_mutex_unlock(&ip_list->mutex);
+
+    // dumpp all IPs with a certain marker.. in this case 1 (means they didnt respopnd and were changed to 2)
+    i = iplistv4_to_file(ctx, "output_ip", tag[0], 1);
+    if (!i) {
+        printf("error writing output file\n");
+        exit(-1);
+    }
+
+    printf("task complete\n");
 
     exit(0);
 }

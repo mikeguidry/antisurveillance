@@ -493,8 +493,7 @@ int AS_session_queue(AS_context *ctx, int id, uint32_t src, uint32_t dst, int sr
 
     // LIFO i decided it doesnt matter since the attacks are all happening simultaneously...
     // if it becomes a problem its a small fix.  but your queues should also flush properly anyhow..
-    aptr->next = ctx->attack_list;
-    ctx->attack_list = aptr;
+    L_link_ordered((LINK **)&ctx->attack_list, (LINK *)aptr);
 
     return 1;
 }
@@ -547,8 +546,7 @@ int BH_add_CIDR(AS_context *ctx, int a, int b, int c, int d, int mask) {
     qptr->netmask = mask;
 
     // add to blackhole attacks in queue
-    qptr->next = ctx->blackhole_queue;
-    ctx->blackhole_queue = qptr;
+    L_link_ordered((LINK **)&ctx->blackhole_queue, (LINK *)qptr);
 
     end:;
     return ret;
@@ -566,8 +564,7 @@ int BH_add_IP(AS_context *ctx, uint32_t ip) {
     qptr->netmask = 32;
 
     // add to blackhole attacks in queue
-    qptr->next = ctx->blackhole_queue;
-    ctx->blackhole_queue = qptr;
+    L_link_ordered((LINK **)&ctx->blackhole_queue, (LINK *)qptr);
 
     end:;
     return ret;
@@ -582,20 +579,12 @@ int BH_del_IP(AS_context *ctx, uint32_t ip) {
 
         // is this the IP in question?
         if (qptr->ip == ip) {
-            if (ctx->blackhole_queue == qptr) {
-                ctx->blackhole_queue = qptr->next;
-            } else {
-                qlast->next = qptr->next;
-            }
-
-            qlast = qptr;
-            qnext = qptr->next;
-            free(qptr);
-            qptr = qnext;
-
+            L_unlink((LINK **)&ctx->blackhole_queue, (LINK *)qptr);
             ret = 1;
             break;
         }
+
+        qptr = qptr->next;
 
     }
 
