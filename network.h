@@ -14,7 +14,6 @@ typedef struct _packet_instructions PacketBuildInstructions;
 struct _filter_information;
 typedef struct _filter_information FilterInformation;
 
-
 // this is the queue which shouldnt have anything to do with processing, or other functions.. its where
 // all attacks go to get submitted directly to the wire.. 
 typedef struct _outgoing_packet_queue {

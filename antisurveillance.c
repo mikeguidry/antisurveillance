@@ -218,20 +218,20 @@ AS_context *AS_ctx_new(int start_threads) {
     NetworkAllocateWritePools(ctx);
 
     // initialize anything related to special attacks in attacks.c
-    //attacks_init(ctx);
+    attacks_init(ctx);
 
     // initialize traceroute filter & packet analysis function
-    //Traceroute_Init(ctx);
+    Traceroute_Init(ctx);
 
     // other things in research.c (geoip, etc) maybe move later or redo init/deinit
-    //Research_Init(ctx);
+    Research_Init(ctx);
 
     // initialize mutex for network queue...
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
     // initialize pcap network plugin for saving data from the wire
     // now we're a full fledge sniffer.
-    //PCAP_Init(ctx);
+    PCAP_Init(ctx);
 
     // start threads after loading.. so we dont have useless packets to process
     if (start_threads)
@@ -239,17 +239,17 @@ AS_context *AS_ctx_new(int start_threads) {
 
     // initialize real time http session discovery.. so we can automatically geenerate attacks for mass surveillance from live arbitrary traffic
     // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
-    //WebDiscover_Init(ctx);
+    WebDiscover_Init(ctx);
 
     // this is a subsystem which will get access to all packets to add IPv6 (mainly) addreses to use for generating new random-ish  addresses
-    //IPGather_Init(ctx);
+    IPGather_Init(ctx);
 
     pthread_mutex_init(&ctx->socket_list_mutex, NULL);
 
-    //NetworkAPI_Init(ctx);
+    NetworkAPI_Init(ctx);
 
-    ctx->queue_buffer_size = 1024*1024;
-    ctx->queue_max_packets = 1000;
+    ctx->queue_buffer_size = 1024*1024*10;
+    ctx->queue_max_packets = 10000;
 
     return ctx;
 }
@@ -311,13 +311,6 @@ int Threads_Start(AS_context *ctx) {
 int Subsystems_Perform(AS_context *ctx) {
     ctx->ts = time(0);
 
-    network_process_incoming_buffer(ctx);
-/*
-    if (ctx->traceroute_enabled && L_count((LINK *)ctx->traceroute_queue)) {
-        // now move any current traceroute research forward
-        Traceroute_Perform(ctx);
-    }
-
     if (L_count((LINK *)ctx->blackhole_queue)) {
         // now apply any changes, or further the blackhole attacks
         BH_Perform(ctx);
@@ -332,7 +325,7 @@ int Subsystems_Perform(AS_context *ctx) {
         // our full socket implementation
         NetworkAPI_Perform(ctx);
     }
-*/
+
     // new way to execute each subsystem.. ill move them all to this shortly.. itll also allow loading .so modules (so a python subsystem can handle
     // several things)
     if (ctx->module_list)
@@ -345,6 +338,13 @@ int Subsystems_Perform(AS_context *ctx) {
     if (!ctx->network_read_thread)
         network_read_loop(ctx);
 
+    network_process_incoming_buffer(ctx);
+
+    if (ctx->traceroute_enabled && L_count((LINK *)ctx->traceroute_queue)) {
+        // now move any current traceroute research forward
+        Traceroute_Perform(ctx);
+    }
+    
     return 1;
 }
 
@@ -412,10 +412,10 @@ int Modules_Perform(AS_context *ctx) {
 
     while (mptr != NULL) {
         // if the module has no skip interval, or has it and we have reached it
-       //if (!mptr->skip_interval || ((ctx->ts - mptr->skip_ts) > mptr->skip_interval)) {
+       if (!mptr->skip_interval || ((ctx->ts - mptr->skip_ts) > mptr->skip_interval)) {
             // call modules perform (one per loop) function
             if (mptr->perform) mptr->perform(ctx);
-        //}
+        }
 
         mptr = mptr->next;
     }

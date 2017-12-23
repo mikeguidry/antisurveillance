@@ -75,12 +75,23 @@ OutgoingPacketQueue *OutgoingQueueAlloc(AS_context *ctx) {
 
     if ((buf = malloc(size)) == NULL) return NULL;
 
-    memset(buf, 0, sizeof(OutgoingPacketQueue));
+    //memset(buf, 0, sizeof(OutgoingPacketQueue));
 
     optr = (OutgoingPacketQueue *)buf;
 
     optr->max_packets = ctx->queue_max_packets;
     optr->max_buf_size = ctx->queue_buffer_size;
+    optr->type = 0;
+    optr->ignore = 0;
+    optr->thread = NULL;
+    optr->proto = 0;
+    optr->failed = 0;
+    optr->ctx = NULL;
+    optr->ts = ctx->ts;
+    optr->size = 0;
+    optr->cur_packet = 0;
+    optr->next = NULL;
+
 
 
     // prepare structure pointers
@@ -100,7 +111,7 @@ OutgoingPacketQueue *OutgoingQueueAlloc(AS_context *ctx) {
 
 
 
-IncomingPacketQueue *IncommingQueueAlloc(AS_context *ctx) {
+IncomingPacketQueue *IncomingQueueAlloc(AS_context *ctx) {
     char *buf = NULL;
     int size = 0;
     IncomingPacketQueue *iptr = NULL;
@@ -120,12 +131,16 @@ IncomingPacketQueue *IncommingQueueAlloc(AS_context *ctx) {
     size += (ctx->queue_max_packets * sizeof(int));
 
     if ((buf = malloc(size)) == NULL) return NULL;
-    memset(buf, 0, sizeof(IncomingPacketQueue));
+    //memset(buf, 0, sizeof(IncomingPacketQueue));
 
     iptr = (IncomingPacketQueue *)buf;
 
     iptr->max_packets = ctx->queue_max_packets;
     iptr->max_buf_size = ctx->queue_buffer_size;
+    iptr->size = 0;
+    iptr->next = NULL;
+    iptr->cur_packet = 0;
+
 
     // prepare structure pointers
     iptr->buf = (char *)(buf + sizeof(IncomingPacketQueue));
@@ -174,6 +189,7 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
         if ((optr = OutgoingQueueAlloc(ctx)) == NULL) return NULL;
 
     //memset(optr, 0, sizeof(OutgoingPacketQueue));
+
     optr->cur_packet = 0;
     optr->size = 0;
     optr->ignore = 0;
@@ -354,7 +370,7 @@ void *thread_network_flush(void *arg) {
         if (!count) {
             //printf("didnt push any\n");
             //sleep(1);
-            usleep(50000);
+            usleep(5000);
         } else {
             
             //i = (1000000 / 4) - (i * 25000);
@@ -702,7 +718,7 @@ int NetworkReadSocket(IncomingPacketQueue *nptr, int socket, int proto, int ip_v
     // reset using our buffer..
     sptr = (char *)nptr->buf;
 
-    if (nptr->cur_packet > nptr->max_packets) return 0;
+    if (nptr->cur_packet >= (nptr->max_packets - 1)) return -1;
     
     if (nptr->cur_packet) {
         // increase pointer to the correct location (After the last packet)
@@ -717,8 +733,8 @@ int NetworkReadSocket(IncomingPacketQueue *nptr, int socket, int proto, int ip_v
         nptr->packet_starts[nptr->cur_packet] = nptr->size;
         nptr->packet_ends[nptr->cur_packet] = (nptr->size + r);
 
-        //nptr->packet_protocol[nptr->cur_packet] = proto;
-        //nptr->packet_ipversion[nptr->cur_packet] = ip_ver;
+        nptr->packet_protocol[nptr->cur_packet] = proto;
+        nptr->packet_ipversion[nptr->cur_packet] = ip_ver;
 
         // prep for the next packet
         nptr->cur_packet++;
@@ -765,6 +781,8 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
             do {
                 r = NetworkReadSocket(nptr, ctx->read_socket[proto][ip_ver], proto, ip_ver);
 
+                if (r == -1) goto too_much;
+
                 packet_count += r;
             } while (r);
         }
@@ -801,7 +819,7 @@ int NetworkAllocateReadPools(AS_context *ctx) {
     // allocate X pools for reading.. (some will get queued awaiting processing, etc)..
     // this should cut down on memory allocations
     while (i < ctx->initial_pool_count) {
-        pool[i++] = pqptr = IncommingQueueAlloc(ctx);
+        pool[i++] = pqptr = IncomingQueueAlloc(ctx);
 
         if (pqptr != NULL) {
             // put into the pool
@@ -851,20 +869,18 @@ int network_read_loop(AS_context *ctx) {
     int paused = 0;
     int sleep_interval = 0;
 
-    //if (nptr == NULL) {
-        pthread_mutex_lock(&ctx->network_pool_mutex);
+    pthread_mutex_lock(&ctx->network_pool_mutex);
 
-        // grab one from the pool
-        nptr = ctx->incoming_pool_waiting;
-        // remove from pool queue
-        if (nptr)
-            ctx->incoming_pool_waiting = nptr->next;
+    // grab one from the pool
+    nptr = ctx->incoming_pool_waiting;
+    // remove from pool queue
+    if (nptr)
+        ctx->incoming_pool_waiting = nptr->next;
 
-        pthread_mutex_unlock(&ctx->network_pool_mutex);
-    //}
+    pthread_mutex_unlock(&ctx->network_pool_mutex);
 
     if (nptr == NULL)
-        if ((nptr = IncommingQueueAlloc(ctx)) == NULL) goto end;
+        if ((nptr = IncomingQueueAlloc(ctx)) == NULL) goto end;
 
     nptr->max_buf_size = ctx->queue_buffer_size;
     nptr->max_packets = ctx->queue_max_packets;
@@ -875,10 +891,10 @@ int network_read_loop(AS_context *ctx) {
 
     network_fill_incoming_buffer(ctx, nptr);
 
-    if (nptr->cur_packet) {
+    if (nptr->cur_packet > 0) {
         pthread_mutex_lock(&ctx->network_incoming_mutex);
 
-        if (ctx->incoming_queue_last) {
+        if (ctx->incoming_queue_last != NULL) {
             // set the next of that to this new one
             ctx->incoming_queue_last->next = nptr;
             // set the last as this one for the next queue
@@ -893,9 +909,7 @@ int network_read_loop(AS_context *ctx) {
 
         nptr = NULL;
 
-        if (!ctx->network_read_threaded) {
-            network_process_incoming_buffer(ctx);
-        }
+        //if (!ctx->network_read_threaded) { network_process_incoming_buffer(ctx); }
 
     } else {
         free(nptr);
@@ -1033,6 +1047,7 @@ int NetworkQueueInstructions(AS_context *ctx, PacketBuildInstructions *iptr, Out
     // for speed and to not use many threads, or malloc, etc
     sptr = (char *)(optr->buf);
     sptr += optr->size;
+
     memcpy(sptr, iptr->packet, iptr->packet_size);
 
     optr->dest_ip[optr->cur_packet] = iptr->destination_ip;
@@ -1050,9 +1065,9 @@ int NetworkQueueInstructions(AS_context *ctx, PacketBuildInstructions *iptr, Out
     }
 
     // mark protocol
-    //optr->packet_protocol[optr->cur_packet] = which_protocol;
+    optr->packet_protocol[optr->cur_packet] = which_protocol;
     // mark if its ipv6 by checking if ipv4 is empty
-    //optr->packet_ipversion[optr->cur_packet] = (iptr->destination_ip == 0);
+    optr->packet_ipversion[optr->cur_packet] = (iptr->destination_ip == 0);
 
 
     optr->packet_starts[optr->cur_packet] = optr->size;

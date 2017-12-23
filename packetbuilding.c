@@ -91,14 +91,16 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
     // calculate full length of packet.. before we allocate memory for storage
     int final_packet_size = sizeof(struct iphdr) + TCPHSIZE + iptr->data_size;
-    unsigned char *final_packet = (unsigned char *)malloc( final_packet_size);
-    struct packet *p = (struct packet *)final_packet;
+    unsigned char *final_packet = (unsigned char *)calloc(1, final_packet_size);
 
     // ensure the final packet was allocated correctly
     if (final_packet == NULL) {
         //printf("couldnt alloc packet\n");
         return ret;
     }
+
+    
+    struct packet *p = (struct packet *)final_packet;
     
     // IP header below
     p->ip.version 	= 4;
@@ -455,6 +457,9 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
             return;
 
 
+    // insert outgoing queue max packet, and size checking logic  here
+
+
     // copy packet into outgoing packet queue structure (many together)
     // for speed and to not use many threads, or malloc, etc
     sptr = (char *)(optr->buf);
@@ -476,9 +481,9 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
         which_protocol = PROTO_ICMP;
 
     // mark protocol
-    //optr->packet_protocol[optr->cur_packet] = which_protocol;
+    optr->packet_protocol[optr->cur_packet] = which_protocol;
     // mark if its ipv6 by checking if ipv4 is empty
-    //optr->packet_ipversion[optr->cur_packet] = (pkt->dest_ip == 0);
+    optr->packet_ipversion[optr->cur_packet] = (pkt->dest_ip == 0);
 
 
     optr->packet_starts[optr->cur_packet] = optr->size;

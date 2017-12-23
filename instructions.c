@@ -104,17 +104,12 @@ void FilterPrepare(FilterInformation *fptr, int type, uint32_t value) {
 // Filters through packets ensuring that it matches a criteria of something being looked for..
 int FilterCheck(AS_context *ctx, FilterInformation *fptr, PacketBuildInstructions *iptr) {
     int ret = 0;
-    struct iphdr *ip = NULL;
-    struct tcphdr *tcp = NULL;
-    struct icmphdr *icmp = NULL;
-    struct udphdr *udp = NULL;
     OutgoingPacketQueue *optr = NULL;
     int cur_packet = 0;
     int found = 0;
 
     if (iptr == NULL) return -1;
 
-    ip = (struct iphdr *)iptr->packet;
     //return 1;
 
     // if the filter is empty... its allowed
@@ -1720,7 +1715,7 @@ AS_attacks *InstructionsToAttack(AS_context *ctx, PacketBuildInstructions *instr
 
                         if (match)
                             // the packet before (SYN packet) should have an ACK of 0 since its new... and it has SYN flag
-                            if ((pptr->ack == 0) && (iptr->flags & TCP_FLAG_SYN) & (iptr->flags & TCP_FLAG_ACK)) {
+                            if ((pptr->ack == 0) && (iptr->flags & TCP_FLAG_SYN) && (iptr->flags & TCP_FLAG_ACK)) {
                                 // this is the one where we get the clients base seq
                                 aptr->client_base_seq = pptr->seq;
 

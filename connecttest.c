@@ -183,6 +183,10 @@ int main(int argc, char *argv[]) {
     //PythonLoadScript(sctx, script, "init", NULL);
     //printf("2\n");
 
+    if (ctx == NULL) {
+        printf("couldnt initialize context\n");
+        exit(-1);
+    }
     Gctx = ctx;
 
     if (argc == 2) {
