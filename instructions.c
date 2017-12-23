@@ -1781,7 +1781,9 @@ void PacketBuildInstructionsFree(PacketBuildInstructions **list) {
     PacketBuildInstructions *iptr = *list, *inext = NULL;
 
     while (iptr != NULL) {
-        PtrFree(&iptr->data);
+//        if (!iptr->data_nofree)
+            PtrFree(&iptr->data);
+
         iptr->data_size = 0;
 
         PtrFree(&iptr->packet);

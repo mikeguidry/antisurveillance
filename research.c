@@ -2885,7 +2885,7 @@ SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url) {
 IPAddresses *IPAddressesbyGeo(AS_context *ctx, int country) {
     IPAddresses *iptr = NULL;
     
-    pthread_mutex_lock(&ctx->socket_list_mutex);
+    pthread_mutex_lock(&ctx->ip_list_mutex);
     iptr = ctx->ip_list;
 
     while (iptr != NULL) {
@@ -2898,7 +2898,7 @@ IPAddresses *IPAddressesbyGeo(AS_context *ctx, int country) {
 
     if (iptr) pthread_mutex_lock(&iptr->mutex);
 
-    pthread_mutex_unlock(&ctx->socket_list_mutex);
+    pthread_mutex_unlock(&ctx->ip_list_mutex);
 
     return iptr;
 }
@@ -2919,9 +2919,9 @@ IPAddresses *IPAddressesPtr(AS_context *ctx, char *country) {
 
         pthread_mutex_lock(&iptr->mutex);
 
-        pthread_mutex_lock(&ctx->socket_list_mutex);
+        pthread_mutex_lock(&ctx->ip_list_mutex);
         L_link_ordered((LINK **)&ctx->ip_list, (LINK *)iptr);
-        pthread_mutex_unlock(&ctx->socket_list_mutex);
+        pthread_mutex_unlock(&ctx->ip_list_mutex);
     }
 
     return iptr;
