@@ -112,3 +112,20 @@ funny enough.. US intelligencce agencies forfeiting damages of mass surveillance
 is beyond me... and that alone will force me to lobby, and destroy everyone involved until they are all out of government anyways.
 
 it doesn't matter what happens... everyone involved is done.  trust me.
+
+
+RST check
+SIZE/URI check/find (live, and brute force)
+PSH check
+attack
+third party initiator (w shared key)	
+
+blackhole
+antis
+redir
+
+listen test (w using specific port on an existing IP) (RST check can be reused).. ability to take a range and automaticallly generate usable and spit out seeds for using them
+
+vpn on top of virtual listen and regular vpn (w gateway emulation so a local network machine can reroute through the virtual IP/gateway and itll auto VPN)
+maybe use quic
+

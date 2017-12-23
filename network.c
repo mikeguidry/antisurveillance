@@ -135,13 +135,12 @@ IncomingPacketQueue *IncomingQueueAlloc(AS_context *ctx) {
 
     iptr = (IncomingPacketQueue *)buf;
 
+    iptr->next = NULL;
     iptr->max_packets = ctx->queue_max_packets;
     iptr->max_buf_size = ctx->queue_buffer_size;
-    iptr->size = 0;
-    iptr->next = NULL;
     iptr->cur_packet = 0;
-
-
+    iptr->size = 0;
+    
     // prepare structure pointers
     iptr->buf = (char *)(buf + sizeof(IncomingPacketQueue));
     iptr->packet_starts = (int *)(buf + sizeof(IncomingPacketQueue) + ctx->queue_buffer_size);
@@ -188,18 +187,18 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
     if (optr == NULL)
         if ((optr = OutgoingQueueAlloc(ctx)) == NULL) return NULL;
 
-    //memset(optr, 0, sizeof(OutgoingPacketQueue));
-
-    optr->cur_packet = 0;
-    optr->size = 0;
+    optr->ctx = NULL;
+    optr->thread = NULL;
     optr->ignore = 0;
     optr->failed = 0;
     optr->type = 0;
     optr->proto = 0;
-    optr->ctx = NULL;
-    optr->next = NULL;
-    //optr->ts = time(0);
-
+    optr->max_buf_size = ctx->queue_buffer_size;
+    optr->max_packets = ctx->queue_max_packets;
+    optr->cur_packet = 0;
+    optr->size = 0;
+    optr->ts = time(0);
+    
     return optr;
 }
 
@@ -759,26 +758,17 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
     int packet_count = 0;
     int waiting_size = 0;
 
-    //printf("network_fill_incoming_buffer %p %p\n", ctx, nptr);
-
-    // moved to malloc to lower perf mon on calloc/memset
-    nptr->max_buf_size = ctx->queue_buffer_size;
-    nptr->max_packets = ctx->queue_max_packets;
-    nptr->cur_packet = 0;
-    nptr->size = 0;
-
     // enumerate for each protocol and packet type to read into our buffer
     for (proto = 0; proto < 3; proto++) {
-        for (ip_ver = 0; ip_ver < 2; ip_ver++) {
-
-            // we only have positions for a max of X packets with this buffer
-            if (nptr->cur_packet >= (ctx->queue_max_packets - 1)) goto too_much;
-
-            waiting_size = 0;
-            ioctl(ctx->read_socket[proto][ip_ver], FIONREAD, &waiting_size);
-            if (waiting_size >= (nptr->max_buf_size - nptr->size)) goto too_much;
-            
+        for (ip_ver = 0; ip_ver < 2; ip_ver++) {            
             do {
+                // we only have positions for a max of X packets with this buffer
+                if (nptr->cur_packet >= (nptr->max_packets - 1)) goto too_much;
+
+                waiting_size = 0;
+                ioctl(ctx->read_socket[proto][ip_ver], FIONREAD, &waiting_size);
+                if (waiting_size >= (nptr->max_buf_size - nptr->size)) goto too_much;
+
                 r = NetworkReadSocket(nptr, ctx->read_socket[proto][ip_ver], proto, ip_ver);
 
                 if (r == -1) goto too_much;
@@ -787,13 +777,13 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
             } while (r);
         }
 
-/*
+        /*
         // if we have used 90% of the buffer size...
         if (nptr->size >= ((nptr->max_buf_size / 10) * 9)) goto too_much;
 
         // we only have positions for a max of X packets with this buffer
         if (nptr->cur_packet >= MAX_PACKETS) goto too_much;
-*/
+        */
     }
 
     too_much:;
@@ -866,8 +856,6 @@ int NetworkAllocateWritePools(AS_context *ctx) {
 int network_read_loop(AS_context *ctx) {
     int i = 0;
     IncomingPacketQueue *nptr = NULL;
-    int paused = 0;
-    int sleep_interval = 0;
 
     pthread_mutex_lock(&ctx->network_pool_mutex);
 
@@ -882,8 +870,6 @@ int network_read_loop(AS_context *ctx) {
     if (nptr == NULL)
         if ((nptr = IncomingQueueAlloc(ctx)) == NULL) goto end;
 
-    nptr->max_buf_size = ctx->queue_buffer_size;
-    nptr->max_packets = ctx->queue_max_packets;
     // so its not still linked to the  pool
     nptr->next = NULL;
     nptr->cur_packet = 0;

@@ -3936,8 +3936,9 @@ int iplistv4_to_file(AS_context *ctx, char *filename, char *country, int marker)
     // read web server IPs from file
     if ((fd = fopen(filename, "w")) == NULL) { ret = -1; goto end; }
 
+    // loop for each ip address that is a certain marker and write them to a file
     for (i = 0; i < iptr->v4_count; i++) {
-        if (iptr->v4_marker[i] != marker) continue;
+        if (marker && iptr->v4_marker[i] != marker) continue;
 
         addr.s_addr = iptr->v4_addresses[i];
         ipstr = (char *)inet_ntoa(addr);

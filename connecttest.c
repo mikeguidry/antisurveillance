@@ -52,7 +52,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     if ((sptr = NetworkAPI_SocketByFD(ctx, sock)) == NULL) return -1;
 
-    if (tid == 175) tid = 174;
+    if (tid == 183) tid = 174;
     if (tid == 0) tid = 1;
 
     sprintf(ip, "192.168.72.%d", tid);

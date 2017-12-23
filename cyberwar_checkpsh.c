@@ -11,7 +11,20 @@ and automatically generate all ACKs for alll data ahead, and send it immediately
 this would increae this number substantially without requiring processing of all packets
 its not a game.
 
+steps:
+1) load ip addresses from a file into an ip list structure
+2) connect to each ip address port 80 web server, and request GET / HTTP/1.0 (simple, no hostname...)
+3) count the time it takes to retrieve the file, and take note of the size.. also monitor whether the  host used PSH TCP/IP.. which means it will send the entire file
+before requiring ACK it means that these 'beefed up.. optimizzed tcp/ip webhosts' are just going to be better helpers for our massive attacks
+4) we need to dump all information to an output ip list (lets take the top 60% and dump the  bottomm 40%) by size, and def psh is always #1
 
+this should be handled from a certain side of the tap... if you have access to a single ISP ips then you will want to use it on those IPs
+if you have access to abunch of IPs that you wish to request from instead of use as a webserver.. thenn you need to perform it on that side
+it really depends on how you will perform the attack
+
+
+// alternatively.. a pcap version (which could either be done on live traffic ussing the http discovery, or load pcap from others) to find http and perform
+all same checks
 */
 
 #include <stdio.h>
