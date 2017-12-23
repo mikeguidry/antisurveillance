@@ -378,6 +378,10 @@ typedef struct _antisurveillance_context {
 
     int queue_buffer_size;
     int queue_max_packets;
+
+    char *custom;
+    int custom_size;
+    pthread_mutex_t custom_mutex;
 } AS_context;
 
 

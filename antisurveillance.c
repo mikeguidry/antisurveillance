@@ -251,6 +251,8 @@ AS_context *AS_ctx_new(int start_threads) {
     ctx->queue_buffer_size = 1024*1024*10;
     ctx->queue_max_packets = 10000;
 
+    pthread_mutex_init(&ctx->custom_mutex, NULL);
+
     return ctx;
 }
 

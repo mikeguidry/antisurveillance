@@ -52,13 +52,46 @@ all same checks
 #include "scripting.h"
 #include "network_api.h"
 
-AS_context *Gctx = NULL;
+
+char *tag[] = { "A1", "00", NULL };
+
+
+typedef struct _results {
+    struct _results *next;
+    uint32_t ip;
+    int size;
+    int found_psh;
+} Results;
+
+typedef struct _thread_details {
+    AS_context *ctx;
+    int tid;
+} ThreadDetails;
+
+
+int AddResult(AS_context *ctx, uint32_t ip, int size, int found_psh) {
+    Results *rptr = NULL;
+
+    if ((rptr = (Results *)calloc(1,sizeof(Results))) == NULL) return -1;
+    rptr->size = size;
+    rptr->ip = ip;
+    rptr->found_psh = found_psh;
+
+    pthread_mutex_lock(&ctx->custom_mutex);
+
+    rptr->next = (Results *)ctx->custom;
+    ctx->custom = (char *)rptr;
+
+    pthread_mutex_unlock(&ctx->custom_mutex);
+    
+    return 1;
+}
 
 int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
 
 // everything in here for testing shoold use  my_*
 // later we will takeover all of those functions correctly
-int network_code_start(AS_context *ctx, int tid) {
+int network_code_start(AS_context *ctx, int tid, uint32_t src_ip, int src_port, uint32_t dest_ip, int dest_port) {
     int sock = 0;
     struct sockaddr_in dest;
     int r = 0;
@@ -66,12 +99,12 @@ int network_code_start(AS_context *ctx, int tid) {
     char buf[16384];
     int retry = 2;
     int start = 0;
-    int ret = 0;
-    
+    int ret = 0;    
     SocketContext *sptr = NULL;
     char ip[16];
-
-    //sleep(1);
+    int found_psh = 0;
+    IOBuf *ioptr = NULL;
+    int total_size = 0;
 
     start = time(0);
 
@@ -80,79 +113,83 @@ int network_code_start(AS_context *ctx, int tid) {
 
     if ((sptr = NetworkAPI_SocketByFD(ctx, sock)) == NULL) return -1;
 
-    if (tid == 175) tid = 174;
-    if (tid == 0) tid = 1;
-
-    sprintf(ip, "192.168.72.%d", tid);
-    //printf("settinng ip %s\n", ip);
-    //sptr->our_ipv4 = inet_addr(ip);
-    // prepare binding to a specific, ip and local port
+    // or emulated like regular apps... i chose to use this for now
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr(ip);
+    dest.sin_addr.s_addr = src_ip;
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
-    dest.sin_port = rand()%0xFFFFFFFF;
+    dest.sin_port = htons(src_port);
 
     // bind to the IP we chose, and port for the  outgoing connection we will place
     r = my_bind((int)sock, (const struct sockaddr_in *)&dest, (socklen_t)sizeof(struct sockaddr_in));
-    //printf("bind: %d\n", r);
-
 
     // max wait for recv... (for broken sockets until protocol is up to par with regular OS)
     sptr->max_wait = 3;
-    //printf("sock: %d\n", sock);
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.182");
-    //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
+    dest.sin_addr.s_addr = dest_ip;
     dest.sin_family = AF_INET;
-    dest.sin_port = htons(80);
+    dest.sin_port = htons(dest_port);
 
     // connect to google.com port 80
     r = my_connect((int)sock, (const struct sockaddr_in *)&dest, (socklen_t)sizeof(struct sockaddr_in));
-    // did it work out? whats response..
-    //printf("connect: %d\n", r);
 
     // if it worked  out.. 
     if (r == 0) {
-        //printf("connection established\n");
-
+     
         r = my_send(sock, req, sizeof(req)-1, 0);
-        //printf("send: %d\n", r);
-
-        // at this stage.. 83 bytes just received 15,851 bytes in a SINGLE connection
-        // w load balancers, and other things in most companies this can easily be expanded
-        // IF using some type of passive monitoring, or system whic can control many other IPs
-        // then it can be increased substantially
-
-        //sleep(3);
-
+     
         do {
             memset(buf,0,sizeof(buf)-1);
+
+            // we are threaded.. fuck no blocking.. (i havent wrote select() yet)
             //ctx->socket_list->connections->noblock=1;
             r = my_recv(sock, buf, sizeof(buf), 0);
             if (r <= 0) retry--;
-            //printf("recv: %d\ndata: \"%s\"\n", r, buf);
+
             if (strstr(buf, "</html>")) {
-                //printf("FULL SUCCESS\n");
                 ret = 1;
                 break;
             }
-            //if (!r) sleep(3);
+            total_size += r;
+
         } while (r != -1 || !retry);
     }
 
-    // close socket
-    
+    // the sockets packet information  (each packet individually, minus the data) is still there until close
+    // get a pointer to the socket itself
+    if (total_size && (sptr = NetworkAPI_SocketByFD(ctx, sock)) != NULL) {
+        // lock the mutex..
+        pthread_mutex_lock(&sptr->mutex);
 
-    //printf("%d seconds to execute\n", time(0) - start);
+        // enumerate through all incoming buffer pointers
+        ioptr = sptr->in_buf;
+        while (ioptr != NULL) {
+            // check if the original packet details as it was read from the wire and put into our instructions was duplicated properly
+            if (ioptr->iptr != NULL) {
+                // check for TCP FLAG PSH
+                if (ioptr->iptr->flags & TCP_FLAG_PSH) {
+                    // if we foundd it then we are good
+                    found_psh = 1;
+                    break;
+                }
 
-    //sleep(3);
+            }
+            ioptr = ioptr->next;
+        }
+
+        pthread_mutex_unlock(&sptr->mutex);
+    } else {
+        // we ignore errors..
+    }
 
     my_close(sock);
     
-    //pthread_exit(0);
+    // log to disk.. size and if psh was found...
+    // we have found_psh integer, and total_size integer
+    //int AddResult(AS_context *ctx, uint32_t ip, int size, int found_psh) {
+    AddResult(ctx, ip, total_size, found_psh);
 
     return ret;
 }
@@ -165,80 +202,115 @@ int network_code_start(AS_context *ctx, int tid) {
 void thread_network_test(void  *arg) {
     int ret = 0;
     int c = 0;
-    int tid = (int)arg;
+    ThreadDetails *dptr = (ThreadDetails *)arg;
+    int tid = (int)dptr->tid;
+    uint32_t src_ip = 0, dest_ip = 0;
+    int src_port = 0, dest_port = 0;
+    
+    src_ip = get_source_ipv4();
+    src_port = rand()%0xffffffff;
+    dest_port = 80;
     
     while (1) {
-        ret = network_code_start((AS_context *)Gctx, tid);
-        if (ret) {
-            pthread_mutex_lock(&Gctx->socket_list_mutex);
-            printf("tid %d c %d success\n", tid, ++c);
-            pthread_mutex_unlock(&Gctx->socket_list_mutex);
-        }
-        if (tid == 0) {
-            //printf("tid 0 ret %d\n", ret);
-            break;
-        }
+        dest_ip = IPv4SetRandom(dptr->ctx, tag[0], 1);
+        if (!dest_ip) break;
 
-        //if (c == 20) exit(0);
+        ret = network_code_start((AS_context *)dptr->ctx, tid, src_ip, src_port, dest_ip, dest_port);
     }
-
     
-    //printf("network code completed\n");
-
     sleep(10);
 
-    //exit(0);
+    free(dptr);
+
     pthread_exit(0);
 }
 
 
+int StartThread(pthread_t *thread_id_ptr, AS_context *ctx, int tid) {
+    int ret = 0;
+    ThreadDetails *dptr = NULL;
+
+    if ((dptr = (ThreadDetails *)calloc(1, sizeof(ThreadDetails))) == NULL) return -1;
+    dptr->tid = tid;
+    dptr->ctx = ctx;
+
+    if (pthread_create(&thread_id_ptr, NULL, thread_network_test, (void *)dptr) != 0) {
+        fprintf(stderr, "couldnt start network thread..\n");
+        free(dptr);
+        ret = -1;
+    } else ret = 1;
+
+    return ret;
+}
 
 
 
 int main(int argc, char *argv[]) {
     int i = 0, done = 0;
-    AS_context *ctx = Antisurveillance_Init();
-    // default script is "mgr.py"
-    char *script = "net";
-    AS_scripts *sctx = NULL;    
+    AS_context *ctx = Antisurveillance_Init(1);
     int z = 0;
     int count = 10;
-
-    // find another way to get this later...
-    sctx = ctx->scripts;
-
-    // call the init() function in the script
-    //PythonLoadScript(sctx, script, "init", NULL);
-    //printf("2\n");
-
-    Gctx = ctx;
-
+    pthread_t *thread_ids = NULL;
+    void *thread_ret = NULL;
+    Results *rptr = NULL;
 
     if (argc == 2) {
         count = atoi(argv[1]);
         printf("Using %d connections\n", count);
     }
     
-
-    ctx->http_discovery_enabled = 0;
-    ctx->http_discovery_max = 0;
-
-    Antisurveillance_Begin(ctx);
-
-    for (i = 0; i < count; i++) {
-        // at this  point we should be fine to run our network code.. it should be in another thread..
-        if (pthread_create(&ctx->network_write_thread, NULL, thread_network_test, (void *)i) != 0) {
-            fprintf(stderr, "couldnt start network thread..\n");
-        //   exit(-1);
-        }
+    thread_ids = (pthread_t *)calloc(count, sizeof(pthread_t));
+    if (thread_ids == NULL) {
+        printf("error allocating mem for threads\n");
+        exit(-1);
     }
 
-    while (1) {
+    // fill IPAddresses structure from a file
+    if (!file_to_iplist(ctx, "psh_input_ip", tag[0])) {
+        fprintf(stderr, "couldnt open input file or load IP addresses properly\n");
+        exit(-1);
+    }
 
+
+    for (i = 0; i < count; i++) {
+        z = StartThread(&thread_ids[i], ctx, i);
+        if (z <= 0)
+            printf("Couldnt start thread #%d\n", i);
+    }
+
+
+    // loop performing subsystems loops/events until all threads are completed with their ips
+    while (1) {
+        // calll all subsytem loops
         AS_perform(ctx);
+        // small sleep..
         usleep(5000);
-        //sleep(10);
+
+        // try to join (close) all threads...
+        for (i = z = 0; i < count; i++) {
+            if (thread_ids[i] != NULL) {
+                if (pthread_tryjoin_np(thread_ids[i], &thread_ret) == 0) {
+                    thread_ids[i] = NULL;
+                } else z++;
+            }
+        }
+        // all threads completed
+        if (z == 0) break;
      }
+
+    // now to check results..
+    // no need to lock but in case i copy paste later..
+    pthread_mutex_lock(&ctx->custom_mutex);
+    rptr = (Results *)ctx->custom;
+    while (rptr != NULL) {
+
+        // sort? write to file?? hmm.. need to think the night on it
+
+        rptr = rptr->next;
+    }
+
+    pthread_mutex_unlock(&ctx->custom_mutex);
+
 
     // completed... finish routines to free all memory, scripting, and other subsystems..
     // this will allow this to be used as a library easier (inn other apps)

@@ -24,6 +24,9 @@ connecttest: $(OBJ) connecttest.o
 cyberwar_findips: $(OBJ) cyberwar_findips.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
+cyberwar_checkpsh: $(OBJ2) cyberwar_checkpsh.o
+	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+
 cyberwar_ddos: $(OBJ2) cyberwarfare.c
 	gcc -o $@ $^ $(CFLAGS) $(LIBS2)
 

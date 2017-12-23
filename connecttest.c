@@ -24,7 +24,10 @@
 #include "scripting.h"
 #include "network_api.h"
 
-AS_context *Gctx = NULL;
+typedef struct _thread_details {
+    AS_context *ctx;
+    int tid;
+} ThreadDetails;
 
 int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
 
@@ -131,38 +134,53 @@ int network_code_start(AS_context *ctx, int tid) {
 
 
 
+
+
 // this is the function which should perform network duties using the new tcp/ip stack
 // it should always thread off, or start a thread for AS_perform() so that the stack can function properly
 // while executing other code.. it will depend on how its integrating (IE: LD_PRELOAD, GOT, etc)
 void thread_network_test(void  *arg) {
     int ret = 0;
     int c = 0;
-    int tid = (int)arg;
+    ThreadDetails *dptr = (ThreadDetails *)arg;
+    int tid = (int)dptr->tid;
     
     while (1) {
-        ret = network_code_start((AS_context *)Gctx, tid);
+        ret = network_code_start((AS_context *)dptr->ctx, tid);
         if (ret) {
-            pthread_mutex_lock(&Gctx->socket_list_mutex);
+            pthread_mutex_lock(&dptr->ctx->socket_list_mutex);
             printf("tid %d c %d success\n", tid, ++c);
-            pthread_mutex_unlock(&Gctx->socket_list_mutex);
+            pthread_mutex_unlock(&dptr->ctx->socket_list_mutex);
         }
         if (tid == 0) {
-            //printf("tid 0 ret %d\n", ret);
             break;
         }
 
-        //if (c == 20) exit(0);
     }
-
     
-    //printf("network code completed\n");
-
     sleep(10);
 
-    //exit(0);
+    free(dptr);
+
     pthread_exit(0);
 }
 
+
+int StartThread(pthread_t *thread_id_ptr, AS_context *ctx, int tid) {
+    ThreadDetails *dptr = (ThreadDetails *)calloc(1, sizeof(ThreadDetails));
+    if (dptr == NULL) return -1;
+    dptr->tid = tid;
+    dptr->ctx = ctx;
+    int ret = 0;
+
+    if (pthread_create(&thread_id_ptr, NULL, thread_network_test, (void *)dptr) != 0) {
+        fprintf(stderr, "couldnt start network thread..\n");
+        free(dptr);
+        ret = -1;
+    } else ret = 1;
+
+    return ret;
+}
 
 
 
@@ -175,6 +193,7 @@ int main(int argc, char *argv[]) {
     AS_scripts *sctx = NULL;    
     int z = 0;
     int count = 10;
+    pthread_t *thread_ids = NULL;
 
     // find another way to get this later...
     sctx = ctx->scripts;
@@ -187,29 +206,26 @@ int main(int argc, char *argv[]) {
         printf("couldnt initialize context\n");
         exit(-1);
     }
-    Gctx = ctx;
 
     if (argc == 2) {
         count = atoi(argv[1]);
         printf("Using %d connections\n", count);
     }
 
+    thread_ids = (pthread_t *)calloc(count, sizeof(pthread_t));
+    if (thread_ids == NULL) {
+        printf("error allocating mem for threads\n");
+        exit(-1);
+    }
+
     ctx->http_discovery_enabled = 0;
     ctx->http_discovery_max = 0;
 
-    // its better to enable threads with the next function because of the way this processes..
-    // we are using pthreads instead of nonblocking.. which means an extra thread for reading/writing is a better system
-    // for the cyberwar ddos attack it is all done in a single thread and was substantially higher otherwise
-    // it all depends  on how you use the API .. much like regular socket programming.. essentially its going to be a bit slower than
-    // kernel but not by too much (well ideally)
-    //Antisurveillance_Begin(ctx);
 
     for (i = 0; i < count; i++) {
-        // at this  point we should be fine to run our network code.. it should be in another thread..
-        if (pthread_create(&ctx->network_write_thread, NULL, thread_network_test, (void *)i) != 0) {
-            fprintf(stderr, "couldnt start network thread..\n");
-        //   exit(-1);
-        }
+        z = StartThread(&thread_ids[i], ctx, i);
+        if (z <= 0)
+            printf("Couldnt start thread #%d\n", i);
     }
 
     while (1) {

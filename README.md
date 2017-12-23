@@ -114,15 +114,16 @@ is beyond me... and that alone will force me to lobby, and destroy everyone invo
 it doesn't matter what happens... everyone involved is done.  trust me.
 
 
-RST check
-SIZE/URI check/find (live, and brute force)
-PSH check
-attack
-third party initiator (w shared key)	
+RST check - done
+SIZE/URI check/find (live, and brute force) - brute force file created.. 
+PSH check - file created..
+attack - good
+third party initiator (w shared key) - future (needs to sync time w passive monitor somehow).. (either using difference between a third party which can be input
+without direct connection, or direct)
 
-blackhole
-antis
-redir
+blackhole-last
+antis - good but needs ipv6 ip gen
+redir-2nd last
 
 listen test (w using specific port on an existing IP) (RST check can be reused).. ability to take a range and automaticallly generate usable and spit out seeds for using them
 
