@@ -253,6 +253,8 @@ int main(int argc, char *argv[]) {
     pthread_t *thread_ids = NULL;
     void *thread_ret = NULL;
     Results *rptr = NULL;
+    struct in_addr addr;
+    FILE *fd = NULL;
 
     if (argc == 2) {
         count = atoi(argv[1]);
@@ -266,7 +268,7 @@ int main(int argc, char *argv[]) {
     }
 
     // fill IPAddresses structure from a file
-    if (!file_to_iplist(ctx, "psh_input_ip", tag[0])) {
+    if (!file_to_iplist(ctx, "psh_input", tag[0])) {
         fprintf(stderr, "couldnt open input file or load IP addresses properly\n");
         exit(-1);
     }
@@ -298,6 +300,9 @@ int main(int argc, char *argv[]) {
         if (z == 0) break;
      }
 
+     if ((fd = fopen("psh_output","w"))== NULL) {
+         fprintf(stderr, "cannot open output file\n");
+     }
     // now to check results..
     // no need to lock but in case i copy paste later..
     pthread_mutex_lock(&ctx->custom_mutex);
@@ -305,12 +310,17 @@ int main(int argc, char *argv[]) {
     while (rptr != NULL) {
 
         // sort? write to file?? hmm.. need to think the night on it
+        
+        addr.s_addr = rptr->ip;
+        // print to file if open, otherwise console
+        fprintf(fd ? fd : stdout, "%s %d %d\n", inet_ntoa(addr), rptr->size, rptr->found_psh);
 
         rptr = rptr->next;
     }
 
     pthread_mutex_unlock(&ctx->custom_mutex);
 
+    if (fd) fclose(fd);
 
     // completed... finish routines to free all memory, scripting, and other subsystems..
     // this will allow this to be used as a library easier (inn other apps)
