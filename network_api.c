@@ -122,6 +122,9 @@ all ips
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <signal.h>
+#include <poll.h>
+
 
 
 
@@ -1252,7 +1255,7 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
                 if (count != NetworkAPI_Count_Outgoing_Queue(cptr->out_buf))
                     break;
 
-                if (time(0) - start > ctx->max_wait) break;
+                if (time(0) - start > cptr->max_wait) break;
             }
         }
     }
@@ -2032,22 +2035,6 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
 
 
-// everything required to emulate select... once select & poll are done.. most apps should be compatible
-// i can also finish completing support for apps, and most of general tcp features (some will just be cosmetic obviously)
-int fdset_find(fd_set *set, int fd) {
-    int i = 0;
-    int ret = 0;
-
-    for (i = 0; i < FD_SETSIZE; i++) {
-        if (set[i] == fd) {
-            ret = i;
-            break;
-        }
-    }
-
-    return ret;
-}
-
 // http://www.binarytides.com/get-time-difference-in-microtime-in-c
 double time_diff(struct timeval x, struct timeval y)
 {
@@ -2061,22 +2048,33 @@ double time_diff(struct timeval x, struct timeval y)
 
 // we are going to do this differently.. since we control all sockets, and we already lock the socket structure... 
 // ill just loop and check if they are in the sets...
-int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout) {
+int both_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout_ms, struct timespec *timeout_ns) {
     int i = 0;
-    SocketContexr *sptr = NULL;
+    AS_context *ctx = (AS_context *)NetworkAPI_CTX;
+    SocketContext *sptr = NULL;
     IOBuf *ioptr = NULL;
     int count = 0;
     int n = 0;
     int timeout_break = 0;
     struct timeval tv;
     struct timeval start;
-    double ms_diff = 0;
-    double timeout_ms = 0;
+    struct timespec tv_ns;
+    struct timespec start_ns;
+    double tdiff = 0;
+    double tms = 0;
+    double tns = 0;
     fd_set local_readfds;
     fd_set local_writefds;
     fd_set local_exceptfds;
 
-    gettimeofday(&start, NULL);
+    FD_ZERO(&local_readfds);
+    FD_ZERO(&local_writefds);
+    FD_ZERO(&local_exceptfds);
+
+    if (timeout_ms)
+        gettimeofday(&start, NULL);
+    else if (timeout_ns)
+        clock_gettime(CLOCK_REALTIME, &start_ns);
 
     if (readfds)
         memcpy(&local_readfds, readfds, sizeof(fd_set));
@@ -2085,48 +2083,56 @@ int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, st
     if (exceptfds)
         memcpy(&local_exceptfds, exceptfds, sizeof(fd_set));
 
-    timeout_ms = (double)timeout.tv_sec * 1000000 + (double)timeout.tv_usec;
+    if (timeout_ms) {
+        tms = (double)timeout_ms->tv_sec * 1000000 + (double)timeout_ms->tv_usec;
 
-    // max of 300 seconds
-    if (timeout_ms < 0 || timeout_ms > (1000000 * 300)) timeout_ms = 0;
+        // max of 300 seconds
+        if (tms < 0 || tms > (1000000 * 300)) tms = 0;
+    } else if (timeout_ns) {
+        tns = (double)timeout_ns->tv_sec * (1000000 * 1000000) + (double)timeout_ns->tv_nsec;
+    }
 
     while (!timeout_break && !count) {
         count = 0;
+
+        if (readfds)
+            FD_ZERO(&local_readfds);
+    
+        if (writefds)
+            FD_ZERO(&local_writefds);
+
+        if (exceptfds)
+            FD_ZERO(&local_exceptfds);
+
         pthread_mutex_lock(&ctx->socket_list_mutex);
         sptr = ctx->socket_list;
         while (sptr != NULL) {
             pthread_mutex_lock(&sptr->mutex);
 
             // if we have readfd set, and this socket matches it
-            if (readfds && fdset_find(sptr->socket_fd, &local_readfds)) {
+            if (readfds && FD_ISSET(sptr->socket_fd, readfds)) {
                 ioptr = NetworkAPI_ConsolidateIncoming(sptr);
 
-                if (!ioptr || ((ioptr->size - ioptr->ptr)))
+                if (ioptr && ((ioptr->size - ioptr->ptr)))
                     // nothing waiting
-                    FD_CLR(&local_readfds, sptr->socket_fd);
-                else
-                    count++;
+                    FD_SET(sptr->socket_fd, &local_readfds);
             }
 
             // if we have writefds, and this socket matches..
-            if (writefds && fdset_find(sptr->socket_fd, &local_writefds)) {
-                n = NetworkAPI_Count_Outgoing_Queue(cptr->out_buf);
+            if (writefds && FD_ISSET(sptr->socket_fd, writefds)) {
+                n = NetworkAPI_Count_Outgoing_Queue(sptr->out_buf);
 
                 // ok in future we should allow user to choose buffer size
                 // for outgoing packets.. anyways this is fine for now
                 // ***
-                if (n >= 0)
-                    FD_CLR(&local_writefds, sptr->socket)_fd);
-                else
-                    count++;
+                if (n <= 0)
+                    FD_SET(sptr->socket_fd, &local_writefds);
             }
 
             // if we have except fds,  and this socket  matches..
-            if (exceptfds && fdset_find(sptr->socket_fd, &local_exceptfds)) {
-                if (!sptr->completed)
-                    FD_CLR(&local_exceptfds, sptr->socket_fd);
-                else
-                    count++;
+            if (exceptfds && FD_ISSET(sptr->socket_fd, exceptfds)) {
+                if (sptr->completed)
+                    FD_SET(sptr->socket_fd, &local_exceptfds);
             }
 
             pthread_mutex_unlock(&sptr->mutex);
@@ -2136,9 +2142,22 @@ int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, st
         pthread_mutex_unlock(&ctx->socket_list_mutex);
 
         // check if timeout reached..
-        gettimeofday(&tv, NULL);
-        ms_diff = time_diff(start, tv);
-        if (ms_diff > timeout_ms) timeout_break = 1;
+        if (timeout_ms) {
+            gettimeofday(&tv, NULL);
+            
+            tdiff = time_diff(start, tv);
+
+            if (tdiff > tms) timeout_break = 1;
+        } else if (timeout_ns) {
+            clock_gettime(CLOCK_REALTIME, &tv_ns);
+
+            tdiff = ((double)tv_ns.tv_sec * (1000000 * 1000000) + (double)tv_ns.tv_nsec) - 
+                ((double)start_ns.tv_sec * (1000000 * 1000000) + (double)start_ns.tv_nsec);
+
+            if (tdiff > tns) timeout_break = 1;
+        }
+
+        if (!timeout_break) usleep(5000);
     }
 
     if (readfds)
@@ -2151,11 +2170,85 @@ int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, st
     return count;
 }
 
-int my_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask) {
-
+int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout) {
+    return both_select(nfds, readfds, writefds, exceptfds, timeout, NULL);
 }
 
 
-int my_poll(struct pollfd __user *ufds, unsigned int nfds, struct timespec64 *end_time) {
+int my_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask) {
+    return both_select(nfds, readfds, writefds, exceptfds, NULL, timeout);
+}
 
+int poll_which(struct pollfd *fds, int nfds, int fd) {
+    int i = 0;
+    for (i = 0; i < nfds; i++)
+        if (fds[i].fd == fd) return i;
+
+    return -1;
+}
+
+
+// i locked socket mutex once to perform all actions fast, but i think it might be worth redoing this ...
+// becuase if the FD is NOT found then it could call regular select, or poll ... which would cover alll situations (even console poll)
+int my_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
+    int i = 0, count = 0, n = 0;
+    AS_context *ctx = (AS_context *)NetworkAPI_CTX;
+    SocketContext *sptr = NULL;
+    IOBuf *ioptr = NULL;
+    int start=time(0);
+
+    while (!count) {
+        pthread_mutex_lock(&ctx->socket_list_mutex);
+        sptr = ctx->socket_list;
+        while (sptr != NULL) {
+            pthread_mutex_lock(&sptr->mutex);
+
+            // check if the poll parameters include this socket
+            i = poll_which(fds, nfds, sptr->socket_fd);
+            if (i != -1) {
+                // set all events to 0
+                fds[i].revents = 0;
+
+                // if we have readfd set, and this socket matches it
+                if (fds[i].events & POLLIN) {
+                    ioptr = NetworkAPI_ConsolidateIncoming(sptr);
+
+                    if (ioptr && ((ioptr->size - ioptr->ptr))) {
+                        fds[i].revents |= POLLIN;
+                        count++;
+                    }
+                }
+
+                // if we have writefds, and this socket matches..
+                if (fds[i].events & POLLOUT) {
+                    n = NetworkAPI_Count_Outgoing_Queue(sptr->out_buf);
+
+                    // ok in future we should allow user to choose buffer size
+                    // for outgoing packets.. anyways this is fine for now
+                    // ***
+                    if (n <= 0) {
+                        fds[i].revents |= POLLOUT;
+                        count++;
+                    }
+                }
+
+                if (fds[i].events & POLLERR) {
+                    if (sptr->completed) {
+                        fds[i].revents |= POLLERR;
+                        count++;
+                    }
+                }
+
+            }
+
+            pthread_mutex_unlock(&sptr->mutex);
+            sptr = sptr->next;
+        }
+
+        if (time(0) - start > timeout) break;
+    }
+
+    pthread_mutex_unlock(&ctx->socket_list_mutex);
+
+    return count;
 }

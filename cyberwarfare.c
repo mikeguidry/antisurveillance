@@ -79,6 +79,24 @@ due to the way it functions w the tcp/ip stack.. it happens before the page is r
 
 apache doesnt seem to deal w that bug the same.. maybe its not a bug as much as just the configuration.. anywaays it seems to work as fast as the web server can process
 
+
+automation:
+with libpcap/libnet portable version. we can look for traffic ont eh local network, and auto discover which side can be used
+IE: if we send to a port 80 and see it respond out.. then we know we can manipulate that if we control the IP
+and vice versa... if we send to an IP, and see a result.. we can control it
+
+if it works on both sides, then we can begin to check and auto populate ranges we can use...
+it should be able to automate the attack 100% from any type of passive monitoring network
+
+then on top of that the RST verification, and  PSH erification can be used.. thbey are all building blocks to an
+ultimate unstoppable attack (that any ISP can do really)
+this isnt even the worse thing im going to release.
+
+for portable version: ill just make it listen to all devices... which means it can auto generate its attack parameters for each network
+this means i wont have  to worry about people  configuring it whatsoever.. and they can put in an IP for attacking
+and it can automamtically find the route/device which it would work with.. and worse case i f it cannot determine ahead
+it can try the attack while monitoring to determine if itll be reachable/work, and advance to the next
+
 */
 
 #include <stdio.h>
