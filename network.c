@@ -229,6 +229,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         }
     }
 */
+    printf("writing queue\n");
 
     while (optr != NULL) {
         //printf("optr %p optr->next %p\n", optr, optr->next);
@@ -338,9 +339,11 @@ int OutgoingQueueProcess(AS_context *ctx) {
 
         pthread_mutex_unlock(&ctx->network_queue_mutex);
 
-        count = FlushOutgoingQueueToNetwork(ctx, optr);
+        if (optr != NULL) {
+            count = FlushOutgoingQueueToNetwork(ctx, optr);
 
-        optr = NULL;
+            optr = NULL;
+        }
     }
 
     return count;
@@ -585,6 +588,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         //printf("nptr %p iptr %p\n", nptr, iptr);
         // if the packet passes the filter then call its processing function
         if (!nptr->flt || FilterCheck(ctx, nptr->flt, iptr)) {
+            //printf("pass filter iptr %p funnc %p\n", iptr, nptr->incoming_function);
             // maybe verify respoonse, and break the loop inn some case
             r = nptr->incoming_function(ctx, iptr);
             
@@ -976,8 +980,7 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
     nptr->flt = flt;
 
     // insert so the network functionality will begin calling our function for these paackets
-    nptr->next = ctx->IncomingPacketFunctions;
-    ctx->IncomingPacketFunctions = nptr;
+    L_link_ordered((LINK **)&ctx->IncomingPacketFunctions, (LINK *)nptr);
 
     return 1;
 }

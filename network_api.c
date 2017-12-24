@@ -124,6 +124,7 @@ all ips
 #include <unistd.h>
 #include <signal.h>
 #include <poll.h>
+#include <dlfcn.h>
 
 
 
@@ -177,6 +178,54 @@ int my_listen(int sockfd, int backlog);
 int my_close(int fd);
 // ----
 
+// for loadinng real pointers
+int (*real_connect)(int sockfd,  const struct sockaddr_in *addr, socklen_t addrlen);
+int (*real_poll)(struct pollfd *fds, nfds_t nfds, int timeout);
+int (*real_pselect)(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask);
+int (*real_select)(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
+int (*real_bind)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+int (*real_listen)(int sockfd, int backlog);
+int (*real_connect)(int sockfd,  const struct sockaddr_in *addr, socklen_t addrlen);
+ssize_t (*real_recvfrom)(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
+ssize_t (*real_recvmsg)(int sockfd, struct msghdr *msg, int flags);
+ssize_t (*real_recv)(int sockfd, void *buf, size_t len, int flags);
+ssize_t (*real_sendmsg)(int sockfd, const struct msghdr *msg, int flags);
+ssize_t (*real_send)(int sockfd, const void *buf, size_t len, int flags);
+ssize_t (*real_sendto)(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
+int (*real_close)(int fd);
+int (*real_socket)(int domain, int type, int protocol);
+int (*real_accept)(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+
+int NetworkAPI_SymbolResolve() {
+    int ret = -1;
+	void *libc_ptr = NULL;
+
+	//if ((libc_ptr = dlopen("libc.so", RTLD_LAZY)) == NULL) goto end;
+    //if ((real_poll =  dlsym(libc_ptr, "poll")) == NULL) goto end;
+    //if ((real_pselect = dlsym(libc_ptr, "pselect")) == NULL) goto end;
+    //if ((real_select = dlsym(libc_ptr, "select")) == NULL) goto end;
+    //if ((real_bind = dlsym(libc_ptr, "bind")) == NULL) goto end;
+    //if ((real_listen = dlsym(libc_ptr, "listen")) == NULL) goto end;
+    //if ((real_connect = dlsym(libc_ptr, "connect")) == NULL) goto end;
+    //if ((real_recvfrom = dlsym(libc_ptr, "recvfrom")) == NULL) goto end;
+    //if ((real_recvmsg = dlsym(libc_ptr, "recvmsg")) == NULL) goto end;
+    //if ((real_recv = dlsym(libc_ptr, "recv")) == NULL) goto end;
+    //if ((real_sendmsg = dlsym(libc_ptr, "sendmsg")) == NULL) goto end;
+    //if ((real_send = dlsym(libc_ptr, "send")) == NULL) goto end;
+    //if ((real_sendto = dlsym(libc_ptr, "sendto")) == NULL) goto end;
+    if ((real_close = dlsym(libc_ptr, "close")) == NULL) goto end;
+    //if ((real_socket = dlsym(libc_ptr, "socket")) == NULL) goto end;
+    //if ((real_accept = dlsym(libc_ptr, "accept")) == NULL) goto end;
+    //if ((real_ = dlsym(libc_ptr, "")) == NULL) goto end;
+
+    ret = 1;
+
+    end:;
+    return ret;
+}
+
+//
+
 
 #define pthread_mutex_lock2(a) { pthread_mutex_lock_line(a,__LINE__); }
 
@@ -200,6 +249,10 @@ int NetworkAPI_Init(AS_context *ctx) {
     // another option is to have the thread itself hold it in TLS
     NetworkAPI_CTX = ctx;
 
+    if (NetworkAPI_SymbolResolve() <= 0) {
+        //return -1;
+    }
+
     // lets prepare incoming ICMP processing for our traceroutes
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
 
@@ -209,6 +262,7 @@ int NetworkAPI_Init(AS_context *ctx) {
     // add into network subsystem so we receive all packets
     if (Network_AddHook(ctx, flt, &NetworkAPI_Incoming) != 1) goto end;
 
+    // load symbols for api being hijacked
     ret =  1;
 
     end:;
@@ -278,14 +332,14 @@ SocketContext *NetworkAPI_SocketByStatePort(AS_context *ctx, int state, int port
 int NetworkAPI_NewFD(AS_context *ctx) {
     SocketContext *sptr = NULL;
     int i = 0;
-    int try = 1024;
+    int try = 50;
 
     pthread_mutex_lock(&ctx->socket_list_mutex);
     i = ctx->socket_fd;
     pthread_mutex_unlock(&ctx->socket_list_mutex);
 
     do {
-        if (i++ < 1024) i = 1024;
+        if (i++ < 50) i = 50;
 
         sptr = NetworkAPI_SocketByFD(ctx, i);
 
@@ -765,6 +819,8 @@ int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     IOBuf *bptr = NULL;
     int j = 0;
 
+    //printf("inc\n");
+
     while (j < JTABLE_SIZE) {
         // lets see if we have any connections which want this packet
         sptr = ctx->socket_list[j];
@@ -858,7 +914,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     struct in_addr addr;
     int w = 0;
 
-/*
+
     if (iptr->destination_port == 1001 || (iptr->source_port == 1001)) {
         w=1;
         addr.s_addr = iptr->source_ip;
@@ -870,7 +926,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
         if (iptr->flags & TCP_FLAG_PSH) printf("psh\n");
   
     }
-  */
+  
     // be sure both are same IP protocol ipv4 vs ipv6
     if (sptr->address_ipv4 && !iptr->source_ip) {
         //if (w) printf("not same ip ver\n");
@@ -1524,10 +1580,10 @@ int NetworkAPI_ConnectSocket(int sockfd, const struct sockaddr_in *addr, socklen
 
     pthread_mutex_lock(&sptr->mutex);
 
-    if ((addrlen == sizeof(struct sockaddr)) && (addr->sin_family == AF_INET)) {
+    if ((addrlen == sizeof(struct sockaddr)) && ((addr->sin_family == AF_INET) || (addr->sin_family == PF_INET))) {
         sptr->address_ipv4 = addr->sin_addr.s_addr;
         sptr->remote_port = ntohs(addr->sin_port);
-    } else if ((addrlen == sizeof(struct sockaddr_in6)) && (addr->sin_family == AF_INET6)) {
+    } else if ((addrlen == sizeof(struct sockaddr_in6)) && ((addr->sin_family == AF_INET6) || (addr->sin_family == PF_INET6))) {
         addr_ipv6 = (struct sockaddr_in6 *)addr;
         CopyIPv6Address(&sptr->address_ipv6, &addr_ipv6->sin6_addr);
         sptr->remote_port = ntohs(addr_ipv6->sin6_port);
@@ -1845,9 +1901,9 @@ int my_socket(int domain, int type, int protocol) {
     sptr->protocol = protocol;
 
     // prepare correct masks...
-    if (domain == AF_INET) {
+    if ((domain == AF_INET) || (domain == PF_INET)) {
         sptr->state |= PACKET_TYPE_IPV4;
-    } else if (domain == AF_INET6) {
+    } else if ((domain == AF_INET6) || (domain == PF_INET6)) {
         sptr->state |= PACKET_TYPE_IPV6;
     }
 
@@ -1879,7 +1935,14 @@ int my_socket(int domain, int type, int protocol) {
 
 
 int my_close(int fd) {
-    return NetworkAPI_Close(fd);
+    int ret = 0;
+    ret = NetworkAPI_Close(fd);
+
+    // if we dont have this fd.. lets call real close
+    if (ret == -1)
+        return real_close(fd);
+
+    return ret;
 }
 
 
@@ -1926,6 +1989,7 @@ end:;
 ssize_t my_send(int sockfd, const void *buf, size_t len, int flags) {
     return my_sendto(sockfd, buf, len, flags, NULL, 0);
 }
+
 
 ssize_t my_sendmsg(int sockfd, const struct msghdr *msg, int flags) {
     //IOBuf *ioptr = NetworkAPI_BufferOutgoing(sockfd, (char *)buf, (int)len);
@@ -2000,7 +2064,7 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
     struct sockaddr_in *addr_ipv4;
     struct sockaddr_in6 *addr_ipv6;
     SocketContext *sptr = NULL;
-    int ret = 0;
+    int ret = -1;
 
     // if it was successful, then find the connection structure by its file descriptor
     if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) return -1;
@@ -2015,7 +2079,7 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
         sptr->our_ipv4 = addr_ipv4->sin_addr.s_addr;
 
-        ret = 1;
+        ret = 0;
 
     } else if (addrlen == sizeof(struct sockaddr_in6)) {
         addr_ipv6 = (struct sockaddr_in6 *)addr;
@@ -2025,7 +2089,7 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
         // get port from IPv6 structure
         sptr->port = ntohs(addr_ipv6->sin6_port);
 
-        ret = 1;
+        ret = 0;
     }
 
     pthread_mutex_unlock(&sptr->mutex);
@@ -2036,8 +2100,7 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
 
 
 // http://www.binarytides.com/get-time-difference-in-microtime-in-c
-double time_diff(struct timeval x, struct timeval y)
-{
+double time_diff(struct timeval x, struct timeval y) {
   double x_ms, y_ms;
 
   x_ms = (double)x.tv_sec * 1000000 + (double)x.tv_usec;
@@ -2075,14 +2138,7 @@ int both_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, 
         gettimeofday(&start, NULL);
     else if (timeout_ns)
         clock_gettime(CLOCK_REALTIME, &start_ns);
-
-    if (readfds)
-        memcpy(&local_readfds, readfds, sizeof(fd_set));
-    if (writefds)
-        memcpy(&local_writefds, writefds, sizeof(fd_set));
-    if (exceptfds)
-        memcpy(&local_exceptfds, exceptfds, sizeof(fd_set));
-
+        
     if (timeout_ms) {
         tms = (double)timeout_ms->tv_sec * 1000000 + (double)timeout_ms->tv_usec;
 
@@ -2190,13 +2246,13 @@ int poll_which(struct pollfd *fds, int nfds, int fd) {
     return -1;
 }
 
+
 int my_poll2(struct pollfd *fds, nfds_t nfds, int timeout) {
     int i = 0, count = 0, n = 0;
     AS_context *ctx = (AS_context *)NetworkAPI_CTX;
     SocketContext *sptr = NULL;
     IOBuf *ioptr = NULL;
     int start = time(0);
-    struct pollfds *fds2;
 
     while (!count) {
         count = 0;
@@ -2242,16 +2298,18 @@ int my_poll2(struct pollfd *fds, nfds_t nfds, int timeout) {
                 n = 0;
                 // we should check this event some other way..  use real poll
                 // it could be stdin, stdout, etc
+                // but we always call with 0 timeout...
                 //n = real_poll(&fds[i], 1, 0);
                 if (n) count++;
             }
         }
 
-        if (time(0) - start > timeout) break;
+        if (!count && time(0) - start > timeout) break;
     }
 
     return count;
 }
+
 // i locked socket mutex once to perform all actions fast, but i think it might be worth redoing this ...
 // becuase if the FD is NOT found then it could call regular select, or poll ... which would cover alll situations (even console poll)
 int my_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
@@ -2308,14 +2366,13 @@ int my_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
                         count++;
                     }
                 }
-
             }
 
             pthread_mutex_unlock(&sptr->mutex);
             sptr = sptr->next;
         }
 
-        if (time(0) - start > timeout) break;
+        if (!count && time(0) - start > timeout) break;
     }
 
     pthread_mutex_unlock(&ctx->socket_list_mutex);

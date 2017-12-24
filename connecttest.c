@@ -55,6 +55,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     if ((sptr = NetworkAPI_SocketByFD(ctx, sock)) == NULL) return -1;
 
+    tid = tid % 250;
     if (tid == 183) tid = 174;
     if (tid == 0) tid = 1;
 
@@ -79,7 +80,7 @@ int network_code_start(AS_context *ctx, int tid) {
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.184");
+    dest.sin_addr.s_addr = inet_addr("192.168.72.182");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(80);
@@ -217,10 +218,6 @@ int main(int argc, char *argv[]) {
         printf("error allocating mem for threads\n");
         exit(-1);
     }
-
-    ctx->http_discovery_enabled = 0;
-    ctx->http_discovery_max = 0;
-
 
     for (i = 0; i < count; i++) {
         z = StartThread(&thread_ids[i], ctx, i);

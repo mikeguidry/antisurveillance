@@ -33,6 +33,9 @@ cyberwar_ddos: $(OBJ2) cyberwarfare.c
 listentest: $(OBJ) listentest.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
+connectselect: $(OBJ2) connectselect.o
+	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+
 pyanti: $(OBJ) obj/scriptmain.o 
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 

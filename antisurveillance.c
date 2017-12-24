@@ -196,12 +196,12 @@ AS_context *AS_ctx_new(int start_threads) {
     pthread_mutex_init(&ctx->custom_mutex, NULL);
     pthread_mutex_init(&ctx->ip_list_mutex, NULL);
 
-
+/*
     if ((ctx->network_interface = getgatewayandiface()) == NULL) {
         fprintf(stderr, "error getting default network interface!\n");
         exit(-1);
     }
-
+*/
     ctx->network_interface = strdup("vmnet8");
 
     // 25 pools waiting initially for reading packets..

