@@ -2179,15 +2179,79 @@ int my_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, c
     return both_select(nfds, readfds, writefds, exceptfds, NULL, timeout);
 }
 
+
+// find an fd in a poll list
 int poll_which(struct pollfd *fds, int nfds, int fd) {
     int i = 0;
+
     for (i = 0; i < nfds; i++)
         if (fds[i].fd == fd) return i;
 
     return -1;
 }
 
+int my_poll2(struct pollfd *fds, nfds_t nfds, int timeout) {
+    int i = 0, count = 0, n = 0;
+    AS_context *ctx = (AS_context *)NetworkAPI_CTX;
+    SocketContext *sptr = NULL;
+    IOBuf *ioptr = NULL;
+    int start = time(0);
+    struct pollfds *fds2;
 
+    while (!count) {
+        count = 0;
+        for (i = 0; i < nfds; i++) {
+            // set all events to 0
+            fds[i].revents = 0;
+
+            if ((sptr = NetworkAPI_SocketByFD(ctx, fds[i].fd)) != NULL) {
+                pthread_mutex_lock(&sptr->mutex);
+
+                // if we have readfd set, and this socket matches it
+                if (fds[i].events & POLLIN) {
+                    ioptr = NetworkAPI_ConsolidateIncoming(sptr);
+
+                    if (ioptr && ((ioptr->size - ioptr->ptr))) {
+                        fds[i].revents |= POLLIN;
+                        count++;
+                    }
+                }
+
+                // if we have writefds, and this socket matches..
+                if (fds[i].events & POLLOUT) {
+                    n = NetworkAPI_Count_Outgoing_Queue(sptr->out_buf);
+
+                    // ok in future we should allow user to choose buffer size
+                    // for outgoing packets.. anyways this is fine for now
+                    // ***
+                    if (n <= 0) {
+                        fds[i].revents |= POLLOUT;
+                        count++;
+                    }
+                }
+
+                if (fds[i].events & POLLERR) {
+                    if (sptr->completed) {
+                        fds[i].revents |= POLLERR;
+                        count++;
+                    }
+                }
+
+                pthread_mutex_unlock(&sptr->mutex);
+            } else {
+                n = 0;
+                // we should check this event some other way..  use real poll
+                // it could be stdin, stdout, etc
+                //n = real_poll(&fds[i], 1, 0);
+                if (n) count++;
+            }
+        }
+
+        if (time(0) - start > timeout) break;
+    }
+
+    return count;
+}
 // i locked socket mutex once to perform all actions fast, but i think it might be worth redoing this ...
 // becuase if the FD is NOT found then it could call regular select, or poll ... which would cover alll situations (even console poll)
 int my_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
@@ -2195,9 +2259,15 @@ int my_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
     AS_context *ctx = (AS_context *)NetworkAPI_CTX;
     SocketContext *sptr = NULL;
     IOBuf *ioptr = NULL;
-    int start=time(0);
+    int start = time(0);
+
+    // set alll revents  to 0 in case some are stdio, etc which wont capture here..
+    // we dont want to return 5, and the app had some old data setting revents to ones we dont even verify
+    // then skips sommething due to the implementation
+    for (i = 0; i < nfds; i++) fds[i].revents=0;
 
     while (!count) {
+        count = 0;
         pthread_mutex_lock(&ctx->socket_list_mutex);
         sptr = ctx->socket_list;
         while (sptr != NULL) {
