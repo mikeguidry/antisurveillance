@@ -118,6 +118,10 @@ all ips
 #include "network_api.h"
 #include "instructions.h"
 #include <math.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 
 
@@ -1217,6 +1221,7 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
     int size = 0;
     char *sptr = buf;
     int count = 0;
+    int start = time(0);
 
     // if we cannot find the connection by its file descriptor.. then we are done (return NULL since ioptr starts as NULL)
     if ((cptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
@@ -1246,6 +1251,8 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
                 // if count of validated (sent successful) changed.. then we are ready to move on
                 if (count != NetworkAPI_Count_Outgoing_Queue(cptr->out_buf))
                     break;
+
+                if (time(0) - start > ctx->max_wait) break;
             }
         }
     }
@@ -1309,24 +1316,31 @@ end:;
 
 // takes multiple IOBufs and puts them together into a single one
 // ** this does NOT lock the connection context ** calling function must
-IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd, SocketContext *sptr) {
+IOBuf *NetworkAPI_ConsolidateIncoming(SocketContext *sptr) {
     AS_context *ctx = NetworkAPI_CTX;
     //SocketContext *sptr = NULL;
     IOBuf *ioptr = NULL;
     IOBuf *ret = NULL;
     int size = 0;
     char *bufptr = NULL, *iptr = NULL;
+    IOBuf *last_size = NULL;
 
     // first get the full size by sum of all buffers in queue
     ioptr = sptr->in_buf;
     while (ioptr != NULL) {
         size += (ioptr->size - ioptr->ptr);
 
+        last_size = ioptr;
+
         ioptr = ioptr->next;
     }
 
     // if nothing there.. we are done
     if (!size) goto end;
+
+    // the last piece with a buffer available  is already the first.. 
+    // already consolidated
+    if (last_size == sptr->in_buf) goto end;
 
     // allocate space for a new IOBuf for this single buffer which will contain all data
     if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
@@ -1357,6 +1371,7 @@ IOBuf *NetworkAPI_ConsolidateIncoming(int sockfd, SocketContext *sptr) {
             bufptr += (ioptr->size - ioptr->ptr);
             // increase the current buffer we are copyings pointer for what we had copied
             ioptr->ptr += (ioptr->size - ioptr->ptr);
+            
         }
 
         if (ioptr->buf) {
@@ -1399,7 +1414,7 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
     pthread_mutex_lock(&sptr->mutex);
 
     // get data consolidated.. if NULL then we are done
-    if ((ioptr = NetworkAPI_ConsolidateIncoming(sockfd, sptr)) == NULL) goto end;
+    if ((ioptr = NetworkAPI_ConsolidateIncoming(sptr)) == NULL) goto end;
 
     sptr->last_ts = ctx->ts;
 
@@ -2015,3 +2030,132 @@ int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
     return ret;
 }
 
+
+
+// everything required to emulate select... once select & poll are done.. most apps should be compatible
+// i can also finish completing support for apps, and most of general tcp features (some will just be cosmetic obviously)
+int fdset_find(fd_set *set, int fd) {
+    int i = 0;
+    int ret = 0;
+
+    for (i = 0; i < FD_SETSIZE; i++) {
+        if (set[i] == fd) {
+            ret = i;
+            break;
+        }
+    }
+
+    return ret;
+}
+
+// http://www.binarytides.com/get-time-difference-in-microtime-in-c
+double time_diff(struct timeval x, struct timeval y)
+{
+  double x_ms, y_ms;
+
+  x_ms = (double)x.tv_sec * 1000000 + (double)x.tv_usec;
+  y_ms = (double)y.tv_sec * 1000000 + (double)y.tv_usec;
+
+  return y_ms - x_ms;
+}
+
+// we are going to do this differently.. since we control all sockets, and we already lock the socket structure... 
+// ill just loop and check if they are in the sets...
+int my_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout) {
+    int i = 0;
+    SocketContexr *sptr = NULL;
+    IOBuf *ioptr = NULL;
+    int count = 0;
+    int n = 0;
+    int timeout_break = 0;
+    struct timeval tv;
+    struct timeval start;
+    double ms_diff = 0;
+    double timeout_ms = 0;
+    fd_set local_readfds;
+    fd_set local_writefds;
+    fd_set local_exceptfds;
+
+    gettimeofday(&start, NULL);
+
+    if (readfds)
+        memcpy(&local_readfds, readfds, sizeof(fd_set));
+    if (writefds)
+        memcpy(&local_writefds, writefds, sizeof(fd_set));
+    if (exceptfds)
+        memcpy(&local_exceptfds, exceptfds, sizeof(fd_set));
+
+    timeout_ms = (double)timeout.tv_sec * 1000000 + (double)timeout.tv_usec;
+
+    // max of 300 seconds
+    if (timeout_ms < 0 || timeout_ms > (1000000 * 300)) timeout_ms = 0;
+
+    while (!timeout_break && !count) {
+        count = 0;
+        pthread_mutex_lock(&ctx->socket_list_mutex);
+        sptr = ctx->socket_list;
+        while (sptr != NULL) {
+            pthread_mutex_lock(&sptr->mutex);
+
+            // if we have readfd set, and this socket matches it
+            if (readfds && fdset_find(sptr->socket_fd, &local_readfds)) {
+                ioptr = NetworkAPI_ConsolidateIncoming(sptr);
+
+                if (!ioptr || ((ioptr->size - ioptr->ptr)))
+                    // nothing waiting
+                    FD_CLR(&local_readfds, sptr->socket_fd);
+                else
+                    count++;
+            }
+
+            // if we have writefds, and this socket matches..
+            if (writefds && fdset_find(sptr->socket_fd, &local_writefds)) {
+                n = NetworkAPI_Count_Outgoing_Queue(cptr->out_buf);
+
+                // ok in future we should allow user to choose buffer size
+                // for outgoing packets.. anyways this is fine for now
+                // ***
+                if (n >= 0)
+                    FD_CLR(&local_writefds, sptr->socket)_fd);
+                else
+                    count++;
+            }
+
+            // if we have except fds,  and this socket  matches..
+            if (exceptfds && fdset_find(sptr->socket_fd, &local_exceptfds)) {
+                if (!sptr->completed)
+                    FD_CLR(&local_exceptfds, sptr->socket_fd);
+                else
+                    count++;
+            }
+
+            pthread_mutex_unlock(&sptr->mutex);
+            sptr = sptr->next;
+        }
+
+        pthread_mutex_unlock(&ctx->socket_list_mutex);
+
+        // check if timeout reached..
+        gettimeofday(&tv, NULL);
+        ms_diff = time_diff(start, tv);
+        if (ms_diff > timeout_ms) timeout_break = 1;
+    }
+
+    if (readfds)
+        memcpy(readfds, &local_readfds, sizeof(fd_set));
+    if (readfds)
+        memcpy(writefds, &local_writefds, sizeof(fd_set));
+    if (exceptfds)
+        memcpy(exceptfds, &local_exceptfds, sizeof(fd_set));
+
+    return count;
+}
+
+int my_pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, const struct timespec *timeout, const sigset_t *sigmask) {
+
+}
+
+
+int my_poll(struct pollfd __user *ufds, unsigned int nfds, struct timespec64 *end_time) {
+
+}

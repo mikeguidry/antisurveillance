@@ -116,7 +116,7 @@ it doesn't matter what happens... everyone involved is done.  trust me.
 
 RST check - done
 SIZE/URI check/find (live, and brute force) - brute force file created.. 
-PSH check - file created..
+PSH check - wrote needs testing
 attack - good
 third party initiator (w shared key) - future (needs to sync time w passive monitor somehow).. (either using difference between a third party which can be input
 without direct connection, or direct)

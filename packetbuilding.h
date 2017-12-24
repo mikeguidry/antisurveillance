@@ -74,7 +74,7 @@ typedef struct _packet_instructions {
     // of connections per second, or minute
     char *data;
     int data_size;
-    //int data_nofree;
+    int data_nofree;
 
     // final packet will get returned inside of the structure as well..
     char *packet;

@@ -211,6 +211,8 @@ AS_context *AS_ctx_new(int start_threads) {
     ctx->ipv6_gen_any = 1;
 
     // need a strategy for fds here to finish select() support for the 
+    // keeping it at 50 gives around 45 for other things (files, etc)
+    // and we can use select properly
     ctx->socket_fd = 50;
     
     prepare_read_sockets(ctx);
