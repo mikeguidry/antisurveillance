@@ -400,3 +400,20 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx);
 int Modules_Perform(AS_context *ctx);
 Subsystem_Module *Module_Add(AS_context *ctx, init_function init, perform_function perform);
 int Antisurveillance_Begin(AS_context *ctx);
+
+
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_GREEN   "\x1b[32m"
+#define ANSI_COLOR_YELLOW  "\x1b[33m"
+#define ANSI_COLOR_BLUE    "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN    "\x1b[36m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+
+#define CLR_RESET() { printf(ANSI_COLOR_RESET); }
+#define CLR_BLUE() { printf(ANSI_COLOR_BLUE); }
+#define CLR_RED() { printf(ANSI_COLOR_RED); }
+#define CLR_GREEN() { printf(ANSI_COLOR_GREEN); }
+#define CLR_CYAN() { printf(ANSI_COLOR_CYAN); }
+#define CLR_MAGENTA() { printf(ANSI_COLOR_MAGENTA); }
+#define CLR_YELLOW() { printf(ANSI_COLOR_YELLOW); }

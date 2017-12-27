@@ -326,10 +326,11 @@ int Subsystems_Perform(AS_context *ctx) {
         WebDiscover_Perform(ctx);
     }
 
-    if (ctx->socket_list_count) {
+    //printf("socket list count %d\n", ctx->socket_list_count);
+    //if (ctx->socket_list_count) {
         // our full socket implementation
         NetworkAPI_Perform(ctx);
-    }
+    //}
 
     // new way to execute each subsystem.. ill move them all to this shortly.. itll also allow loading .so modules (so a python subsystem can handle
     // several things)

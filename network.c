@@ -81,10 +81,8 @@ OutgoingPacketQueue *OutgoingQueueAlloc(AS_context *ctx) {
 
     optr->max_packets = ctx->queue_max_packets;
     optr->max_buf_size = ctx->queue_buffer_size;
-    optr->type = 0;
     optr->ignore = 0;
     optr->thread = NULL;
-    optr->proto = 0;
     optr->failed = 0;
     optr->ctx = NULL;
     optr->ts = ctx->ts;
@@ -191,8 +189,6 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
     optr->thread = NULL;
     optr->ignore = 0;
     optr->failed = 0;
-    optr->type = 0;
-    optr->proto = 0;
     optr->max_buf_size = ctx->queue_buffer_size;
     optr->max_packets = ctx->queue_max_packets;
     optr->cur_packet = 0;
@@ -203,6 +199,21 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
 }
 
 
+void DebugTCPPacket(OutgoingPacketQueue *optr, int cur_packet) {
+    struct packet *p = NULL;
+    char *sptr = NULL;
+
+    sptr = optr->buf + optr->packet_starts[cur_packet];
+    p = sptr;
+
+CLR_RED();
+    printf("WIRE SEQ: ID %04X %08X ACK: %08X addr: %p %p raw: %08X %08X\n",
+    ntohs(p->ip.id),
+    ntohl(p->tcp.seq), ntohl(p->tcp.ack_seq),
+    &p->tcp.seq, &p->tcp.ack_seq,
+    p->tcp.seq, p->tcp.ack_seq);
+CLR_RESET();
+}
 
 
 // this is the iterface between the packet queue, and the operating system to send packets..
@@ -229,7 +240,6 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         }
     }
 */
-    printf("writing queue\n");
 
     while (optr != NULL) {
         //printf("optr %p optr->next %p\n", optr, optr->next);
@@ -243,6 +253,8 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
                 //increase it to the startinng place of this packet
                 sptr += optr->packet_starts[cur_packet];
 
+                //if (optr->packet_protocol[cur_packet] == PROTO_TCP) DebugTCPPacket(optr, cur_packet);
+
                 // calculate the size of this particular packet we are going to process
                 packet_size = optr->packet_ends[cur_packet] - optr->packet_starts[cur_packet];
                 if (optr->dest_ip[cur_packet]) {
@@ -252,7 +264,8 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
                     raw_out_ipv4.sin_addr.s_addr  = optr->dest_ip[cur_packet];
 
                     // write the packet to the raw network socket.. keeping track of how many bytes
-                    bytes_sent = sendto(ctx->write_socket[optr->proto][0], sptr, packet_size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
+                    bytes_sent = sendto(ctx->write_socket[optr->packet_protocol[cur_packet]][optr->packet_ipversion[cur_packet]], sptr, packet_size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
+                    
                 } else {
                     // ipv6...
                     memset(&raw_out_ipv6, 0, sizeof(raw_out_ipv6));
@@ -260,7 +273,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
                     raw_out_ipv6.sin6_port   = 0;//htons(optr->dest_port);
                     CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->dest_ipv6);
 
-                    bytes_sent = sendto(ctx->write_socket[optr->proto][1], sptr, packet_size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
+                    bytes_sent = sendto(ctx->write_socket[optr->packet_protocol[cur_packet]][optr->packet_ipversion[cur_packet]], sptr, packet_size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
                 }
 
                 // if sent matches size then we count it
@@ -1009,6 +1022,10 @@ int NetworkQueueInstructions(AS_context *ctx, PacketBuildInstructions *iptr, Out
     char *sptr = NULL;
     int which_protocol = 0;
     int i = 0;
+
+/*CLR_YELLOW();
+    printf("nqueue %04X %08X %08X [seq %p ack %p] %p\n", iptr->header_identifier, iptr->seq, iptr->ack, &iptr->seq, &iptr->ack, iptr->packet);
+CLR_RESET();*/
 
     if (iptr->packet == NULL)
         BuildPacketInstructions(iptr);

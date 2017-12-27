@@ -19,7 +19,7 @@ $(ODIR)/%.o: %.c $(DEPS) scriptmain.o
 	$(CC) -static -c -o $@ $< $(CFLAGS)
 
 connecttest: $(OBJ) connecttest.o
-	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+	gcc -o $@ $^ $(CFLAGS) $(LIBS2)
 
 cyberwar_findips: $(OBJ) cyberwar_findips.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
@@ -34,7 +34,7 @@ listentest: $(OBJ) listentest.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)
 
 connectselect: $(OBJ2) connectselect.o
-	gcc -o $@ $^ $(CFLAGS) $(LIBS)
+	gcc -o $@ $^ $(CFLAGS) $(LIBS2)
 
 pyanti: $(OBJ) obj/scriptmain.o 
 	gcc -o $@ $^ $(CFLAGS) $(LIBS)

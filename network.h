@@ -24,8 +24,7 @@ typedef struct _outgoing_packet_queue {
     pthread_t thread;
     int ignore;
     int failed;
-    int type;
-    int proto;
+
 
     char *buf;
     int max_buf_size;
@@ -82,7 +81,6 @@ typedef struct _network_analysis_functions {
 
     long long bytes_processed;
 } NetworkAnalysisFunctions;
-
 
 int prepare_socket();
 void *thread_network_flush(void *arg);

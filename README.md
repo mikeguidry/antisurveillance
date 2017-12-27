@@ -130,3 +130,7 @@ listen test (w using specific port on an existing IP) (RST check can be reused).
 vpn on top of virtual listen and regular vpn (w gateway emulation so a local network machine can reroute through the virtual IP/gateway and itll auto VPN)
 maybe use quic
 
+
+linux/windows socket libs/tcp stack can show browser connections already connected (so writefds gets triggered) and the browser sends the get request
+which can be paired into the final TCP/IP packet to cut off sosmme time
+w

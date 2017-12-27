@@ -129,8 +129,13 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
     // The ACK/SEQ relate to variables incremented during normal communications..
     p->tcp.seq      = htonl(iptr->seq);
-    p->tcp.ack_seq	= htonl(iptr->ack);
-
+    p->tcp.ack_seq	= htonl((uint32_t)iptr->ack);
+    /*CLR_RED();
+    printf("packet seq id %04X %08X ack %08X addr: seq/ack %p %p final %p %p final %p\n", 
+    ntohs(p->ip.id),
+    iptr->seq, iptr->ack, &iptr->seq, &iptr->ack,
+    &p->tcp.seq, &p->tcp.ack_seq, final_packet);
+    CLR_RESET();*/
     // The TCP window relates to operating system emulation
     p->tcp.window	= htons(iptr->tcp_window_size);
 
@@ -210,7 +215,6 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
     iptr->packet_size = final_packet_size;
 
     //printf("ret =1\n", ret);
-
     // returning 1 here will mark it as GOOD
     return (ret = 1);
 }
@@ -243,7 +247,6 @@ int BuildPacketInstructions(PacketBuildInstructions *ptr) {
         // find the correct function.. no longer a jump table because of ipv6 bitmask checking
         while (PacketBuilders[n].func != NULL) {
             if (ptr->type & PacketBuilders[n].type) {
-
                 // if building this packet fails.. lets mark this attack for deletion
                 i = PacketBuilders[n].func(ptr);
 

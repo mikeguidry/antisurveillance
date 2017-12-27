@@ -96,6 +96,8 @@ typedef struct _socket_context {
 
     // if we want to store which fd was duplicated
     int duplicate_fd;
+
+    int select;
 } SocketContext;
 
 

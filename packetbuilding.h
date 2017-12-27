@@ -105,7 +105,6 @@ typedef struct _packet_instructions {
     // information required to generate ICMP packets
     struct icmphdr icmp;
     struct icmp6_hdr icmp6;
-    
 } PacketBuildInstructions;
 
 

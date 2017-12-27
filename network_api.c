@@ -88,8 +88,6 @@ google, etc) we can ensure it only sends us ones fromm a particular IP if we don
 all ips
 
 */
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -291,6 +289,12 @@ SocketContext *NetworkAPI_SocketByFD(AS_context *ctx, int fd) {
 
     pthread_mutex_unlock(&ctx->socket_list_mutex);
 
+    if (ret) {
+        if (ret->noblock == 0) {
+            printf("socket %d found but noblock=0\n", fd);
+            sleep(5);
+        }
+    }
     return ret;
 }
 
@@ -339,7 +343,7 @@ int NetworkAPI_NewFD(AS_context *ctx) {
     pthread_mutex_unlock(&ctx->socket_list_mutex);
 
     do {
-        if (i++ < 50) i = 50;
+        if (i++ < 50 || i >= 1024) i = 50;
 
         sptr = NetworkAPI_SocketByFD(ctx, i);
 
@@ -370,6 +374,9 @@ SocketContext *NetworkAPI_SocketNew(AS_context *ctx) {
         sptr->seq = rand()%0xFFFFFFFF;
         // 1500 window size - IP header size - TCP header size + static IP options size
         sptr->window_size = 1500 - (20*2+12);
+        sptr->ttl = 64;
+
+        sptr->noblock = 1;
 
         // prepare our IPv4 IP
         sptr->our_ipv4 = get_source_ipv4();
@@ -459,7 +466,7 @@ void NetworkAPI_FreeBuffers(IOBuf **ioptr) {
 int NetworkAPI_Cleanup(AS_context *ctx) {
     SocketContext *sptr = NULL, *snext = NULL, *slast = NULL;
     int i = 0;
-    int ts = ctx->ts;
+    int ts = time(0);
 
     // done in perform
     //pthread_mutex_lock(&ctx->socket_list_mutex);
@@ -550,6 +557,9 @@ void NetworkAPI_TransmitUDP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, 
         if ((iptr->data = (char *)calloc(1, ioptr->size)) != NULL) {
             memcpy(iptr->data, ioptr->buf, ioptr->size);     
             iptr->data_size = ioptr->size;
+        } else {
+            sptr->completed = 2;
+            goto end;
         }
 
         // build final packet for wire..
@@ -629,7 +639,11 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, 
 
         // !!! maybe disable PSH or fully support with fragmented outgoing packets (by sending only on the last,
         // and pushing all packets out quickly)
-        iptr->flags = TCP_FLAG_PSH|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
+        iptr->flags = TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP;
+
+        // last in out buf?
+        if (L_count((LINK *)ioptr->next) == 0)
+            iptr->flags |= TCP_FLAG_PSH;
 
         iptr->ttl = sptr->ttl;
         iptr->tcp_window_size = sptr->window_size;
@@ -660,6 +674,9 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, 
         if ((iptr->data = (char *)calloc(1, ioptr->size)) != NULL) {
             memcpy(iptr->data, ioptr->buf, ioptr->size);
             iptr->data_size = ioptr->size;
+        } else {
+            sptr->completed = 2;
+            goto end;
         }
 
         // build final packet for wire..
@@ -672,7 +689,7 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, 
         if (i == 1)
             NetworkQueueInstructions(ctx, iptr, optr);
     }
-
+end:;
     // we can free the temporary instruction structure we used to have the packet built
     PacketBuildInstructionsFree(&iptr);
 }
@@ -729,13 +746,16 @@ int NetworkAPI_Perform(AS_context *ctx) {
             // trylock isnt good here.. because by the time it loops around is too long to properly deal with TCP/IP for the socket...
             // it went from 20k to 13k on a test...
             if (pthread_mutex_lock(&sptr->mutex) == 0) {
-                //printf("locked cptr %p\n", cptr);
                 // outgoing instructions go first.. always the most important
                 if (sptr->out_instructions != NULL) {
                     // handle all outgoing instructions queued for this connection in proper FIFO order
                     iptr = sptr->out_instructions;
                     while (iptr) {
+                        /*CLR_GREEN();
+                        printf("iptr seq %08X ack %08x [seq a %p ack a %p]\n", iptr->seq, iptr->ack, &iptr->seq, &iptr->ack);
+                        CLR_RESET();*/
                         i = NetworkQueueInstructions(ctx, iptr, &optr);
+                        sptr->last_ts = ctx->ts;
                         // unchain this one
                         iptr = iptr->next;
                     }
@@ -752,13 +772,15 @@ int NetworkAPI_Perform(AS_context *ctx) {
 
                                 // call correct packet building for this outgoing buffer
                                 NetworkAPI_TransmitPacket(ctx, sptr, ioptr, &optr);
-                            } else {
 
+                                sptr->last_ts = ctx->ts;
+                            } else {
                                 // set completed to 1 becauase we want the appllication to have the ability to get the entire incoming packet queue
                                 sptr->completed = 1;
                                 
                                 // send back RST packet... due to too many timeouts on successful transmission of a packet (5 tries at 3seconds each)
                                 NetworkAPI_GeneratePacket(ctx, sptr, TCP_FLAG_RST|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP);
+                                sptr->last_ts = ctx->ts;
                             }
                             break;
                         }
@@ -892,9 +914,8 @@ PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContex
         bptr->ack = sptr->remote_seq;
         bptr->seq = sptr->seq;
 
-        sptr->last_ts = ctx->ts;
+        sptr->last_ts = time(0);
 
-        //printf("ACK %X SEQ %X\n", htons(bptr->ack), htons(bptr->seq));
         L_link_ordered((LINK **)&sptr->out_instructions, (LINK *)bptr);
     }
 
@@ -1008,12 +1029,19 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
             // mark as connected now
             sptr->state |= SOCKET_TCP_CONNECTED;
 
+            //__asm("int3");
+
             // send back ACK for this incoming ACK
             if ((bptr = NetworkAPI_GeneratePacket(ctx, sptr, TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP)) == NULL) goto end;
             //printf("connecting?? fd %d\n", cptr->socket_fd);
             // this packet for connecting requires +1 for remote seq as ack
             bptr->ack = ++sptr->remote_seq;
-
+            bptr->seq = sptr->seq;
+/*CLR_CYAN();
+            printf("connected socket %d [%p] remote seq %08X ack %08X seq %08X [seq/ack %p %p]\n", sptr->socket_fd, sptr, sptr->remote_seq, bptr->ack, bptr->seq, &bptr->seq, &bptr->ack);
+CLR_RESET();*/
+            BuildPacketInstructions(bptr);
+            
             // nobody else needs to process this..
             ret = 1;
             goto end;
@@ -1395,14 +1423,22 @@ IOBuf *NetworkAPI_ConsolidateIncoming(SocketContext *sptr) {
     }
 
     // if nothing there.. we are done
-    if (!size) goto end;
+    if (!size) {
+        //printf("no size to consolidate\n");
+        goto end;
+    }
 
     // the last piece with a buffer available  is already the first.. 
     // already consolidated
-    if (last_size == sptr->in_buf) goto end;
+    if (last_size == sptr->in_buf) {
+        //printf("size is already first chunk\n");
+        goto end;
+    }
 
     // allocate space for a new IOBuf for this single buffer which will contain all data
-    if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) goto end;
+    if ((ret = (IOBuf *)calloc(1, sizeof(IOBuf))) == NULL) {
+        goto end;
+    }
 
     // allocate space within this new structure for the buffer itself
     if ((ret->buf = malloc(size)) == NULL) {
@@ -1468,12 +1504,16 @@ int NetworkAPI_ReadSocket(int sockfd, char *buf, int len) {
     char *bufptr = NULL;
 
     // find the connection... if none then something is wrong we are  done
-    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) goto end;
+    if ((sptr = NetworkAPI_SocketByFD(ctx, sockfd)) == NULL) {
+        goto end;
+    }
 
     pthread_mutex_lock(&sptr->mutex);
 
     // get data consolidated.. if NULL then we are done
-    if ((ioptr = NetworkAPI_ConsolidateIncoming(sptr)) == NULL) goto end;
+    if ((ioptr = NetworkAPI_ConsolidateIncoming(sptr)) == NULL) {
+        goto end;
+    }
 
     sptr->last_ts = ctx->ts;
 
@@ -1526,16 +1566,18 @@ ssize_t NetworkAPI_RecvBlocking(int sockfd, void *buf, size_t len) {
 
     pthread_mutex_lock(&sptr->mutex);
 
-    max_wait = sptr->max_wait;
-
     // if no data left, and completed...
     if (sptr->completed) {
         ret = -1;
         goto end;
     }
 
+    max_wait = sptr->max_wait;
+
+    if (sptr->select && max_wait == 0) max_wait = 10;
+
     // if this is a blocking connection.. then we want to loop until we receieve some data
-    if (!sptr->noblock) {
+    if (sptr->noblock == 0) {
         // unlock the connection mutex so that other threads can affect it
         pthread_mutex_unlock(&sptr->mutex);
 
@@ -1662,7 +1704,7 @@ int NetworkAPI_ConnectSocket(int sockfd, const struct sockaddr_in *addr, socklen
 
 end:;
     if (sptr) pthread_mutex_unlock(&sptr->mutex);
-
+    printf("Connectsocket: %d ret %d\n", sockfd, ret);
     return ret;
 }
 
@@ -1770,14 +1812,25 @@ end:;
 }
 
 int NetworkAPI_Close(int fd) {
+    int i = 0;
     AS_context *ctx = NetworkAPI_CTX;
     SocketContext *sptr = NULL;
+    PacketBuildInstructions *iptr = NULL;
+    OutgoingPacketQueue *optr = NULL;
 
     // if we cannot find this socket... then return error
     if ((sptr = NetworkAPI_SocketByFD(ctx, fd)) == NULL)
         return -1;
 
     pthread_mutex_lock(&sptr->mutex);
+
+    if (sptr->completed == 0) {
+        iptr = NetworkAPI_GeneratePacket(ctx, sptr, TCP_FLAG_RST|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP);
+        i = NetworkQueueInstructions(ctx, iptr, &optr);
+        if (optr) OutgoingQueueLink(ctx, optr);
+        sptr->completed = 2;
+        goto end;
+    }
 
     // set state to 0
     sptr->state = 0;
@@ -1786,7 +1839,7 @@ int NetworkAPI_Close(int fd) {
 
     sptr->port = 1;
     sptr->remote_port = 1;
-
+end:;
     pthread_mutex_unlock(&sptr->mutex);
 
     return 0;
@@ -2129,6 +2182,7 @@ int both_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, 
     fd_set local_readfds;
     fd_set local_writefds;
     fd_set local_exceptfds;
+    int j = 0;
 
     FD_ZERO(&local_readfds);
     FD_ZERO(&local_writefds);
@@ -2161,38 +2215,55 @@ int both_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, 
             FD_ZERO(&local_exceptfds);
 
         pthread_mutex_lock(&ctx->socket_list_mutex);
-        sptr = ctx->socket_list;
-        while (sptr != NULL) {
-            pthread_mutex_lock(&sptr->mutex);
 
-            // if we have readfd set, and this socket matches it
-            if (readfds && FD_ISSET(sptr->socket_fd, readfds)) {
-                ioptr = NetworkAPI_ConsolidateIncoming(sptr);
+        if (readfds) {
+            for (i = 0; i < readfds->count; i++) {
+                if (sptr = NetworkAPI_SocketByFD(ctx, readfds->fd[i]) != NULL) {
+                    if (sptr->state & SOCKET_TCP_CONNECTED) {
+                        sptr->select = 1; // mark as used by select for max_wait
+                        ioptr = NetworkAPI_ConsolidateIncoming(sptr);
 
-                if (ioptr && ((ioptr->size - ioptr->ptr)))
-                    // nothing waiting
-                    FD_SET(sptr->socket_fd, &local_readfds);
+                        if (ioptr && ((ioptr->size - ioptr->ptr) > 0)) {
+                            // nothing waiting
+                            FD_SET(sptr->socket_fd, &local_readfds);
+                            count++;
+                        }                        
+                    }
+
+                }
             }
+        }
+        if (writefds) {
+            for (i = 0; i < writefds->count; i++) {
+                if (sptr = NetworkAPI_SocketByFD(ctx, writefds->fd[i]) != NULL) {
+                    sptr->select = 1; // mark as used by select for max_wait
+                    n = NetworkAPI_Count_Outgoing_Queue(sptr->out_buf);
 
-            // if we have writefds, and this socket matches..
-            if (writefds && FD_ISSET(sptr->socket_fd, writefds)) {
-                n = NetworkAPI_Count_Outgoing_Queue(sptr->out_buf);
-
-                // ok in future we should allow user to choose buffer size
-                // for outgoing packets.. anyways this is fine for now
-                // ***
-                if (n <= 0)
-                    FD_SET(sptr->socket_fd, &local_writefds);
+                    // ok in future we should allow user to choose buffer size
+                    // for outgoing packets.. anyways this is fine for now
+                    // ***
+                    if (n <= 0) {
+                        FD_SET(sptr->socket_fd, &local_writefds);
+                        count++;
+                    }
+                }
             }
+        }
 
-            // if we have except fds,  and this socket  matches..
-            if (exceptfds && FD_ISSET(sptr->socket_fd, exceptfds)) {
-                if (sptr->completed)
+        if (exceptfds) {
+            for (i = 0; i < exceptfds->count; i++) {
+                n = 0;
+                if (sptr = NetworkAPI_SocketByFD(ctx, exceptfds->fd[i]) != NULL) {            
+                    if (sptr->completed == 2) n = 1;
+                } else {
+                    n = 1;
+                }
+
+                if (n == 1) {
                     FD_SET(sptr->socket_fd, &local_exceptfds);
+                    count++;
+                }
             }
-
-            pthread_mutex_unlock(&sptr->mutex);
-            sptr = sptr->next;
         }
 
         pthread_mutex_unlock(&ctx->socket_list_mutex);
@@ -2212,16 +2283,20 @@ int both_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, 
 
             if (tdiff > tns) timeout_break = 1;
         }
+        // or we dont have either.. so we stop immediately
+        else timeout_break=1;
 
         if (!timeout_break) usleep(5000);
     }
 
-    if (readfds)
-        memcpy(readfds, &local_readfds, sizeof(fd_set));
-    if (readfds)
-        memcpy(writefds, &local_writefds, sizeof(fd_set));
-    if (exceptfds)
-        memcpy(exceptfds, &local_exceptfds, sizeof(fd_set));
+    if (count) {
+        if (readfds)
+            memcpy(readfds, &local_readfds, sizeof(fd_set));
+        if (readfds)
+            memcpy(writefds, &local_writefds, sizeof(fd_set));
+        if (exceptfds)
+            memcpy(exceptfds, &local_exceptfds, sizeof(fd_set));
+    }
 
     return count;
 }

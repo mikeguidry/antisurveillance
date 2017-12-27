@@ -125,9 +125,14 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
 
             fwrite((void *)&packet_hdr, 1, sizeof(pcaprec_hdr_t), fd);
 
-            if (ptr->type & PACKET_TYPE_IPV4)
+            /*if (ptr->type & PACKET_TYPE_IPV4)
                 ethhdr.ether_type = ntohs(ETHERTYPE_IP);
             else if (ptr->type & PACKET_TYPE_IPV6)
+                ethhdr.ether_type = ntohs(0x86DD);
+                */
+            if (ptr->packet_ipversion[cur_packet] == 0)
+                ethhdr.ether_type = ntohs(ETHERTYPE_IP);
+            else
                 ethhdr.ether_type = ntohs(0x86DD);
 
             fwrite((void *)&ethhdr, 1, sizeof(struct ether_header), fd);
