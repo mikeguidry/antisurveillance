@@ -1,20 +1,6 @@
 /*
-
-This is where functionality for writing information directly to the networking device is located.  It will also contain
-functions for sniffing the network interface for information.  The information can be used as new attack parameters, or
-a few other things I must add which will require call back events after passing a filter.
-
-*** since we have packet analysis already developed.. I'll add some raw capturing code in here.  It will allow Quantum Insert
-protection to be developed, and this can become the 'third party server' for hundreds of thousands of clients..
--- all in one fuck you to nsa -- this is for rape.
-
-
-
-
-https://stackoverflow.com/questions/12177708/raw-socket-promiscuous-mode-not-sniffing-what-i-write
-to remove the 3second timmeout, and ram limitations I was going to use for removing our own outgoing packets/sessions
-
-
+    Base networking functionality for processing large amounts of Incoming, and Outgoing traffic.  It also can be used for IPv4, or
+    IPv6, and the usual protocols: TCP/UDP/ICMP.
 */
 
 #include <stdio.h>
@@ -30,19 +16,18 @@ to remove the 3second timmeout, and ram limitations I was going to use for remov
 #include <linux/if_packet.h>
 #include <sys/ioctl.h>
 #include <fcntl.h>
-#include <net/ethernet.h>ush
+#include <net/ethernet.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
 #include "utils.h"
+#include "instructions.h"
+#include <errno.h>
 
 /*
-    // we also need the source port to verify against connections laater so we dont keep readding ours..
-    
-    
-    struct in6_addr dest_ipv6;
-    AS_attacks *attack_info;
-    */
+incoming and outgoing queue allocation holds for a large amount of packets, and up to a buffer size.  this is to release tension on
+malloc during operations.
+*/
 
 OutgoingPacketQueue *OutgoingQueueAlloc(AS_context *ctx) {
     char *buf = NULL;
@@ -54,60 +39,29 @@ OutgoingPacketQueue *OutgoingQueueAlloc(AS_context *ctx) {
     // also needs size of buffer
     size += ctx->queue_buffer_size;
 
-    // also size of packet_starts
-    size += (ctx->queue_max_packets * sizeof(int));
-    // packet_ends
-    size += (ctx->queue_max_packets * sizeof(int));
-    // packet_protocol
-    size += (ctx->queue_max_packets * sizeof(int));
-    // packet_ipversion
-    size += (ctx->queue_max_packets * sizeof(int));
-    // dest_port
-    size += (ctx->queue_max_packets * sizeof(uint16_t));    
-    // source port
-    size += (ctx->queue_max_packets * sizeof(uint16_t));
-    // dest ip
-    size += (ctx->queue_max_packets * sizeof(uint32_t));
-    // in6_addr
-    size += (ctx->queue_max_packets * sizeof(struct in6_addr));
-    // attack kinfo
-    size += (ctx->queue_max_packets * sizeof(AS_attacks *));
+    size += (ctx->queue_max_packets * sizeof(OutgoingPacketInformation));
 
+    // malloc instead of calloc so we dont waste cycles zero'ing the packet buffer
     if ((buf = malloc(size)) == NULL) return NULL;
 
-    //memset(buf, 0, sizeof(OutgoingPacketQueue));
-
     optr = (OutgoingPacketQueue *)buf;
-
+    // zero structure information    
+    memset(buf, 0, sizeof(OutgoingPacketQueue));
     optr->max_packets = ctx->queue_max_packets;
     optr->max_buf_size = ctx->queue_buffer_size;
-    optr->ignore = 0;
-    optr->thread = NULL;
-    optr->failed = 0;
-    optr->ctx = NULL;
-    optr->ts = ctx->ts;
-    optr->size = 0;
-    optr->cur_packet = 0;
-    optr->next = NULL;
 
-
-
+    optr->packets = (OutgoingPacketInformation *)(buf + sizeof(OutgoingPacketQueue));
+    
     // prepare structure pointers
-    optr->buf = (char *)(buf + sizeof(OutgoingPacketQueue));
-    optr->packet_starts = (int *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size);
-    optr->packet_ends = (int *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)));
-    optr->packet_protocol = (int *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)));
-    optr->packet_ipversion = (int *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)));
-    optr->dest_port = (uint16_t *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)));
-    optr->source_port = (uint16_t *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(uint16_t)));
-    optr->dest_ip = (uint32_t *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(uint16_t)) + (ctx->queue_max_packets * sizeof(uint16_t)));
-    optr->dest_ipv6 = (struct in6_addr *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(uint16_t)) + (ctx->queue_max_packets * sizeof(uint16_t)) + (ctx->queue_max_packets * sizeof(uint32_t)));
-    optr->attack_info = (AS_attacks *)(buf + sizeof(OutgoingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(uint16_t)) + (ctx->queue_max_packets * sizeof(uint16_t)) + (ctx->queue_max_packets * sizeof(uint32_t)) + (ctx->queue_max_packets * sizeof(struct in6_addr *)));
+    optr->buf = (char *)(buf + sizeof(OutgoingPacketQueue) + (ctx->queue_max_packets * sizeof(OutgoingPacketInformation)));
+
+    //printf("outgoing alloc %p\n", optr);
+    //printf("%p optr max buf %d optr size %d cur pkt %d max %d\n", optr,
+    //optr->max_buf_size, optr->size, optr->cur_packet, optr->max_packets);
+
 
     return optr;
 } 
-
-
 
 IncomingPacketQueue *IncomingQueueAlloc(AS_context *ctx) {
     char *buf = NULL;
@@ -120,31 +74,25 @@ IncomingPacketQueue *IncomingQueueAlloc(AS_context *ctx) {
     size += ctx->queue_buffer_size;
 
     // also size of packet_starts
-    size += (ctx->queue_max_packets * sizeof(int));
-    // packet_ends
-    size += (ctx->queue_max_packets * sizeof(int));
-    // packet_protocol
-    size += (ctx->queue_max_packets * sizeof(int));
-    // packet_ipversion
-    size += (ctx->queue_max_packets * sizeof(int));
+    size += (ctx->queue_max_packets * sizeof(IncomingPacketInformation));
 
     if ((buf = malloc(size)) == NULL) return NULL;
-    //memset(buf, 0, sizeof(IncomingPacketQueue));
+
 
     iptr = (IncomingPacketQueue *)buf;
 
-    iptr->next = NULL;
+    memset(buf, 0, sizeof(IncomingPacketQueue));
     iptr->max_packets = ctx->queue_max_packets;
     iptr->max_buf_size = ctx->queue_buffer_size;
-    iptr->cur_packet = 0;
-    iptr->size = 0;
+
+    //printf("new incom %d size %d\n", ctx->queue_max_packets, ctx->queue_buffer_size);
+
+    iptr->packets = (IncomingPacketInformation  *)(buf + sizeof(IncomingPacketQueue));
     
     // prepare structure pointers
-    iptr->buf = (char *)(buf + sizeof(IncomingPacketQueue));
-    iptr->packet_starts = (int *)(buf + sizeof(IncomingPacketQueue) + ctx->queue_buffer_size);
-    iptr->packet_ends = (int *)(buf + sizeof(IncomingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)));
-    iptr->packet_protocol = (int *)(buf + sizeof(IncomingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)));
-    iptr->packet_ipversion = (int *)(buf + sizeof(IncomingPacketQueue) + ctx->queue_buffer_size + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)) + (ctx->queue_max_packets * sizeof(int)));
+    iptr->buf = (char *)(buf + sizeof(IncomingPacketQueue) + (ctx->queue_max_packets * sizeof(IncomingPacketInformation)));
+
+    //printf("incom alloc %p\n", iptr);
 
     return iptr;
 } 
@@ -176,21 +124,20 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
         optr = optr->next;
     } */
 
-    if (optr) ctx->outgoing_pool_waiting = optr->next;
+    if (optr) {
+        ctx->outgoing_pool_waiting = optr->next;
+        optr->next = NULL;
+    }
     //if (optr != NULL) L_unlink((void **)&ctx->outgoing_pool_waiting, (LINK *)optr);
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
     
     // if we didnt then will allocate a new  one which will go to the pool whenever are complete
-    if (optr == NULL)
+    if (optr == NULL) {   
         if ((optr = OutgoingQueueAlloc(ctx)) == NULL) return NULL;
+        //printf("pool empty %p\n", optr);
+    }
 
-    optr->ctx = NULL;
-    optr->thread = NULL;
-    optr->ignore = 0;
-    optr->failed = 0;
-    optr->max_buf_size = ctx->queue_buffer_size;
-    optr->max_packets = ctx->queue_max_packets;
     optr->cur_packet = 0;
     optr->size = 0;
     optr->ts = time(0);
@@ -203,7 +150,7 @@ void DebugTCPPacket(OutgoingPacketQueue *optr, int cur_packet) {
     struct packet *p = NULL;
     char *sptr = NULL;
 
-    sptr = optr->buf + optr->packet_starts[cur_packet];
+    sptr = optr->packets[cur_packet].buf;
     p = sptr;
 
 CLR_RED();
@@ -247,37 +194,44 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         // be sure it wasnt marked to get ignored
         if (!optr->ignore) {
             while (cur_packet < optr->cur_packet) {
+                
                 // sptr starts at the beginning of the buffer
-                sptr = (char *)(optr->buf);
 
-                //increase it to the startinng place of this packet
-                sptr += optr->packet_starts[cur_packet];
+                sptr = optr->packets[cur_packet].buf;
+                packet_size = optr->packets[cur_packet].size;
 
+
+                //printf("processing outgoing packet %p/%d\n", sptr, packet_size);
                 //if (optr->packet_protocol[cur_packet] == PROTO_TCP) DebugTCPPacket(optr, cur_packet);
 
                 // calculate the size of this particular packet we are going to process
-                packet_size = optr->packet_ends[cur_packet] - optr->packet_starts[cur_packet];
-                if (optr->dest_ip[cur_packet]) {
+                packet_size = optr->packets[cur_packet].size;
+                if (optr->packets[cur_packet].dest_ip) {
                     // IPv4
                     raw_out_ipv4.sin_family       = AF_INET;
-                    raw_out_ipv4.sin_port         = htons(optr->dest_port[cur_packet]);
-                    raw_out_ipv4.sin_addr.s_addr  = optr->dest_ip[cur_packet];
+                    raw_out_ipv4.sin_port         = htons(optr->packets[cur_packet].dest_port);
+                    raw_out_ipv4.sin_addr.s_addr  = optr->packets[cur_packet].dest_ip;
 
                     // write the packet to the raw network socket.. keeping track of how many bytes
-                    bytes_sent = sendto(ctx->write_socket[optr->packet_protocol[cur_packet]][optr->packet_ipversion[cur_packet]], sptr, packet_size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
+                    bytes_sent = sendto(ctx->write_socket[optr->packets[cur_packet].protocol][optr->packets[cur_packet].ipversion], sptr, packet_size, 0, (struct sockaddr *) &raw_out_ipv4, sizeof(raw_out_ipv4));
                     
                 } else {
                     // ipv6...
                     memset(&raw_out_ipv6, 0, sizeof(raw_out_ipv6));
                     raw_out_ipv6.sin6_family = AF_INET6;
-                    raw_out_ipv6.sin6_port   = 0;//htons(optr->dest_port);
-                    CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->dest_ipv6);
+                    raw_out_ipv6.sin6_port   = 0;//htons(optr->packets[cur_packet].dest_port);
+                    CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->packets[cur_packet].dest_ipv6);
 
-                    bytes_sent = sendto(ctx->write_socket[optr->packet_protocol[cur_packet]][optr->packet_ipversion[cur_packet]], sptr, packet_size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
+                    bytes_sent = sendto(ctx->write_socket[optr->packets[cur_packet].protocol][optr->packets[cur_packet].ipversion], sptr, packet_size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
                 }
 
                 // if sent matches size then we count it
-                if (bytes_sent == packet_size) count++;
+                if (bytes_sent == packet_size) {
+                    //printf("Wrote packet to network\n");
+                    count++;
+                } else {
+                    //printf("wrote wrong %d\n", errno);
+                }
 
                 // move to the next packet
                 cur_packet++;
@@ -289,16 +243,25 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         // if the kernel decided to deliver them to use (i believe  it does, but it may depend on the type of socket.. so the protocol and domain)
         optr->ts = time(0);
 
+        // remove flag so it can be used again in future
+        if (optr->ignore) {
+            optr->ignore = 0;
+        }
+
         onext = optr->next;
         
-/*
-        optr->next = pool;
-        pool = optr;
-        plast = optr;
-*/        
+
+        if (plast == NULL) {
+            pool = plast = optr;
+        } else {
+            plast->next = optr;
+            plast = optr;
+        }
+        optr->next = NULL;
+
         //L_link_ordered((LINK **)&pool, (LINK *)optr);
 
-        free(optr);
+        //free(optr);
         
         // put into local stack pool to get moved to global pool at end of the function
         //optr->next = pool;
@@ -312,9 +275,20 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
         // put back into pool after for use again.. without requiring infinite reallocations
         pthread_mutex_lock(&ctx->network_pool_mutex);
 
+        
         //L_link_ordered((LINK **)&ctx->outgoing_pool_waiting, (LINK *)pool);
         plast->next = ctx->outgoing_pool_waiting;
         ctx->outgoing_pool_waiting = pool;
+
+        /*
+        printf("out count %d\n", L_count((LINK *)ctx->outgoing_pool_waiting));
+
+        int y = 0;
+        for (optr = ctx->outgoing_pool_waiting; optr != NULL; optr = optr->next) {
+            printf("%d. %p\n", y, optr);
+            y++;
+        }
+        */
 
         pthread_mutex_unlock(&ctx->network_pool_mutex);
     }
@@ -417,7 +391,7 @@ int prepare_write_sockets(AS_context *ctx) {
             // if the sockets already exist.. lets just make sure its still usable
             if (ctx->write_socket[proto][ip_ver] > 0) {
                 // If we cannot use setsockopt.. there must be trouble!
-                if (setsockopt(ctx->write_socket[proto][ip_ver], IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
+                if (setsockopt(ctx->write_socket[proto][ip_ver], ip_ver ? IPPROTO_IPV6 : IPPROTO_IP, IP_HDRINCL, (char *)&one, sizeof(one)) < 0) {
                     close(ctx->write_socket[proto][ip_ver]);
                     ctx->write_socket[proto][ip_ver] = 0;
                 } else
@@ -430,7 +404,8 @@ int prepare_write_sockets(AS_context *ctx) {
             // use correct settings for correct ipv4/6 or tcp/udp/icmp..
             // not pretty maybe use a structure  later.. quick dev
             switch (proto) {
-                case PROTO_TCP: which_proto = IPPROTO_TCP; break;
+                //case PROTO_TCP: which_proto = IPPROTO_TCP; break;
+                case PROTO_TCP: which_proto = (ip_ver == IPVER_6) ? IPPROTO_RAW : IPPROTO_TCP; break;
                 case PROTO_UDP: which_proto = (ip_ver == IPVER_6) ? IPPROTO_RAW : IPPROTO_UDP; break;
                 case PROTO_ICMP: which_proto = IPPROTO_ICMP; break;
             }
@@ -439,6 +414,7 @@ int prepare_write_sockets(AS_context *ctx) {
                 case IPVER_6: which_domain = AF_INET6; break;
                 case IPVER_4: which_domain = AF_INET; break;
             }
+            //which_domain = PF_PACKET;
             
             // open raw socket
             if ((ctx->write_socket[proto][ip_ver] = socket(which_domain, SOCK_RAW, which_proto)) <= 0) {
@@ -481,7 +457,6 @@ int prepare_read_sockets(AS_context *ctx) {
     int ret = 0;
     struct ifreq ifr;
     struct sockaddr_ll sll;
-    char *network = ctx->network_interface;
     int protocol= IPPROTO_TCP;
     int sockopt = 1;
     int flags = 0;
@@ -514,7 +489,9 @@ int prepare_read_sockets(AS_context *ctx) {
 
                     //printf("bad\n");
                     goto end;
-                } else continue;
+                } else {
+                    continue;
+                }
 
             }
 
@@ -530,13 +507,40 @@ int prepare_read_sockets(AS_context *ctx) {
                 case 1: which_domain = AF_INET6; break;
             }
 
+            int socket_type = SOCK_RAW;
+#define NEW_RAW            
+#ifdef NEW_RAW
+
+            if (proto == 0) {
+                which_proto = htons(ip_ver ? ETH_P_IPV6 : ETH_P_IP);
+            }
+            //socket_type = SOCK_PACKET;
+            which_domain = PF_PACKET;
+#endif
+
             //printf("allocating socket proto %d ip ver %d\n", proto, ip_ver);
             // initialize a new socket
-            if ((ctx->read_socket[proto][ip_ver] = socket(which_domain, SOCK_RAW, which_proto)) == -1) {
+            if ((ctx->read_socket[proto][ip_ver] = socket(which_domain, socket_type, which_proto)) == -1) {
                 fprintf(stderr, "couldnt open raw socket.. are we root?\n");
                 exit(-1);
             }
-            
+#ifdef NEW_RAW            
+            strncpy((char *)ifr.ifr_name, ctx->network_interface, IFNAMSIZ);
+            if((ioctl(ctx->read_socket[proto][ip_ver], SIOCGIFINDEX, &ifr)) == -1) {
+                printf("couldnt find interface\n");
+                return -1;
+            }
+
+            sll.sll_family = PF_PACKET;
+            sll.sll_ifindex = ifr.ifr_ifindex;
+            sll.sll_protocol = which_proto;
+
+            if((bind(ctx->read_socket[proto][ip_ver], (struct sockaddr *)&sll, sizeof(sll)))== -1) {
+                printf("couldnt bind to socket\n");
+                return -1;
+            }                       
+            //printf("bound to index %d\n", ifr.ifr_ifindex);
+#endif
             setsockopt(ctx->read_socket[proto][ip_ver], SOL_SOCKET, SO_RCVBUFFORCE, &bufsize, sizeof(bufsize));
             
             // set non blocking
@@ -560,7 +564,6 @@ int prepare_read_sockets(AS_context *ctx) {
 }
 
 
-
 // this will take a buffer, and size expected to come directly fromm the network driver
 // it will process it through filters, and if passing will send to whatever functions, or subsystems
 // requested data of that statue
@@ -572,8 +575,9 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     int ret = -1;
     FILE *fd;
-    char fname[1024];
+    //char fname[1024];
     int r = 0;
+    int count = 0;
 
     //if (size == 0) goto end;
 
@@ -584,21 +588,13 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         fwrite(packet, size, 1, fd);
         fclose(fd);
     }*/
-    
-    // packet needs to be in this structure to get analyzed.. reusing pcap loading routines
-    if ((pptr = (PacketInfo *)calloc(1, sizeof(PacketInfo))) == NULL) return -1;
-
-    // duplicate the packet data.. putting it into this packet structure
-    if (PtrDuplicate(packet, size, &pptr->buf, &pptr->size) == 0) goto end;
 
     // analyze that packet, and turn it into a instructions structure
-    if ((iptr = PacketsToInstructions(pptr)) == NULL) goto end;
+    if ((iptr = (PacketBuildInstructions *)PacketsToInstructions(ctx, packet, size)) == NULL) goto end;
     
-    //printf("processing packet %p\n", iptr);
-    
+    //printf("processing packet\n");
     // loop looking for any subsystems where it may be required
     while (nptr != NULL) {
-        //printf("nptr %p iptr %p\n", nptr, iptr);
         // if the packet passes the filter then call its processing function
         if (!nptr->flt || FilterCheck(ctx, nptr->flt, iptr)) {
             //printf("pass filter iptr %p funnc %p\n", iptr, nptr->incoming_function);
@@ -617,9 +613,6 @@ int process_packet(AS_context *ctx, char *packet, int size) {
 
     end:;
 
-    // free these structures since they are no longer required
-    PacketsFree(&pptr);
-
     // dont free.. function wanted it.
     PacketBuildInstructionsFree(&iptr);
 
@@ -635,6 +628,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
     char *sptr = NULL;
     int cur_packet = 0;
     int packet_size = 0;
+    int pret = 0;
 
     //printf("process incomming buffer\n");
     
@@ -652,7 +646,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
     // unlock thread...
     pthread_mutex_unlock(&ctx->network_incoming_mutex);
 
-    if (nptr == NULL) goto end;
+    //if (nptr == NULL) goto end;
 
     //printf("\n\nnetwork_process_incoming_buffer: first link %p\n", nptr);
 
@@ -660,27 +654,16 @@ int network_process_incoming_buffer(AS_context *ctx) {
     while (nptr != NULL) {
         cur_packet = 0;
 
-        // sptr starts at the beginning of the buffer
-        sptr = (char *)(nptr->buf);
-
         // lets loop for every packet in this structure..
         while (cur_packet < nptr->cur_packet) {
             //increase it to the startinng place of this packet
             //sptr += nptr->packet_starts[cur_packet];
 
-            // calculate the size of this particular packet we are going to process
-            packet_size = nptr->packet_ends[cur_packet] - nptr->packet_starts[cur_packet];
-
-            //printf("will process packet protocol %d ip ver %d size %d\n", nptr->packet_protocol[cur_packet],nptr->packet_ipversion[cur_packet],packet_size);
-
             // call the function which processes it by turning it into a packet structure
             // it will then send to the correct functions for analysis, and processing afterwards
             // for whichever subsystem may want it
-            process_packet(ctx, sptr, packet_size);
-
-            // increase poointer by size of the packet
-            sptr += packet_size;
-
+            process_packet(ctx, nptr->packets[cur_packet].buf, nptr->packets[cur_packet].size);
+            
             // move to the next packet
             cur_packet++;
         }
@@ -688,17 +671,16 @@ int network_process_incoming_buffer(AS_context *ctx) {
         // we are finished processing that cluster... we can free it
         nnext = nptr->next;
 
-/*
-        nptr->next = pool;
-        pool = nptr;
-        plast = nptr;
-*/
-        // put in pool...
-        //nptr->next = pool;
-        //pool = nptr;
-
+        if (plast == NULL) {
+            pool = plast = nptr;
+        } else {
+            plast->next = nptr;
+            plast = nptr;
+        }
+        nptr->next = NULL;
+        
         // free this structure since we are finished with it
-        free(nptr);
+        //free(nptr);
         
         // go to the next cluster of packets we are processing
         nptr = nnext;
@@ -708,59 +690,54 @@ int network_process_incoming_buffer(AS_context *ctx) {
         // lets the empty queue 
         pthread_mutex_lock(&ctx->network_pool_mutex);
 
-        //printf("1 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
+        
         // put back into waiting pool so we dont allocate over and over
         //L_link_ordered((LINK **)&ctx->incoming_pool_waiting, (LINK *)pool);
         plast->next = ctx->incoming_pool_waiting;
         ctx->incoming_pool_waiting = pool;
 
         //printf("2 count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
+        //printf("incom count %d\n", L_count((LINK *)ctx->incoming_pool_waiting));
 
         pthread_mutex_unlock(&ctx->network_pool_mutex);
     }
 
-    end:;
+    //end:;
     return ret;
 }
-
-static int ncount = 0;
 
 int NetworkReadSocket(IncomingPacketQueue *nptr, int socket, int proto, int ip_ver) {
     char *sptr = NULL;
     int r = 0;
     int ret = 0;    
-    char fname[1024];
+    struct sockaddr_ll sll;
 
-    // reset using our buffer..
-    sptr = (char *)nptr->buf;
+    int sll_len = sizeof(struct sockaddr_ll);
 
-    if (nptr->cur_packet >= (nptr->max_packets - 1)) return -1;
+
+    //printf("ReadSocket %d proto %d ip %d\n", socket, proto, ip_ver);
     
-    if (nptr->cur_packet) {
-        // increase pointer to the correct location (After the last packet)
-        sptr += nptr->packet_ends[nptr->cur_packet - 1];
-    }
+    // increase pointer to the correct location (After the last packet)
+    sptr = (char *)nptr->buf + nptr->size;
 
-    r = recvfrom(socket, sptr, nptr->max_buf_size - nptr->size, MSG_DONTWAIT, NULL, NULL);
+    r = recvfrom(socket, sptr, nptr->max_buf_size - nptr->size, 0, NULL, NULL); //&sll, sll_len);
     
     // if no more packets.. lets break and send it off for processing
     if (r > 0) {
-        // set where this packet begins, and  ends
-        nptr->packet_starts[nptr->cur_packet] = nptr->size;
-        nptr->packet_ends[nptr->cur_packet] = (nptr->size + r);
-
-        nptr->packet_protocol[nptr->cur_packet] = proto;
-        nptr->packet_ipversion[nptr->cur_packet] = ip_ver;
+        nptr->packets[nptr->cur_packet].size = r;
+        nptr->packets[nptr->cur_packet].protocol = proto;
+        nptr->packets[nptr->cur_packet].ipversion = ip_ver;
+        nptr->packets[nptr->cur_packet].buf = sptr;
 
         // prep for the next packet
         nptr->cur_packet++;
 
-        // increase the size of our buffer (for pushing to queue)
+        // so the next packet gets its own space
         nptr->size += r;
 
         ret = 1;
-    } 
-
+    }
+    
     return ret;
 }
 
@@ -780,15 +757,20 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
         for (ip_ver = 0; ip_ver < 2; ip_ver++) {            
             do {
                 // we only have positions for a max of X packets with this buffer
-                if (nptr->cur_packet >= (nptr->max_packets - 1)) goto too_much;
+                if (nptr->cur_packet >= (nptr->max_packets - 1)) {
+                    //printf("too much\n");
+                    goto too_much;
+                }
 
                 waiting_size = 0;
                 ioctl(ctx->read_socket[proto][ip_ver], FIONREAD, &waiting_size);
-                if (waiting_size >= (nptr->max_buf_size - nptr->size)) goto too_much;
+                if (waiting_size >= (nptr->max_buf_size - nptr->size)) {
+                    goto too_much;
+                }
 
                 r = NetworkReadSocket(nptr, ctx->read_socket[proto][ip_ver], proto, ip_ver);
 
-                if (r == -1) goto too_much;
+                if (r == -1) goto end;
 
                 packet_count += r;
             } while (r);
@@ -803,14 +785,17 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
         */
     }
 
+    goto end;
+
     too_much:;
+    //printf("too much\n");
 
     // did we get some packets?
-    ret = (nptr->cur_packet > 0);
-
     end:;
 
-    //printf("network_fill_incoming_buffer ret %d\n", ret);
+    ret = (nptr->cur_packet > 0);
+
+
     return ret;
 }
 
@@ -818,7 +803,6 @@ int network_fill_incoming_buffer(AS_context  *ctx, IncomingPacketQueue *nptr) {
 
 int NetworkAllocateReadPools(AS_context *ctx) {
     int i = 0;
-    IncomingPacketQueue *pool[ctx->initial_pool_count + 1];
     IncomingPacketQueue *pqptr = NULL;
 
     pthread_mutex_lock(&ctx->network_pool_mutex);
@@ -826,13 +810,14 @@ int NetworkAllocateReadPools(AS_context *ctx) {
     // allocate X pools for reading.. (some will get queued awaiting processing, etc)..
     // this should cut down on memory allocations
     while (i < ctx->initial_pool_count) {
-        pool[i++] = pqptr = IncomingQueueAlloc(ctx);
+        pqptr = IncomingQueueAlloc(ctx);
 
         if (pqptr != NULL) {
             // put into the pool
             pqptr->next = ctx->incoming_pool_waiting;
             ctx->incoming_pool_waiting = pqptr;
         }
+        i++;
     }
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
@@ -844,7 +829,6 @@ int NetworkAllocateReadPools(AS_context *ctx) {
 
 int NetworkAllocateWritePools(AS_context *ctx) {
     int i = 0;
-    OutgoingPacketQueue *pool[ctx->initial_pool_count];
     OutgoingPacketQueue *pqptr = NULL;
 
     pthread_mutex_lock(&ctx->network_pool_mutex);
@@ -852,13 +836,14 @@ int NetworkAllocateWritePools(AS_context *ctx) {
     // allocate X pools for reading.. (some will get queued awaiting processing, etc)..
     // this should cut down on memory allocations
     while (i < ctx->initial_pool_count) {
-        pool[i++] = pqptr = (OutgoingPacketQueue *)OutgoingQueueAlloc(ctx);
+        pqptr = (OutgoingPacketQueue *)OutgoingQueueAlloc(ctx);
 
         if (pqptr != NULL) {
             // put into the pool
             pqptr->next = ctx->outgoing_pool_waiting;
             ctx->outgoing_pool_waiting = pqptr;
         }
+        i++;
     }
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
@@ -874,25 +859,32 @@ int network_read_loop(AS_context *ctx) {
     int i = 0;
     IncomingPacketQueue *nptr = NULL;
 
+    //printf("network read loop\n");
+
     pthread_mutex_lock(&ctx->network_pool_mutex);
 
     // grab one from the pool
     nptr = ctx->incoming_pool_waiting;
     // remove from pool queue
-    if (nptr)
+    if (nptr) {
         ctx->incoming_pool_waiting = nptr->next;
+        nptr->next = NULL;
+    }
 
     pthread_mutex_unlock(&ctx->network_pool_mutex);
 
-    if (nptr == NULL)
-        if ((nptr = IncomingQueueAlloc(ctx)) == NULL) goto end;
+    if (nptr == NULL) {
+        if ((nptr = IncomingQueueAlloc(ctx)) == NULL) {
+            goto end;
+        }
+    }
 
     // so its not still linked to the  pool
-    nptr->next = NULL;
     nptr->cur_packet = 0;
     nptr->size = 0;
 
     network_fill_incoming_buffer(ctx, nptr);
+
 
     if (nptr->cur_packet > 0) {
         pthread_mutex_lock(&ctx->network_incoming_mutex);
@@ -913,15 +905,18 @@ int network_read_loop(AS_context *ctx) {
         nptr = NULL;
 
         //if (!ctx->network_read_threaded) { network_process_incoming_buffer(ctx); }
-
-    } else {
-        free(nptr);
-        /*pthread_mutex_lock(&ctx->network_pool_mutex);
+    }
+    
+    // put back in pool for usage
+    if (nptr != NULL) {
+        //free(nptr);
+        pthread_mutex_lock(&ctx->network_pool_mutex);
         nptr->next = ctx->incoming_pool_waiting;
         ctx->incoming_pool_waiting = nptr;
         pthread_mutex_unlock(&ctx->network_pool_mutex);
-        */
     }
+
+    //printf("network read end\n");
 
     end:;
 }
@@ -936,7 +931,7 @@ void *thread_read_network(void *arg) {
      // We'll set the priority to the maximum.
     //params.sched_priority = sched_get_priority_max(SCHED_FIFO);
     //pthread_setschedparam(this_thread, SCHED_FIFO, &params);
-
+    int cnt = 0;
     while (1) {
         network_read_loop(ctx);
 
@@ -953,7 +948,7 @@ void *thread_read_network(void *arg) {
             //if (sleep_interval > 0)
                 // timing change w aggressive-ness
               //  usleep(sleep_interval);
-              usleep(2000);
+              usleep(20000);
               //sleep(1);
             
         }
@@ -992,6 +987,7 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
     nptr->incoming_function = incoming_function;
     nptr->flt = flt;
 
+    //printf("Hook added: %p\n", incoming_function);
     // insert so the network functionality will begin calling our function for these paackets
     L_link_ordered((LINK **)&ctx->IncomingPacketFunctions, (LINK *)nptr);
 
@@ -999,17 +995,21 @@ int Network_AddHook(AS_context *ctx, FilterInformation *flt, void *incoming_func
 }
 
 void OutgoingQueueLink(AS_context *ctx, OutgoingPacketQueue *optr) {
-
     pthread_mutex_lock(&ctx->network_queue_mutex);
 
+    // Link outgoing packets ordered
     if (ctx->outgoing_queue_last) {
         ctx->outgoing_queue_last->next = optr;
         ctx->outgoing_queue_last = optr;
     } else {
         ctx->outgoing_queue_last = ctx->outgoing_queue = optr;
     }
+
+    optr->next = NULL;
     
     pthread_mutex_unlock(&ctx->network_queue_mutex);
+
+    //printf("Linked in %p\n", optr);
 }
 
 
@@ -1041,24 +1041,28 @@ CLR_RESET();*/
     
     // if this packet queue doesn't have enough space for the  entire packet.. we need to allocate a new one
     if ((iptr->packet_size > (optr->max_buf_size - optr->size) || (optr->cur_packet >= optr->max_packets))) {
+        //printf("%p iptr size %d optr max buf %d optr size %d cur pkt %d max %d\n", optr, iptr->packet_size,
+        //optr->max_buf_size, optr->size, optr->cur_packet, optr->max_packets);
         // it needs to get moved into the outgoing buffer first
         OutgoingQueueLink(ctx, optr);
 
         // now allocate a new buffer
-        if ((optr = OutgoingPoolGet(ctx)) == NULL)
+        if ((optr = *_optr = OutgoingPoolGet(ctx)) == NULL)
             return -1;
     }
 
     // copy packet into outgoing packet queue structure (many together)
     // for speed and to not use many threads, or malloc, etc
-    sptr = (char *)(optr->buf);
-    sptr += optr->size;
+    sptr = (char *)(optr->buf + optr->size);
 
     memcpy(sptr, iptr->packet, iptr->packet_size);
 
-    optr->dest_ip[optr->cur_packet] = iptr->destination_ip;
-    CopyIPv6Address(&optr->dest_ipv6[optr->cur_packet], &iptr->destination_ipv6);
-    optr->dest_port[optr->cur_packet] = iptr->destination_port;
+    optr->packets[optr->cur_packet].buf = sptr;
+    optr->packets[optr->cur_packet].size = iptr->packet_size;
+
+    optr->packets[optr->cur_packet].dest_ip = iptr->destination_ip;
+    CopyIPv6Address(&optr->packets[optr->cur_packet].dest_ipv6, &iptr->destination_ipv6);
+    optr->packets[optr->cur_packet].dest_port = iptr->destination_port;
     //optr->attack_info[optr->cur_packet] = aptr;
     optr->ctx = ctx;
 
@@ -1071,13 +1075,9 @@ CLR_RESET();*/
     }
 
     // mark protocol
-    optr->packet_protocol[optr->cur_packet] = which_protocol;
+    optr->packets[optr->cur_packet].protocol = which_protocol;
     // mark if its ipv6 by checking if ipv4 is empty
-    optr->packet_ipversion[optr->cur_packet] = (iptr->destination_ip == 0);
-
-
-    optr->packet_starts[optr->cur_packet] = optr->size;
-    optr->packet_ends[optr->cur_packet] = (optr->size + iptr->packet_size);
+    optr->packets[optr->cur_packet].ipversion = (iptr->destination_ip == 0);
 
     optr->size += iptr->packet_size;
 

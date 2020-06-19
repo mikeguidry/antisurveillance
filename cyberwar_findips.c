@@ -90,7 +90,8 @@ int CW_FindIP_Init(AS_context *ctx) {
     if ((flt = (FilterInformation *)calloc(1, sizeof(FilterInformation))) == NULL) goto end;
 
     // empty filter.. we want everything.
-    FilterPrepare(flt, 0, 0);
+    //FilterPrepare(flt, 0, 0);//FILTER_PACKET_IPV4|FILTER_PACKET_TCP|FILTER_PACKET_FLAGS, TCP_FLAG_RST);
+
 
     // add into network subsystem so we receive all packets
     if (Network_AddHook(ctx, flt, &CW_FindIP_Incoming) != 1) goto end;
@@ -117,6 +118,11 @@ int main(int argc, char *argv[]) {
     //int file_to_iplist(AS_context *ctx, char *filename, char *country);
     IPAddresses *webservers = NULL;
     int i = 0;
+
+    ctx->queue_buffer_size = 1024*1024;
+    ctx->queue_max_packets = 1000;
+
+    //printf("our ip %X\n", our_ip);
     
     // fill IPAddresses structure from a file
     if (!file_to_iplist(ctx, "input_ip", tag[0])) {
@@ -158,14 +164,15 @@ int main(int argc, char *argv[]) {
         AS_perform(ctx);
         usleep(5000);
 
-        if ((time(0) - start) > 2) break;
+        if ((time(0) - start) > 5) break;
     }
 
     // retrieve the list again (it relocks the mutex)
-    if ((ip_list = IPAddressesPtr(ctx, tag[0])) == NULL) {
+    if ((ip_list = (IPAddresses *)IPAddressesPtr(ctx, tag[0])) == NULL) {
         exit(-1);
     }
-
+    
+    fflush(stdout);
     // the unmarked ones are the good ones...
     for (i = 0; i < ip_list->v4_count; i++) {
         // skip ones marked with 2 (it means they responded)

@@ -1,3 +1,5 @@
+#include <Python.h>
+#include <pystate.h>
 
 
 // scripts that are loaded that should be checked periodically for control variables, etc

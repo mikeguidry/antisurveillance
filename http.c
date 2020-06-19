@@ -28,7 +28,7 @@ no code updates will ever be required.
 #include "instructions.h"
 #include <Python.h>
 #include "scripting.h"
-#include <http_parser.h>
+//#include <http_parser.h>
 
 
 char http_discovered_session_function[] = "http_session_discovered";

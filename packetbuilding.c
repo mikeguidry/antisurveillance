@@ -462,18 +462,21 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
 
     // insert outgoing queue max packet, and size checking logic  here
 
-
+    //printf("built packet\n");
     // copy packet into outgoing packet queue structure (many together)
     // for speed and to not use many threads, or malloc, etc
     sptr = (char *)(optr->buf);
     sptr += optr->size;
     memcpy(sptr, pkt->buf, pkt->size);
 
-    optr->dest_ip[optr->cur_packet] = pkt->dest_ip;
-    CopyIPv6Address(&optr->dest_ipv6[optr->cur_packet], &pkt->dest_ipv6);
-    optr->source_port[optr->cur_packet] = pkt->source_port;
-    optr->dest_port[optr->cur_packet] = pkt->dest_port;
-    optr->attack_info[optr->cur_packet] = aptr;
+    optr->packets[optr->cur_packet].buf = sptr;
+    optr->packets[optr->cur_packet].size = pkt->size;
+
+    optr->packets[optr->cur_packet].dest_ip = pkt->dest_ip;
+    CopyIPv6Address(&optr->packets[optr->cur_packet].dest_ipv6, &pkt->dest_ipv6);
+    optr->packets[optr->cur_packet].source_port = pkt->source_port;
+    optr->packets[optr->cur_packet].dest_port = pkt->dest_port;
+    optr->packets[optr->cur_packet].attack_info = aptr;
     optr->ctx = ctx;
 
     if (pkt->type & PACKET_TYPE_TCP)
@@ -484,13 +487,9 @@ void PacketLogic(AS_context *ctx, AS_attacks *aptr, OutgoingPacketQueue **_optr)
         which_protocol = PROTO_ICMP;
 
     // mark protocol
-    optr->packet_protocol[optr->cur_packet] = which_protocol;
+    optr->packets[optr->cur_packet].protocol = which_protocol;
     // mark if its ipv6 by checking if ipv4 is empty
-    optr->packet_ipversion[optr->cur_packet] = (pkt->dest_ip == 0);
-
-
-    optr->packet_starts[optr->cur_packet] = optr->size;
-    optr->packet_ends[optr->cur_packet] = (optr->size + pkt->size);
+    optr->packets[optr->cur_packet].ipversion = (pkt->dest_ip == 0);
 
     optr->size += pkt->size;
 
@@ -595,8 +594,8 @@ int BuildSingleUDP4Packet(PacketBuildInstructions *iptr) {
 
     end:;
 
-    PtrFree(&final_packet);
-    PtrFree(&checkbuf);
+    PtrFree((char **)&final_packet);
+    PtrFree((char **)&checkbuf);
 
     return ret;
 }
@@ -844,8 +843,8 @@ int BuildSingleUDP6Packet(PacketBuildInstructions *iptr) {
 
     end:;
 
-    PtrFree(&final_packet);
-    PtrFree(&checkbuf);
+    PtrFree((char **)&final_packet);
+    PtrFree((char **)&checkbuf);
 
     return ret;
 }
@@ -962,7 +961,6 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
     // put the final packet into the build instruction structure as completed..
     iptr->packet = (char *)final_packet;
     iptr->packet_size = final_packet_size;
-
 
     // returning 1 here will mark it as GOOD
     return (ret = 1);

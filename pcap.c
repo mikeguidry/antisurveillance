@@ -82,6 +82,7 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
     memset((void *)&hdr, 0, sizeof(pcap_hdr_t));
     
     // prepare global header for the pcap file format
+    // need to figure out how to handle ipv6 here
     hdr.magic_number = 0xa1b2c3d4;
     hdr.version_major = 2;
     hdr.version_minor = 4;
@@ -91,6 +92,7 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
 
     // set ether header (enough for wireshark, tcpdump, or whatever)
     memset(&ethhdr, 0, sizeof(struct ether_header));
+    // need to figure out how to handle ipv6 here
     ethhdr.ether_type = ntohs(ETHERTYPE_IP);
     memcpy((void *)&ethhdr.ether_dhost, dst_mac, 6);
     memcpy((void *)&ethhdr.ether_dhost, src_mac, 6);
@@ -107,13 +109,10 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
 
         while (cur_packet < ptr->cur_packet) {
             // sptr starts at the beginning of the buffer
-            sptr = (char *)(ptr->buf);
-
-            //increase it to the startinng place of this packet
-            sptr += ptr->packet_starts[cur_packet];
+            sptr = ptr->packets[cur_packet].buf;
 
             // calculate the size of this particular packet we are going to process
-            packet_size = ptr->packet_ends[cur_packet] - ptr->packet_starts[cur_packet];
+            packet_size = ptr->packets[cur_packet].size;
 
             packet_hdr.ts_sec = ts;
 
@@ -130,10 +129,10 @@ int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, Pack
             else if (ptr->type & PACKET_TYPE_IPV6)
                 ethhdr.ether_type = ntohs(0x86DD);
                 */
-            if (ptr->packet_ipversion[cur_packet] == 0)
+            if (ptr->packets[cur_packet].ipversion == 0)
                 ethhdr.ether_type = ntohs(ETHERTYPE_IP);
             else
-                ethhdr.ether_type = ntohs(0x86DD);
+                ethhdr.ether_type = ntohs(ETHERTYPE_IPV6);
 
             fwrite((void *)&ethhdr, 1, sizeof(struct ether_header), fd);
             fwrite((void *)sptr, 1, packet_size, fd);
@@ -261,8 +260,9 @@ PacketInfo *PcapLoad(char *filename) {
 // full with dynamic URLs (detecting differences in URls over multiple sessions) etc
 
 int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int interval, FilterInformation *pcap_flt) {
-    PacketInfo *packets = NULL;
+    PacketInfo *packets = NULL, *pptr = NULL;
     PacketBuildInstructions *packetinstructions = NULL;
+    PacketBuildInstructions *iptr = NULL, *ilast = NULL;
     PacketBuildInstructions *final_instructions = NULL;
     FilterInformation flt;
     AS_attacks *aptr = NULL;
@@ -273,8 +273,16 @@ int PCAPtoAttack(AS_context *ctx, char *filename, int dest_port, int count, int 
     // load pcap file into packet information structures
     if ((packets = PcapLoad(filename)) == NULL) return 0;
     
-    // turn those packet structures into packet building instructions via analysis, etc
-    if ((packetinstructions = PacketsToInstructions(packets)) == NULL) goto end;
+    for (pptr = packets; pptr != NULL; pptr = pptr->next) {
+        if ((iptr = PacketsToInstructions(ctx, pptr->buf, pptr->size)) != NULL) {
+                if (ilast != NULL) {
+                    ilast->next = iptr;
+                    ilast = iptr;
+                } else {
+                    packetinstructions = ilast = iptr;
+                }
+        }
+    }
 
     // prepare the filter for detination port
     FilterPrepare(&flt, FILTER_PACKET_FAMILIAR|FILTER_SERVER_PORT, dest_port);
@@ -415,7 +423,7 @@ int PCAP_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = 0;
     PCAPOperation *cptr = ctx->pcap_operations;
     int filter_ok = 1;
-
+    
     if (cptr == NULL) return 0;
 
     while (cptr != NULL) {

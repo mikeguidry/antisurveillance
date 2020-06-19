@@ -1,4 +1,6 @@
 
+
+
 struct _as_attacks;
 typedef struct _as_attacks AS_attacks;
 
@@ -13,6 +15,20 @@ typedef struct _packet_instructions PacketBuildInstructions;
 
 struct _filter_information;
 typedef struct _filter_information FilterInformation;
+
+
+typedef struct OutgoingPacketInformation {
+        char *buf;
+        int size;
+        int protocol;
+        int ipversion;
+        uint16_t dest_port;
+        uint16_t source_port;
+        uint32_t dest_ip;
+        struct in6_addr dest_ipv6;
+        AS_attacks *attack_info;
+} OutgoingPacketInformation;
+
 
 // this is the queue which shouldnt have anything to do with processing, or other functions.. its where
 // all attacks go to get submitted directly to the wire.. 
@@ -29,17 +45,8 @@ typedef struct _outgoing_packet_queue {
     char *buf;
     int max_buf_size;
     int max_packets;
-    int *packet_starts;
-    int *packet_ends;
-    int *packet_protocol;
-    int *packet_ipversion;
 
-    // this port is necessary for sendto() to handle missing structures relating to the packet
-    uint16_t *dest_port;
-    // we also need the source port to verify against connections laater so we dont keep readding ours..
-    uint16_t *source_port;
-    uint32_t *dest_ip;
-    struct in6_addr *dest_ipv6;
+    OutgoingPacketInformation *packets;
     AS_attacks **attack_info;
 
     int cur_packet;
@@ -49,6 +56,12 @@ typedef struct _outgoing_packet_queue {
     int ts;
 } OutgoingPacketQueue;
 
+typedef struct IncomingPacketInformation {
+        char *buf;
+        int size;
+        int protocol;
+        int ipversion;
+} IncomingPacketInformation;
 
 
 // linked list of incoming packets being read for processing
@@ -58,17 +71,18 @@ typedef struct _incoming_packet_queue {
     char *buf;
     int max_buf_size;
     int max_packets;
-    int *packet_starts;
-    int *packet_ends;
-    int *packet_protocol;
-    int *packet_ipversion;
+
+    IncomingPacketInformation *packets;
     int cur_packet;
     int size;
 } IncomingPacketQueue;
 
+struct _packet_instructions;
+typedef struct _packet_instructions PacketBuildInstructions;
+
 typedef int (*PacketIncomingFunc)(AS_context *, PacketBuildInstructions *iptr);
 
-// all packets being read off of the wire will go through these functions to get delivered to wherever they belong
+// all packets being read off of the wire   will go through these functions to get delivered to wherever they belong
 // traceroute for instance will have a filter which if passes then its function will obtain the packets
 typedef struct _network_analysis_functions {
     struct _network_analysis_functions *next;

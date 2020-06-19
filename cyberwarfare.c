@@ -508,6 +508,7 @@ int Cyberwarfare_SendAttack2(AS_context *ctx, PacketBuildInstructions *iptr) {
 int Cyberwarefare_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = 0;
 
+    printf("cw incoming\n");
     // we need to analyze the current time, source ports, and then determine if its for an attacak
     // the timme slice should invalidate.. and this should get moved directly after reading fromm network kdevice
     if (FilterIsOurPacket(iptr)) {

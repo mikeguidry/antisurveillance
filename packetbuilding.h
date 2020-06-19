@@ -1,3 +1,6 @@
+#ifndef PACKETBUILDING_H
+#define PACKETBUILDING_H
+
 #include <netinet/ip6.h>
 #include <netinet/icmp6.h>
 
@@ -190,7 +193,7 @@ struct packeticmp6 {
 
     
 
-#pragma pack(pop)
+
 
 enum {
     TCP_TRANSFER=8,
@@ -208,6 +211,7 @@ enum {
     TCP_OPTIONS=32768
 };
 
+#pragma pack(pop)
 enum {
     ATTACK_SESSION,
     ATTACK_MULTI,
@@ -294,3 +298,5 @@ unsigned short in_cksum(unsigned short *addr,int len);
 
 
 int test_icmp4(AS_context *ctx);
+
+#endif

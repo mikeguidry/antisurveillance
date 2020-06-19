@@ -485,3 +485,4 @@ int fourteen_borderscore(AS_context *ctx, char *country);
 int file_to_iplist(AS_context *ctx, char *filename, char *country);
 int IPAddressesMark(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6, int marker);
 int iplistv4_to_file(AS_context *ctx, char *filename, char *country, int marker);
+IPAddresses *IPAddressesPtr(AS_context *ctx, char *country);

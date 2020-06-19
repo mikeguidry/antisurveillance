@@ -96,8 +96,16 @@ int network_code_start(AS_context *ctx) {
     int ret = 0;
     char req[] = "xyz";
     int client = 0;
+    SocketContext *sptr = NULL;
 
     start = time(0);
+
+    // ignore traffic from debugging.. (ssh/x)
+    ctx->ignore_flt = (struct _filter_information *)calloc(2, sizeof(FilterInformation));
+    FilterPrepare(&ctx->ignore_flt[0], FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 22);
+    FilterPrepare(&ctx->ignore_flt[1], FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 6000);
+    ctx->ignore_flt_count = 2;
+
 
     // open new socket...
     if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;
@@ -106,15 +114,19 @@ int network_code_start(AS_context *ctx) {
 
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.72.10");
+    dest.sin_addr.s_addr = inet_addr("192.168.1.14");
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin_family = AF_INET;
     dest.sin_port = htons(1001);
+
+
 
     // connect to google.com port 80
     r = my_bind((int)sock, (const struct sockaddr_in *)&dest, (socklen_t)sizeof(struct sockaddr_in));
     // did it work out? whats response..
     printf("bind: %d\n", r);
+
+
 
     r = my_listen(sock, 0);
     printf("listen: %d\n", r);
@@ -200,7 +212,7 @@ void thread_network_test(void  *arg) {
 
 int main(int argc, char *argv[]) {
     int i = 0, done = 0;
-    AS_context *ctx = Antisurveillance_Init();
+    AS_context *ctx = Antisurveillance_Init(1);
     // default script is "mgr.py"
     char *script = "net";
     AS_scripts *sctx = NULL;    

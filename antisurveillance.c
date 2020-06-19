@@ -54,7 +54,6 @@ int AS_perform(AS_context *ctx) {
 
     // enumerate through each attack in our list
     while (aptr != NULL) {
-        //printf("perform: aptr %p\n", aptr);
         // try to lock this mutex
         if (pthread_mutex_trylock(&aptr->pause_mutex) == 0) {
             // if we need to join this thread (just in case pthread will leak otherwise)
@@ -102,6 +101,7 @@ int AS_perform(AS_context *ctx) {
             }
 
             pthread_mutex_unlock(&aptr->pause_mutex);
+            
         }
 
         // go to the next
@@ -115,13 +115,12 @@ int AS_perform(AS_context *ctx) {
     if (optr)
         OutgoingQueueLink(ctx, optr);
 
-    //if (!ctx->network_write_threaded) { OutgoingQueueProcess(ctx); }
+    if (!ctx->network_write_threaded) { OutgoingQueueProcess(ctx); }
 
     // traceroute, blackhole, scripting?, timers?
     Subsystems_Perform(ctx);
 
     //ctx->free_memory = FreeMemoryMB();
-    
     return 1;
 }
 
@@ -188,13 +187,22 @@ AS_context *AS_ctx_new(int start_threads) {
     srand(time(0));
 
     // allocate memory for the main context
-    if ((ctx = (AS_context *)calloc(2, sizeof(AS_context))) == NULL) return NULL;
+    if ((ctx = (AS_context *)calloc(1, sizeof(AS_context))) == NULL) {
+        printf("bad\n");
+        return NULL;
+    }
+
+
+    ctx->queue_buffer_size = 1024*1024*10;
+    ctx->queue_max_packets = 10000;
+
 
     pthread_mutex_init(&ctx->network_queue_mutex, NULL);
     pthread_mutex_init(&ctx->network_pool_mutex, NULL);
     pthread_mutex_init(&ctx->socket_list_mutex, NULL);
     pthread_mutex_init(&ctx->custom_mutex, NULL);
     pthread_mutex_init(&ctx->ip_list_mutex, NULL);
+    pthread_mutex_init(&ctx->socket_list_mutex, NULL);
 
 /*
     if ((ctx->network_interface = getgatewayandiface()) == NULL) {
@@ -202,10 +210,9 @@ AS_context *AS_ctx_new(int start_threads) {
         exit(-1);
     }
 */
-    ctx->network_interface = strdup("vmnet8");
+    ctx->network_interface = strdup("ens33");
 
-    // 25 pools waiting initially for reading packets..
-    ctx->initial_pool_count = 0;
+    ctx->initial_pool_count = 1;
     ctx->iterations_per_loop = 5;
     ctx->http_discovery_add_always = 1;
     ctx->ipv6_gen_any = 1;
@@ -213,7 +220,7 @@ AS_context *AS_ctx_new(int start_threads) {
     // need a strategy for fds here to finish select() support for the 
     // keeping it at 50 gives around 45 for other things (files, etc)
     // and we can use select properly
-    ctx->socket_fd = 50;
+    ctx->socket_fd = 20;
     
     prepare_read_sockets(ctx);
     prepare_write_sockets(ctx);
@@ -227,7 +234,7 @@ AS_context *AS_ctx_new(int start_threads) {
     attacks_init(ctx);
 
     // initialize traceroute filter & packet analysis function
-    Traceroute_Init(ctx);
+    //Traceroute_Init(ctx);
 
     // other things in research.c (geoip, etc) maybe move later or redo init/deinit
     Research_Init(ctx);
@@ -243,16 +250,13 @@ AS_context *AS_ctx_new(int start_threads) {
 
     // initialize real time http session discovery.. so we can automatically geenerate attacks for mass surveillance from live arbitrary traffic
     // aint this going to fuck shit up :).. esp on a worm w routers ;).. shittt... good luck
-    WebDiscover_Init(ctx);
+    //WebDiscover_Init(ctx);
 
     // this is a subsystem which will get access to all packets to add IPv6 (mainly) addreses to use for generating new random-ish  addresses
-    IPGather_Init(ctx);
+    //IPGather_Init(ctx);
 
 
     NetworkAPI_Init(ctx);
-
-    ctx->queue_buffer_size = 1024*1024*10;
-    ctx->queue_max_packets = 10000;
 
     
 
@@ -350,7 +354,7 @@ int Subsystems_Perform(AS_context *ctx) {
         // now move any current traceroute research forward
         Traceroute_Perform(ctx);
     }
-    
+
     return 1;
 }
 

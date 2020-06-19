@@ -2,12 +2,14 @@
 
 #define min(a,b) ((a) < (b) ? (a) : (b))
 
-
+struct _packet_instructions;
+typedef struct _packet_instructions PacketBuildInstructions;
+typedef struct _packet_instructions *PPacketBuildInstructions;
 
 void PacketBuildInstructionsFree(PacketBuildInstructions **list);
 AS_attacks *InstructionsToAttack(AS_context *, PacketBuildInstructions *instructions, int count, int interval);
 PacketBuildInstructions *InstructionsFindConnection(AS_context *, PacketBuildInstructions **instructions, FilterInformation *flt);
-PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets);
+PacketBuildInstructions *PacketsToInstructions(AS_context *, char *, int);
 int GenerateTCPCloseConnectionInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list, int from_client);
 int GenerateTCPSendDataInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list, int from_client, char *data, int size);
 int GenerateTCPConnectionInstructions(ConnectionProperties *cptr, PacketBuildInstructions **final_build_list);
@@ -16,5 +18,4 @@ int FilterCheck(AS_context *, FilterInformation *fptr, PacketBuildInstructions *
 void FilterPrepare(FilterInformation *fptr, int type, uint32_t value);
 
 PacketBuildInstructions *ThreadedInstructionsFindConnection(AS_context *, PacketBuildInstructions **instructions, FilterInformation *flt, int threads, int replay_count, int interval);
-PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr);
 PacketBuildInstructions *InstructionsDuplicate(PacketBuildInstructions *sptr);

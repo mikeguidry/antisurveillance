@@ -36,7 +36,7 @@ int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
 // later we will takeover all of those functions correctly
 int network_code_start(AS_context *ctx, int start_ts, int tid) {
     int sock = 0;
-    struct sockaddr_in dest;
+    struct sockaddr_in6 dest;
     int r = 0;
     char req_fmt[] = "GET /?%d_%d HTTP/1.0\r\n\r\n"; // obciousslt adding headers/etc is a must
     char req[1024];
@@ -46,7 +46,7 @@ int network_code_start(AS_context *ctx, int start_ts, int tid) {
     int ret = 0;
     
     SocketContext *sptr = NULL;
-    char ip[16];
+    char ip[256];
 
     sprintf(req, req_fmt, start_ts, tid);
 
@@ -60,7 +60,7 @@ int network_code_start(AS_context *ctx, int start_ts, int tid) {
     start = time(0);
 
     // open new socket...
-    if ((sock = my_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;
+    if ((sock = my_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)) == -1) return -1;
 
     if ((sptr = NetworkAPI_SocketByFD(ctx, sock)) == NULL) return -1;
 
@@ -68,18 +68,20 @@ int network_code_start(AS_context *ctx, int start_ts, int tid) {
     if (tid == 183) tid = 174;
     if (tid == 0) tid = 1;
 
-    sprintf(ip, "192.168.1.14");//, tid);
+    memset(&dest, 0, sizeof(struct sockaddr_in6));
+    sprintf(ip, "2600:1004:b158:bdd0:20c:29ff:febc:9fa5");//, tid);
+    inet_pton(AF_INET6, ip, &dest.sin6_addr);
     //printf("settinng ip %s\n", ip);
     //sptr->our_ipv4 = inet_addr(ip);
     // prepare binding to a specific, ip and local port
-    memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr(ip);
+
+    //dest.sin_addr.s_addr = inet_addr(ip);
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
-    dest.sin_family = AF_INET;
-    dest.sin_port = rand()%0xFFFFFFFF;
+    dest.sin6_family = AF_INET6;
+    dest.sin6_port = rand()%0xFFFFFFFF;
 
     // bind to the IP we chose, and port for the  outgoing connection we will place
-    r = my_bind((int)sock, (const struct sockaddr_in *)&dest, (socklen_t)sizeof(struct sockaddr_in));
+    r = my_bind((int)sock, (const struct sockaddr_in6 *)&dest, (socklen_t)sizeof(struct sockaddr_in6));
     //printf("bind: %d\n", r);
 
 
@@ -88,14 +90,16 @@ int network_code_start(AS_context *ctx, int start_ts, int tid) {
     //printf("sock: %d\n", sock);
 
     // prepare structure for our outgoing connection to google.com port 80
-    memset(&dest, 0, sizeof(struct sockaddr_in));
-    dest.sin_addr.s_addr = inet_addr("192.168.1.13");
+    memset(&dest, 0, sizeof(struct sockaddr_in6));
+    //dest.sin_addr.s_addr = inet_addr("2600:1004:b163:583b:250:56ff:fe33:b63c");
+    sprintf(ip, "2600:1004:b158:bdd0:250:56ff:fe33:b63c");
+    inet_pton(AF_INET6, ip, &dest.sin6_addr);
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
-    dest.sin_family = AF_INET;
-    dest.sin_port = htons(80);
+    dest.sin6_family = AF_INET6;
+    dest.sin6_port = htons(80);
 
     // connect to google.com port 80
-    r = my_connect((int)sock, (const struct sockaddr_in *)&dest, (socklen_t)sizeof(struct sockaddr_in));
+    r = my_connect((int)sock, (const struct sockaddr_in6 *)&dest, (socklen_t)sizeof(struct sockaddr_in6));
     // did it work out? whats response..
     //printf("connect: %d\n", r);
     r=0;
@@ -210,7 +214,7 @@ int main(int argc, char *argv[]) {
     pthread_t *thread_ids = NULL;
     int start = time(0);
 
-    // ignore traffic from debugging..
+        // ignore traffic from debugging..
     ctx->ignore_flt = (struct _filter_information *)calloc(2, sizeof(FilterInformation));
     FilterPrepare(&ctx->ignore_flt[0], FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 22);
     FilterPrepare(&ctx->ignore_flt[1], FILTER_PACKET_TCP|FILTER_SERVER_PORT|FILTER_PACKET_FAMILIAR, 6000);

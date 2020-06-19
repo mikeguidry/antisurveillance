@@ -1,6 +1,6 @@
 #include <pthread.h>
 #include <stdint.h>
-#include <Python.h>
+//#include <Python.h>
 #include <netinet/ip6.h>
 #include <net/if.h>
 #include "GeoIP.h"
@@ -200,6 +200,8 @@ typedef struct _perform_history {
 typedef int (*init_function)(AS_context *);
 typedef int (*perform_function)(AS_context *);
 
+struct _filter_information;
+
 typedef struct _subsystem_module {
     struct _subsystem_module *next;
 
@@ -365,7 +367,7 @@ typedef struct _antisurveillance_context {
     // current fd
     int socket_fd;
     int socket_fd_check;
-    pthread_t socket_list_mutex;
+    pthread_mutex_t socket_list_mutex;
 
     int socket_list_count;
 
@@ -383,6 +385,8 @@ typedef struct _antisurveillance_context {
     char *custom;
     int custom_size;
     pthread_mutex_t custom_mutex;
+    int ignore_flt_count;
+    struct _filter_information *ignore_flt;
 } AS_context;
 
 

@@ -205,8 +205,8 @@ int FilterCheck(AS_context *ctx, FilterInformation *fptr, PacketBuildInstruction
 
         while (optr != NULL && !found) {
             while (cur_packet < optr->cur_packet) {
-                if ((optr->source_port[cur_packet] == iptr->source_port) &&
-                (optr->dest_port[cur_packet] == iptr->destination_port)) {
+                if ((optr->packets[cur_packet].source_port == iptr->source_port) &&
+                (optr->packets[cur_packet].dest_port == iptr->destination_port)) {
                     // we need this temporary value since the mutex has been locked...
                     found = 1;
                     break;
@@ -375,8 +375,6 @@ int GenerateTCPSendDataInstructions(ConnectionProperties *cptr, PacketBuildInstr
 
     // now the sending side must loop until it sends all daata
     while (data_size > 0) {
-
-
         packet_size = min(data_size, from_client ? cptr->max_packet_size_client : cptr->max_packet_size_server);
 
         if (packet_size == 0 && data_size) {
@@ -513,7 +511,7 @@ int GenerateTCPCloseConnectionInstructions(ConnectionProperties *cptr, PacketBui
 
 
 // Process an IPv4 UDP packet from the wire, or a PCAP
-PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
+PacketBuildInstructions *ProcessUDP4Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     struct packetudp4 *p = NULL;
     char *data = NULL;
@@ -525,9 +523,9 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     //printf("Process UDP4\n");
 
     // sanity checks since we are reading directly from the network (as opposed to pcap when i developed this)
-    if (pptr->size < sizeof(struct packetudp4)) goto end;
+    if (size < sizeof(struct packetudp4)) goto end;
 
-    p = (struct packetudp4 *)pptr->buf;
+    p = (struct packetudp4 *)packet;
 
     // Lets do this here.. so we can append it to the list using a jump pointer so its faster
     // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
@@ -538,6 +536,8 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
 
     // start out OK.. might fail it later during checksum
     iptr->ok = 1;
+
+    PtrDuplicate(packet, size, &iptr->packet, &iptr->packet_size);
 
     // source IP, and port from the IP/TCP headers
     iptr->source_ip = p->ip.saddr;
@@ -552,18 +552,12 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
     data_size = ntohs(p->udp.len) - sizeof(struct udphdr);
 
     // sanity checks since we are reading fromm the network
-    if ((data_size < 0) || (data_size != (pptr->size - sizeof(struct packetudp4)))) goto end;
+    if ((data_size < 0) || (data_size != (size - sizeof(struct packetudp4)))) goto end;
 
-
-    if (data_size > 0) {
-        if ((data = (char *)malloc(data_size)) == NULL) goto end;
-
-        memcpy((void *)data, (void *)(pptr->buf + sizeof(struct packetudp4)), data_size);
+    if (data_size > 0 && iptr->packet) {
+        iptr->data = iptr->packet + sizeof(struct packetudp4);
+        iptr->data_size = data_size;
     }
-
-    // ensure the structure will always have access to this data
-    iptr->data = data;
-    iptr->data_size = data_size;
 
     // Keep note of the packets checksum..
     pkt_chk = p->udp.check;
@@ -598,14 +592,6 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
 
     // free the buffer we allocated for the checksum
     free(checkbuf);
-    
-    // Lets link the original data to this new structure..
-    iptr->packet = pptr->buf;
-    iptr->packet_size = pptr->size;
-
-    // Lets remove the pointer from the original structure so it doesnt get freed
-    pptr->buf = NULL;
-    pptr->size = 0;
 
     end:;
     
@@ -615,9 +601,9 @@ PacketBuildInstructions *ProcessUDP4Packet(PacketInfo *pptr) {
 
 // Process an IPv4 ICMP packet from the wire, or a 
 // Sanity checks added since itll parse live packets
-PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
+PacketBuildInstructions *ProcessICMP4Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
-    struct packeticmp4 *p = (struct packeticmp4 *)pptr->buf;
+    struct packeticmp4 *p = (struct packeticmp4 *)packet;
     char *data = NULL;
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
@@ -625,10 +611,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     //printf("Process ICMP4\n");
 
     // data coming from network.. so sanity checks required
-    if (pptr->size < sizeof(struct packeticmp4)) {
-        //printf("size small\n");
-        goto end;
-    }
+    if (size < sizeof(struct packeticmp4)) goto end;
 
     // allocate space for an instruction structure which analysis of this packet will create
     if ((iptr = (PacketBuildInstructions *)calloc(1, sizeof(PacketBuildInstructions))) == NULL) goto end;
@@ -647,20 +630,19 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     data_size = ntohs(p->ip.tot_len) - sizeof(struct packeticmp4);
 
     // since we are ready from the network.. we need some sanity checks
-    if ((data_size < 0) && (data_size != (pptr->size - sizeof(struct packeticmp4)))) goto end;
+    if ((data_size < 0) && (data_size != (size - sizeof(struct packeticmp4)))) goto end;
 
     // set packet as OK (can disqualify from checksum)
     iptr->ok = 1;
+
+    PtrDuplicate(packet, size, &iptr->packet, &iptr->packet_size);
 
     // use packet checksum from the packet
     pkt_chk = p->icmp.checksum;
 
     // copy data from the original packet
-    if (data_size > 0) {
-        if ((data = (char *)malloc(data_size)) == NULL) goto end;
-        memcpy(data, (void *)(pptr->buf + sizeof(struct packeticmp4)), data_size);
-
-        iptr->data = data;
+    if (data_size > 0 && iptr->packet) {
+        iptr->data = iptr->packet + sizeof(struct packeticmp4);
         iptr->data_size = data_size;
     }
 
@@ -678,14 +660,6 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
     // set back the original checksum we used to verify against
     p->icmp.checksum = pkt_chk;
 
-    // move original packet to this new structure
-    iptr->packet = pptr->buf;
-    iptr->packet_size = pptr->size;
-
-    //and unlink from original so it doesnt get freed
-    pptr->buf = NULL;
-    pptr->size = 0;
-
     end:;
 
     return iptr;
@@ -693,7 +667,7 @@ PacketBuildInstructions *ProcessICMP4Packet(PacketInfo *pptr) {
 
 
 // Process an IPv4 TCP/IP packet from wire or PCAP
-PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
+PacketBuildInstructions *ProcessTCP4Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     struct packet *p = NULL;
     int flags = 0;
@@ -706,9 +680,11 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     int tcp_header_size = 0;
 
     // sanity since this is coming off of the wire
-    if (pptr->size < sizeof(struct packet)) goto end;
+    if (size < sizeof(struct packet)) goto end;
 
-    p = (struct packet *)pptr->buf;
+    p = (struct packet *)packet;
+
+    //if (ntohs(p->tcp.source) != 10000 && ntohs(p->tcp.dest) != 10000) return NULL; 
 
     // Determine which TCP flags are set in this packet
     flags = 0;
@@ -747,6 +723,8 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     // start OK.. until checksum.. or disqualify for other reasons
     iptr->ok = 1;
 
+    PtrDuplicate(packet, size, &iptr->packet, &iptr->packet_size);
+
     // total size from IPv4 header
     data_size = ntohs(p->ip.tot_len);
 
@@ -763,19 +741,11 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
     //if ((data_size < 0) || (data_size != (pptr->size - sizeof(struct icmphdr) - sizeof(struct tcphdr) - sizeof)) goto end;
 
 
-    if (data_size > 0) {
-        // allocate memory for the data
-        if ((data = (char *)malloc(data_size )) == NULL) goto end;
-
+    if (data_size > 0 && iptr->packet) {
         // pointer to where the data starts in this packet being analyzed
-        sptr = (char *)(pptr->buf + ((p->ip.ihl << 2) + (p->tcp.doff << 2)));
+        sptr = (char *)(iptr->packet + ((p->ip.ihl << 2) + (p->tcp.doff << 2)));
 
-        // copy into the newly allocated buffer the tcp/ip data..
-        memcpy(data, sptr, data_size);
-
-        // ensure the instructions structure has this new pointer containing the data
-        iptr->data = data;
-        data = NULL; // so we dont free it below..
+        iptr->data = sptr;
         iptr->data_size = data_size;  
     }
 
@@ -798,7 +768,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
         if ((iptr->options = (char *)malloc(iptr->options_size)) == NULL) goto end;
 
         // copy the options from the packet into the allocated space
-        memcpy(iptr->options, (void *)(pptr->buf + sizeof(struct packet)), iptr->options_size);
+        memcpy(iptr->options, (void *)(packet + sizeof(struct packet)), iptr->options_size);
 
         // calculate actual TCP header size without options
         tcp_header_size = sizeof(struct tcphdr);
@@ -866,17 +836,9 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 
     // free that buffer we used for checksum calculations
     free(checkbuf);
-
-    // lets move the packet buffer into this new instruction structure as well
-    iptr->packet = pptr->buf;
-    pptr->buf = NULL;
-    iptr->packet_size = pptr->size;
-    pptr->size = 0;
         
     // moved other analysis to the next function which builds the attack structure
     end:;
-    
-    //printf("iptr %p\n", iptr);
 
     return iptr;
 }
@@ -884,7 +846,7 @@ PacketBuildInstructions *ProcessTCP4Packet(PacketInfo *pptr) {
 
 // Process an IPv4 TCP/IP packet from wire or PCAP
 // *** finish  sanity checks
-PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
+PacketBuildInstructions *ProcessTCP6Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     struct packettcp6 *p = NULL;
     int flags = 0;
@@ -893,7 +855,9 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     char *sptr = NULL;
     int tcp_header_size = 0;
 
-    p = (struct packettcp6 *)pptr->buf;
+    if (size < sizeof(struct packettcp6)) goto end;
+
+    p = (struct packettcp6 *)packet;
 
     // Determine which TCP flags are set in this packet
     flags = 0;
@@ -931,6 +895,8 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
     // start OK.. until checksum.. or disqualify for other reasons
     iptr->ok = 1;
 
+    PtrDuplicate(packet, size, &iptr->packet, &iptr->packet_size);
+
     // total size from IPv6 header
     data_size = ntohs(p->ip.ip6_ctlun.ip6_un1.ip6_un1_plen);// - sizeof(struct ip6_hdr);
     
@@ -939,19 +905,11 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
 
     data_size -= tcp_header_size;
     
-    if (data_size > 0) {
-        // allocate memory for the data
-        if ((data = (char *)malloc(data_size )) == NULL) goto end;
-
+    if (data_size > 0 && iptr->packet) {
         // pointer to where the data starts in this packet being analyzed
-        sptr = (char *)(pptr->buf + sizeof(struct ip6_hdr) + tcp_header_size);
+        sptr = (char *)(iptr->packet + sizeof(struct ip6_hdr) + tcp_header_size);
 
-        // copy into the newly allocated buffer the tcp/ip data..
-        memcpy(data, sptr, data_size);
-
-        // ensure the instructions structure has this new pointer containing the data
-        iptr->data = data;
-        data = NULL; // so we dont free it below..
+        iptr->data = sptr;
         iptr->data_size = data_size;
     }
 
@@ -971,17 +929,11 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
         if ((iptr->options = (char *)malloc(iptr->options_size)) == NULL) goto end;
 
         // copy the options from the packet into the allocated space
-        memcpy(iptr->options, (void *)(pptr->buf + sizeof(struct packet)), iptr->options_size);
+        memcpy(iptr->options, (void *)(packet + sizeof(struct packet)), iptr->options_size);
 
         // calculate actual TCP header size without options
         tcp_header_size = sizeof(struct tcphdr);
     }
-
-    // lets move the packet buffer into this new instruction structure as well
-    iptr->packet = pptr->buf;
-    pptr->buf = NULL;
-    iptr->packet_size = pptr->size;
-    pptr->size = 0;
         
     // moved other analysis to the next function which builds the attack structure
     end:;
@@ -994,7 +946,7 @@ PacketBuildInstructions *ProcessTCP6Packet(PacketInfo *pptr) {
 
 // Process an IPv4 TCP/IP packet from wire or PCAP
 // *** finish sanity checks
-PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
+PacketBuildInstructions *ProcessUDP6Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     struct packetudp6 *p = NULL;
     int data_size = 0;
@@ -1004,7 +956,10 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     struct pseudo_header_udp6 *udp_chk_hdr = NULL;
     uint32_t pkt_chk = 0, our_chk = 0;
 
-    p = (struct packetudp6 *)pptr->buf;
+    // sanity since this is coming off of the wire
+    if (size < sizeof(struct packetudp6)) goto end;
+
+    p = (struct packetudp6 *)packet;
 
     // Lets do this here.. so we can append it to the list using a jump pointer so its faster
     // was taking way too long loading a 4gig pcap (hundreds of millions of packets)
@@ -1028,19 +983,16 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     // start OK.. until checksum.. or disqualify for other reasons
     iptr->ok = 1;
 
+    PtrDuplicate(packet, size, &iptr->packet, &iptr->packet_size);
+
     // calculate data size from udp header
     data_size = ntohs(p->udp.len);// - sizeof(struct udphdr);
     
-    if (data_size > 0) {
-        if ((data = (char *)malloc(data_size)) == NULL) goto end;
-
-        memcpy((void *)data, (void *)(pptr->buf + sizeof(struct packetudp6)), data_size);
+    if (data_size > 0 && iptr->packet) {
+        // ensure the structure will always have access to this data
+        iptr->data = iptr->packet + sizeof(struct packetudp6);
+        iptr->data_size = data_size;
     }
-
-    
-    // ensure the structure will always have access to this data
-    iptr->data = data;
-    iptr->data_size = data_size;
 
     // Keep note of the packets checksum..
     pkt_chk = p->udp.check;
@@ -1076,14 +1028,6 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
     // free the buffer we allocated for the checksum
     free(checkbuf);
     
-    // Lets link the original data to this new structure..
-    iptr->packet = pptr->buf;
-    iptr->packet_size = pptr->size;
-
-    // Lets remove the pointer from the original structure so it doesnt get freed
-    pptr->buf = NULL;
-    pptr->size = 0;
-
     end:;
     
     return iptr;
@@ -1092,9 +1036,9 @@ PacketBuildInstructions *ProcessUDP6Packet(PacketInfo *pptr) {
 
 // Process an IPv4 ICMP packet from the wire, or a PCAP
 // *** finish sanity checks
-PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
+PacketBuildInstructions *ProcessICMP6Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
-    struct packeticmp6 *p = (struct packeticmp6 *)pptr->buf;
+    struct packeticmp6 *p = (struct packeticmp6 *)packet;
     char *data = NULL;
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
@@ -1119,19 +1063,18 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     // set packet as OK (can disqualify from checksum)
     iptr->ok = 1;
 
+    PtrDuplicate(packet, size, &iptr->packet, &iptr->packet_size);
+
     // use packet checksum from the packet
     pkt_chk = p->icmp6.icmp6_cksum;
 
     // copy data from the original packet
-    if (data_size) {
-        if ((data = (char *)malloc(data_size)) == NULL) goto end;
-        memcpy(data, (void *)(pptr->buf + sizeof(struct ip6_hdr)), data_size);
-
-        iptr->data = data;
+    if (data_size && iptr->packet) {
+        iptr->data = iptr->packet + sizeof(struct ip6_hdr);
         iptr->data_size = data_size;
     }
 
-    memcpy(&iptr->icmp6, (void *)(pptr->buf + sizeof(struct ip6_hdr)), sizeof(struct icmp6_hdr));
+    memcpy(&iptr->icmp6, (void *)(packet + sizeof(struct ip6_hdr)), sizeof(struct icmp6_hdr));
 
     // set to 0 in packet so we can  calculate correctly..
     p->icmp6.icmp6_cksum = 0;
@@ -1143,15 +1086,7 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
     if (pkt_chk != our_chk) iptr->ok = 0;
 
     // set back the original checksum we used to verify against
-    p->icmp6.icmp6_cksum = pkt_chk;
-
-    // move original packet to this new structure
-    iptr->packet = pptr->buf;
-    iptr->packet_size = pptr->size;
-
-    //and unlink from original so it doesnt get freed
-    pptr->buf = NULL;
-    pptr->size = 0;
+    p->icmp6.icmp6_cksum = pkt_chk;    
 
     end:;
 
@@ -1159,13 +1094,13 @@ PacketBuildInstructions *ProcessICMP6Packet(PacketInfo *pptr) {
 }
 
 
-typedef PacketBuildInstructions *(*ProcessFunc)(PacketInfo *);
+typedef PacketBuildInstructions *(*ProcessFunc)(char *, int);
 
 // Find the function which will process this packet type correctly from the network wire, or a PCAP
 // *** Todo: i don't like this loop.. I'd like to perform this action without a loop later..
 // Seems I cannot use an exact jump table w original values IPPROTO_TCP/UDP are equal to 0
 // https://www.google.com/search?q=define+ipproto_tcp&oq=define+ipproto_tcp&aqs=chrome..69i57.2845j0j7&sourceid=chrome&ie=UTF-8
-ProcessFunc Processor_Find(int ip_version, int protocol) {//, int *debug_it) {
+ProcessFunc Processor_Find(int ip_version, int protocol) {
     int i = 0;
     struct _packet_processors {
         int ip_version;
@@ -1201,115 +1136,79 @@ ProcessFunc Processor_Find(int ip_version, int protocol) {//, int *debug_it) {
 
 static int pcount = 0;
 
+struct _packet_instructions;
+typedef struct _packet_instructions PacketBuildInstructions;
 
 // Process sessions from a pcap packet capture into building instructions to replicate, and massively replay
 // those sessions :) BUT with new IPs, and everything else required to fuck shit up.
-PacketBuildInstructions *PacketsToInstructions(PacketInfo *packets) {
+PacketBuildInstructions *PacketsToInstructions(AS_context *ctx, char *buf, int size) {
     ProcessFunc Processor;
     PacketInfo *pptr = NULL;
     struct packet *p = NULL;
     struct packettcp6 *p6 = NULL;
     PacketBuildInstructions *iptr = NULL;
-    PacketBuildInstructions *list = NULL, *llast = NULL;
-    PacketBuildInstructions *ret = NULL;
     int protocol = 0;
-    FILE *fd;
     char fname[32];
-    //int debug_it = 0;
     struct ether_header *ethhdr = NULL;
-    char *buf = NULL;
-    int buf_size = 0;
+    int ignore = 0;
 
-    // Enumerate for all packets in the list
-    pptr = packets;
+    // lets check if this packet has ethernet header attached to the front  of it
+    ethhdr = (struct ether_header *)buf;
 
-    while (pptr != NULL) {
-        if (pptr->buf && pptr->size) {
-
-            // lets check if this packet has ethernet header attached to the front  of it
-            //ethhdr = (struct ether_header *)pptr->buf;
-            // *** finish verification of which ether packeet is coming through
-            // either keep the original which had read all 3 on a single socket...
-            // or figur eout which ones include ip, ether, etc headers
-
-            /*if (ethhdr->ether_type != ntohs(ETHERTYPE_IP)) {
-                //if (ethhdr->ether_type == ntohs(0x86DD)) {
-                printf("found ethernet header\n");
-                printf("no eth? %X vs %X without change %X\n", ntohs(ethhdr->ether_type), htons(ethhdr->ether_type), ethhdr->ether_type);
-                buf = pptr->buf + sizeof(struct ether_header);
-                buf_size = pptr->size - sizeof(struct ether_header);
-            } else { */
-                //printf("no eth? %X vs %X without change %X\n", ntohs(ethhdr->ether_type), htons(ethhdr->ether_type), ethhdr->ether_type);
-                buf = pptr->buf;
-                buf_size = pptr->size;
-            //}
-
-            // set structure for reading information from this packet.. for ipv4, and ipv6
-            p = (struct packet *)buf;
-            p6 = (struct packettcp6 *)buf;
-
-            // ipv6 is a little different.. so lets set protocol by whichever this is
-            if (p->ip.version == 4) {
-                protocol = p->ip.protocol;
-            } else if (p->ip.version == 6) {
-                protocol = p6->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt;
-                
-            }
-
-            //debug_it = 0;
-            // Analysis capabilities are limited so use this function to determine
-            // if this packet type has been developed yet
-            if ((Processor = Processor_Find(p->ip.version, protocol)) != NULL) {//, &debug_it)) != NULL)
-                if ((iptr = Processor(pptr)) != NULL) {
-                    // If it processed OK, then lets add it to the list
-                    // This uses a last pointer so that it doesn't enumerate the entire list in memory every time it adds one..
-                    // rather than L_link_ordered()
-                    // not as pretty although it was required whenever incoming packet counts go into the millions..
-                    //printf("--iptr %p\n", iptr);
-                    iptr->ts = time(0);
-                    if (llast == NULL)
-                        ret = llast = iptr;
-                    else {
-                        llast->next = iptr;
-                        llast = iptr;
-                    }
-                }
-            }/* else {
-                    printf("couldnt find processor\n");
-                
-
-                    sprintf(fname, "pkt/dbg_%d_%d.dat", getpid(), pcount++);
-                    FileWrite(fname, pptr->buf, pptr->size);
-                } */
-        }
-
-        // move on to the next element in the list of packets
-        pptr = pptr->next;
+    if ((size > sizeof(struct ether_header)) && ((ethhdr->ether_type == ntohs(ETHERTYPE_IP)) || (ethhdr->ether_type == ntohs(ETHERTYPE_IPV6)))) {
+        buf = buf + sizeof(struct ether_header);
+        size = size - sizeof(struct ether_header);
     }
 
-    // Things are completed.. lets return the list
-    //ret = list;
+    // set structure for reading information from this packet.. for ipv4, and ipv6
+    p = (struct packet *)buf;
+    p6 = (struct packettcp6 *)buf;
+
+    // ipv6 is a little different.. so lets set protocol by whichever this is
+    if (p->ip.version == 4) {
+        protocol = p->ip.protocol;
+    } else if (p->ip.version == 6) {
+        protocol = p6->ip.ip6_ctlun.ip6_un1.ip6_un1_nxt;
+        
+    }
+    // Analysis capabilities are limited so use this function to determine
+    // if this packet type has been developed yet
+    if ((Processor = Processor_Find(p->ip.version, protocol)) != NULL) {
+        if ((iptr = Processor(buf, size)) != NULL) {
+            // check if the ignore filter catches this packet
+            ignore = 0;
+
+            // this was roughly added to ignore my ssh connection to test box..
+            // should be fixed up/moved later
+            if (ctx->ignore_flt_count) {
+                for (int a = 0; a < ctx->ignore_flt_count; a++) {
+                    if (FilterCheck(ctx, &ctx->ignore_flt[a], iptr) == 1) {
+                        ignore = 1;
+                        break;
+                    }
+                }
+            }
+
+            if (ignore == 1) {
+                PacketBuildInstructionsFree(&iptr);
+            }
+        } else {
+            //printf("bad proc\n");
+        }
+    } else {
+        //printf("couldnt find processor\n");
+        sprintf(fname, "pkt/dbg_%d_%d.dat", getpid(), pcount++);
+        FileWrite(fname, buf, size);
+    }
 
     /*
-    iptr = list;
-    while (iptr != NULL) {
+    if (iptr != NULL) {
         printf("%d:%d -> %d:%d %p %d\n", iptr->source_ip, iptr->source_port, iptr->destination_ip,
             iptr->destination_port, iptr->data, iptr->data_size);   
+    }
+    */
 
-        iptr = iptr->next;
-    }*/
-
-
-    // if something got us here without ret, and some list.. remove it
-    /*if (ret == NULL && list != NULL) {
-      //  PacketBuildInstructionsFree(&list);
-    } */
-
-    // this gets freed on calling function.. since a pointer to the pointer (to mark as freed) wasnt passed
-    //PacketsFree(&packets);
-    //printf("ret %p --iptr %p\n", ret, iptr);
-
-    return ret;
+    return iptr;
 }
 
 
@@ -1781,10 +1680,18 @@ void PacketBuildInstructionsFree(PacketBuildInstructions **list) {
     PacketBuildInstructions *iptr = *list, *inext = NULL;
 
     while (iptr != NULL) {
-        if (!iptr->data_nofree)
-            PtrFree(&iptr->data);
 
+        //iptr->data is relative to iptr->packet for incoming.. and as of now, parent removes pointer immediately on outgoing (network_api)
+        if (iptr->data_size && iptr->data && iptr->packet) {
+            // if its NOT a relative pointer, then free it
+            if (iptr->data < iptr->packet && iptr->data > (iptr->packet + iptr->packet_size)) {
+                PtrFree(&iptr->data);
+            }
+        }
+
+        iptr->data = NULL;
         iptr->data_size = 0;
+
 
         PtrFree(&iptr->packet);
         iptr->packet_size = 0;
@@ -1796,7 +1703,7 @@ void PacketBuildInstructionsFree(PacketBuildInstructions **list) {
         inext = iptr->next;
 
         // free this structure..
-        free(iptr);
+        PtrFree(&iptr);
 
         // move to the next..
         iptr = inext;
@@ -1819,10 +1726,17 @@ PacketBuildInstructions *InstructionsDuplicate(PacketBuildInstructions *sptr) {
 
     memcpy(iptr, sptr, sizeof(PacketBuildInstructions));
 
-    //int PtrDuplicate(char *ptr, int size, char **dest, int *dest_size) {
-    PtrDuplicate(sptr->data, sptr->data_size, &iptr->data, &iptr->data_size);
     PtrDuplicate(sptr->options, sptr->options_size, &iptr->options, &iptr->options_size);
     PtrDuplicate(sptr->packet, sptr->packet_size, &iptr->packet, &iptr->packet_size);
+
+    // calculate relative pointer for new structure
+    if (sptr->data_size && sptr->data && sptr->packet) {
+        // verify it is relative to the pointer in the source structure before using
+        if (sptr->data > sptr->packet && sptr->data < (sptr->packet + sptr->packet_size)) {
+            iptr->data = iptr->packet + (sptr->data - sptr->packet);
+            iptr->data_size = sptr->data_size;
+        }
+    }
 
     iptr->aptr = sptr->aptr;
 

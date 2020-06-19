@@ -8,17 +8,22 @@ LIBS2=-lz -lpthread -ggdb  -lpthread -ldl  -lutil -lm   -L/usr/lib -lpython2.7_d
 
 
 
-_OBJ = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o  identities.o macro.o network_api.o network_api.o
+_OBJ = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o  scripting.o  attacks.o  identities.o macro.o  network_api.o
 _OBJ2 = packetbuilding.o pcap.o antisurveillance.o network.o  adjust.o  instructions.o  http.o  research.o  utils.o   attacks.o  identities.o macro.o network_api.o network_api.o noscripting.o
 
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 OBJ2 = $(patsubst %,$(ODIR)/%,$(_OBJ2))
 
+.DEFAULT_GOAL := all
 
-$(ODIR)/%.o: %.c $(DEPS) scriptmain.o 
+
+$(ODIR)/%.o: %.c $(DEPS) 
 	$(CC) -static -c -o $@ $< $(CFLAGS)
 
 connecttest: $(OBJ) connecttest.o
+	gcc -o $@ $^ $(CFLAGS) $(LIBS2)
+
+connecttest6: $(OBJ) connecttest6.o
 	gcc -o $@ $^ $(CFLAGS) $(LIBS2)
 
 cyberwar_findips: $(OBJ) cyberwar_findips.o
@@ -51,4 +56,4 @@ anti_static: $(OBJ) cmdline.o
 clean:
 	rm -f anti $(ODIR)/*.o *~ core $(INCDIR)/*~ 
 
-all: clean anti pyanti tracedev
+all: clean connecttest connecttest6

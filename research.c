@@ -125,7 +125,7 @@ This is a nice example of how you can mix several subsystems, and technologies r
 #include "utils.h"
 #include "identities.h"
 #include "scripting.h"
-
+#include <Python.h>
 // for geoip
 #include "GeoIP.h"
 #include "GeoIPCity.h"
@@ -1065,7 +1065,7 @@ int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
     struct icmphdr *icmp = NULL;
     struct icmp6_hdr *icmp6 = NULL;
 
-    //printf("Traceroute_IncomingICMP()\n");
+    printf("Traceroute_IncomingICMP()\n");
 
     if (iptr->source_ip && (iptr->source_ip == ctx->my_addr_ipv4)) {
         //printf("ipv4 Getting our own packets.. probably loopback\n");
@@ -2910,22 +2910,27 @@ IPAddresses *IPAddressesPtr(AS_context *ctx, char *country) {
     IPAddresses *iptr = IPAddressesbyGeo(ctx, country_id);
 
     if (iptr == NULL) {
+        //printf("no iptr\n");
         // allocate space for the main structure
         if ((iptr = (IPAddresses *)calloc(1, sizeof(IPAddresses))) == NULL) return NULL;
 
+        //printf("iptr %p [%d]\n", iptr,sizeof(IPAddresses));
+        //fflush(stdout);
+
         iptr->country = country_id;
+        iptr->v4_count = 0;
 
-        pthread_mutex_init(&iptr->mutex, NULL);
+        //pthread_mutex_init(&iptr->mutex, NULL);
 
-        pthread_mutex_lock(&iptr->mutex);
+        //pthread_mutex_lock(&iptr->mutex);
 
         pthread_mutex_lock(&ctx->ip_list_mutex);
         L_link_ordered((LINK **)&ctx->ip_list, (LINK *)iptr);
         pthread_mutex_unlock(&ctx->ip_list_mutex);
     }
 
+    //printf("iptr before ret %p\n", iptr);
     return iptr;
-    
 }
 
 int IPAddressesMark(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6, int marker) {
@@ -3765,7 +3770,7 @@ int IPGather_Init(AS_context *ctx) {
         goto end;
 
     // lets call this regardless of needing one.. just to initiate ip grabbing, and somme ipv6 tracerouting to populate those IPs
-    GenerateIPv6Address(ctx, "US", NULL);
+    //GenerateIPv6Address(ctx, "US", NULL);
 
     ret =  1;
 
