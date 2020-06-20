@@ -620,7 +620,7 @@ int Traceroute_Compare(AS_context *ctx, TracerouteSpider *first, TracerouteSpide
 
 
 // find queue by IP
-int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4) {
+TracerouteQueue *TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4) {
     TracerouteQueue *qptr = ctx->traceroute_queue;
     while (qptr != NULL) {
 
@@ -1046,7 +1046,7 @@ TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_a
 }
 
 
-static int icount = 0;
+
 // When we initialize using Traceroute_Init() it added a filter for ICMP, and set this function
 // as the receiver for any packets seen on the wire thats ICMP
 int Traceroute_IncomingICMP(AS_context *ctx, PacketBuildInstructions *iptr) {
@@ -1721,6 +1721,8 @@ int IPv4_compare(uint32_t comp, uint32_t ipv4) {
 
     // 0 only if IPs are exact match
     if (d2 == d) return 0;
+
+    return 0;
 }
 
 
@@ -1899,7 +1901,7 @@ int Spider_Load(AS_context *ctx, char *filename) {
 
 
 //http://www.binarytides.com/get-local-ip-c-linux/
-uint32_t get_local_ipv4() {
+uint32_t get_local_ipv4(void) {
     //const char* google_dns_server = "8.8.8.8";
     const char *google_dns_server = "192.168.72.135";
     int dns_port = 53;
@@ -3150,9 +3152,9 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
     char *IP = NULL;
     char *geo = NULL;
     // if we do not have any IP addresses which are ipv6 then we can initiate a traceroute here to gather some
-    char google_ipv6[] = "2607:f8b0:4000:811::200e";
+    //char google_ipv6[] = "2607:f8b0:4000:811::200e";
     int r = 0;
-    int diff = 0;
+    //int diff = 0;
     char *ipv6_seed_ips[] = { "2607:f8b0:4000:801::2003", "2607:f8b0:4000:811::200e" , NULL };
 
     // we can use gathered ips from packet sniffing instead of static doner IPs..
@@ -3256,7 +3258,7 @@ int GenerateIPv6Address(AS_context *ctx, char *country, struct in6_address *addr
 
 
 
-IPAddresses *GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int count) {
+int GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int count) {
     int ret = 0;
     int i = 0;
     struct in6_addr address_ipv6;
@@ -3277,8 +3279,6 @@ IPAddresses *GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int
 }
 
 
-
-/*
 
 /*
 
@@ -3332,7 +3332,6 @@ int Traceroute_Imaginary_Check(AS_context *ctx, TracerouteSpider *node1, Tracero
     int ret = 0;
 
 
-    end:;
     return ret;
 }
 
@@ -3360,7 +3359,6 @@ int Research_QueueComplete_Increase_Stage(AS_context *ctx, GenericCallbackQueue 
 
     ret = ctx->intel_stage++;
 
-    end:;
     return ret;
 }
 
@@ -3376,7 +3374,7 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
 
     if (tptr == NULL) goto end;
 
-    if ((iptr = IPAddressesbyGeo(ctx, tptr->country)) == NULL) goto end;
+    if ((iptr = IPAddressesbyGeo(ctx, GEOIP_CountryToID(tptr->country))) == NULL) goto end;
     
 
     // ipv4
@@ -3399,7 +3397,7 @@ int Research_Traceroute_Target(AS_context *ctx, AttackTarget *tptr, int max_to_q
     for (i = 0; i < iptr->v6_count; i++) {
         if (max_to_queue && count >= max_to_queue) break;
 
-        qptr = TracerouteFindQueueByIP(ctx, NULL, &iptr->v6_addresses[i]);
+        qptr = TracerouteFindQueueByIP(ctx, 0, &iptr->v6_addresses[i]);
 
         if (qptr == NULL) {
             if ((qptr = Traceroute_Queue(ctx, 0, &iptr->v6_addresses[i])) != NULL) {
@@ -3428,7 +3426,7 @@ GenericCallbackQueue *GenericCallbackByID(AS_context *ctx, int id) {
     while (cptr != NULL) {
         if (cptr->id == id) break;
 
-        cptr = cptr->next;
+        cptr = (struct _traceroute_callback_queue *)cptr->next;
     }
 
     return cptr;
@@ -3461,7 +3459,6 @@ int Generic_CallbackQueueCheck(AS_context *ctx, int callback_id) {
         if (ret) cptr->done = 1;
     }
 
-    end:;
     return ret;
 }
 
@@ -3479,7 +3476,7 @@ int Research_AddGenericCallback(AS_context *ctx, int id, void *function, int cou
     cptr->count = count;
     cptr->id = id;
 
-    cptr->next = ctx->generic_callback_queue;
+    cptr->next = (struct _traceroute_calllback_queue *)ctx->generic_callback_queue;
     ctx->generic_callback_queue = cptr;
 
     return 1;
@@ -3488,14 +3485,9 @@ int Research_AddGenericCallback(AS_context *ctx, int id, void *function, int cou
 
 //  Stage 1 .. begin gathering data required for attacks (sessions, internet paths, whatever)
 int Research_Intelligence_Management_Stage1(AS_context *ctx) {
-    int i = 0;
     int ret = -1;
-    TracerouteQueue *qptr = NULL;
     // 1) generate IP addresses for a target region/country
     AttackTarget *tptr = NULL;
-    IPAddresses *iptr = NULL;
-    AS_attacks *aptr = NULL;
-    int attack_count = 0;
 
     if ((tptr = TargetRandom(ctx)) == NULL) goto end;
 
@@ -3546,14 +3538,12 @@ int Research_Intelligence_Management_Stage2(AS_context *ctx) {
     // we also need to replay somme TLS sessions.. (its time to start manipulation of attacks to attack NSA decryption engines)
 
 
-    end:;
     return ret;
 }
 
 int Research_Intelligence_Management_Stage3(AS_context *ctx) {
     int ret = 0;
 
-    end:;
     return ret;
 }
 
@@ -3597,7 +3587,6 @@ int Research_Intel_Perform(AS_context *ctx) {
         aptr = aptr->next;
     }
 
-    end:;
     return ret;
 }
 
@@ -3607,7 +3596,6 @@ int Research_Intel_Perform(AS_context *ctx) {
 int Research_SyslogSend(AS_context *ctx, uint32_t ip, struct in6_addr ipv6, char *data, int size) {
     int ret = -1;
 
-    end:;
     return ret;
 }
 
@@ -3746,7 +3734,6 @@ int IPGather_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     IPAddressesAddGeo(ctx, country_src, iptr->source_ip, &iptr->source_ipv6);
     IPAddressesAddGeo(ctx, country_dst, iptr->destination_ip, &iptr->destination_ipv6);
 
-    end:;
     return ret;
 }
 
@@ -3755,7 +3742,6 @@ int IPGather_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 // we wanna capture ip addresses out of al packets we read fromm the wire (especially ipv6)
 int IPGather_Init(AS_context *ctx) {
     int ret = -1;
-    NetworkAnalysisFunctions *nptr = NULL;
     FilterInformation *flt = NULL;
 
     // lets prepare incoming ICMP processing for our traceroutes
@@ -3804,7 +3790,6 @@ for example:
 int URL_macroize(AS_context *ctx, SiteIdentifier *siteptr, SiteURL *urlptr) {
     int ret = 0;
 
-    end:;
     return ret;
 }
 

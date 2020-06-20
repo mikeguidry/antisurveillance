@@ -36,9 +36,6 @@ struct ifreq;
 struct _research_connection_options;
 typedef struct _research_connection_options ResearchConnectionOptions;
 
-typedef struct _traceroute_analysis;
-typedef struct _traceroute_analysis TracerouteAnalysis;
-
 struct _pcap_operations;
 typedef struct _pcap_operations PCAPOperation;
 
@@ -308,7 +305,6 @@ typedef struct _antisurveillance_context {
     TracerouteSpider *traceroute_spider_hops;
     // responses coming from the network to get analyzed & put into the spiderweb
     TracerouteResponse *traceroute_responses;
-    TracerouteAnalysis *analysis_list;
 
     ResearchConnectionOptions *research_connections;
     int traceroute_max_retry;
@@ -396,7 +392,7 @@ void AS_Clear_All(AS_context *ctx);
 int Subsystems_Perform(AS_context *);
 
 
-AS_context *Antisurveillance_Init();
+AS_context *Antisurveillance_Init(int);
 int Test_Generate(AS_context *ctx, int argc, char *argv[]);
 int Test_PCAP(AS_context *ctx, char *filename);
 int Threads_Start(AS_context *);
@@ -404,7 +400,7 @@ OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx);
 int Modules_Perform(AS_context *ctx);
 Subsystem_Module *Module_Add(AS_context *ctx, init_function init, perform_function perform);
 int Antisurveillance_Begin(AS_context *ctx);
-
+int AS_perform(AS_context *ctx);
 
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"

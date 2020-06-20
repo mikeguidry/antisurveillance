@@ -132,7 +132,7 @@ int network_code_start(AS_context *ctx) {
     printf("listen: %d\n", r);
 
     while (1) {
-        printf("waiitng for connection\n");
+        printf("waiting for connection\n");
         client = my_accept(sock, NULL, 0);
         if (client) {
             if (pthread_create(&ctx->network_write_thread, NULL, connected_thread, (void *)client) != 0) {

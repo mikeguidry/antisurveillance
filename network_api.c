@@ -194,7 +194,7 @@ int (*real_close)(int fd);
 int (*real_socket)(int domain, int type, int protocol);
 int (*real_accept)(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
 
-int NetworkAPI_SymbolResolve() {
+int NetworkAPI_SymbolResolve(void) {
     int ret = -1;
 	void *libc_ptr = NULL;
 
@@ -224,7 +224,7 @@ int NetworkAPI_SymbolResolve() {
 
 //
 
-
+/*
 #define pthread_mutex_lock2(a) { pthread_mutex_lock_line(a,__LINE__); }
 
 void pthread_mutex_lock_line(pthread_mutex_t *mutex, int line) {
@@ -235,12 +235,11 @@ void pthread_mutex_lock_line(pthread_mutex_t *mutex, int line) {
     pthread_mutex_lock(mutex);
     printf("2 mutex lock id: %d @ %d\n", id, line);
 }
-
+*/
 
 // initialize the network stack
 int NetworkAPI_Init(AS_context *ctx) {
     int ret = -1;
-    NetworkAnalysisFunctions *nptr = NULL;
     FilterInformation *flt = NULL;
 
     // global pointer required since all network functions API are set is stone..
@@ -276,7 +275,6 @@ typedef struct _enumerate_state {
 
 // loops through all sockets in context, uses parent stack variable to contain resume information
 SocketContext *EnumerateSockets(AS_context *ctx, EnumerateState *statecontext) {
-    int c = 0;
     SocketContext *ret = NULL;
 
     while (statecontext->j < JTABLE_SIZE) {
@@ -313,7 +311,7 @@ SocketContext *EnumerateSockets(AS_context *ctx, EnumerateState *statecontext) {
         }
         statecontext->j++;
     }
-end:;
+
     return NULL;
 }
 
@@ -391,9 +389,7 @@ SocketContext *NetworkAPI_ConnectionByRemotePort(AS_context *ctx, int remote_por
         }
         i++;
     }
-        
 
-    end:;
     pthread_mutex_unlock(&ctx->socket_list_mutex);
     if (connptr) pthread_mutex_unlock(&connptr->mutex);
 
@@ -540,7 +536,7 @@ void NetworkAPI_FreeBuffers(IOBuf **ioptr) {
     while (ptr != NULL) {
         // once AS_queue() executes on this.. it moves the pointer over
         // so it wont need to be freed from here (itll happen when outgoing buffer flushes)
-        PtrFree(&ptr->buf);
+        PtrFree((char **)&ptr->buf);
 
         // free all instruction structures attached to this I/O (mainly used for incoming & debugging)
         if (ptr->iptr)
@@ -550,7 +546,7 @@ void NetworkAPI_FreeBuffers(IOBuf **ioptr) {
         pnext = ptr->next;
 
         // free this specific structure element
-        PtrFree(&ptr);
+        PtrFree((char **)&ptr);
 
         // now use that pointer to move forward..
         ptr = pnext;
@@ -629,12 +625,13 @@ int NetworkAPI_Cleanup(AS_context *ctx) {
     }
 
     //pthread_mutex_unlock(&ctx->socket_list_mutex);
+    return 0;
 }
 
 
 // transmits a queued UDP packet
 void NetworkAPI_TransmitUDP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, OutgoingPacketQueue **optr) {
-    int i = 0, ret = 0;
+    int i = 0;
     PacketBuildInstructions *iptr = NULL;
    
     // create instruction packet for the ICMP(4/6) packet building functions
@@ -674,7 +671,6 @@ void NetworkAPI_TransmitUDP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, 
         if (i == 1)
             NetworkQueueInstructions(ctx, iptr, optr);
     }
-    end:;
 
     // we can free the temporary instruction structure we used to have the packet built
     PacketBuildInstructionsFree(&iptr);
@@ -685,7 +681,7 @@ void NetworkAPI_TransmitUDP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, 
 // transmits a queued ICMP packet
 // !!! finish by copying over the icmp4/6 structure
 void NetworkAPI_TransmitICMP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, OutgoingPacketQueue **optr) {
-    int i = 0, ret = 0;
+    int i = 0;
     PacketBuildInstructions *iptr = NULL;
    
     // create instruction packet for the ICMP(4/6) packet building functions
@@ -733,7 +729,7 @@ void NetworkAPI_TransmitICMP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr,
 
 // transmits a TCP packet from a IO queue
 void NetworkAPI_TransmitTCP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, OutgoingPacketQueue **optr) {
-    int i = 0, ret = 0;
+    int i = 0;
     PacketBuildInstructions *iptr = NULL;
 
     // create instruction packet for the ICMP(4/6) packet building functions
@@ -791,7 +787,7 @@ void NetworkAPI_TransmitTCP(AS_context *ctx, SocketContext *sptr, IOBuf *ioptr, 
         if (i == 1)
             NetworkQueueInstructions(ctx, iptr, optr);
     }
-end:;
+
     // we can free the temporary instruction structure we used to have the packet built
     PacketBuildInstructionsFree(&iptr);
 }
@@ -827,7 +823,6 @@ void NetworkAPI_TransmitPacket(AS_context *ctx, SocketContext *sptr, IOBuf *iopt
 // this mainly deals with outgoing buffers, and packet retries...
 // incoming buffers are pushed in by another function.. and just have to wait for the application to read
 int NetworkAPI_Perform(AS_context *ctx) {
-    int i = 0;
     SocketContext *sptr = NULL;
     IOBuf *ioptr = NULL;
     OutgoingPacketQueue *optr = NULL;
@@ -856,7 +851,7 @@ int NetworkAPI_Perform(AS_context *ctx) {
                         /*CLR_GREEN();
                         printf("iptr seq %08X ack %08x [seq a %p ack a %p]\n", iptr->seq, iptr->ack, &iptr->seq, &iptr->ack);
                         CLR_RESET();*/
-                        i = NetworkQueueInstructions(ctx, iptr, &optr);
+                        NetworkQueueInstructions(ctx, iptr, &optr);
                         sptr->last_ts = ctx->ts;
                         // unchain this one
                         iptr = iptr->next;
@@ -908,12 +903,13 @@ int NetworkAPI_Perform(AS_context *ctx) {
     if (optr)
         // chain it into active outgoing queue
         OutgoingQueueLink(ctx, optr);
+
+    return 0;
 }
 
 //static int last_print = 0;
 int NetworkAPI_IncomingSocket(AS_context *ctx, SocketContext *sptr, PacketBuildInstructions *iptr) {
     int ret = 0;
-    IOBuf *bptr = NULL;
     
     // this filter check is a hotspot.. but it would happen in IncomingTCP() or whatever anyways..
     if (!FilterCheck(ctx, &sptr->flt, iptr)) return 0;
@@ -947,7 +943,6 @@ int NetworkAPI_IncomingSocket(AS_context *ctx, SocketContext *sptr, PacketBuildI
 int NetworkAPI_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = 0;
     SocketContext *sptr = NULL, *connptr = NULL;
-    IOBuf *bptr = NULL;
     int j = 0;
 
     //printf("inc\n");
@@ -1040,23 +1035,7 @@ int NetworkAPI_SocketIncomingTCP(AS_context *ctx, SocketContext *sptr, PacketBui
     IOBuf *ioptr = NULL;
     SocketContext *connptr = NULL;
     PacketBuildInstructions *bptr = NULL;
-    PacketBuildInstructions *build_list = NULL;
     uint32_t rseq = 0;
-    struct in_addr addr;
-    int w = 0;
-
-
-    if (iptr->destination_port == 1001 || (iptr->source_port == 1001)) {
-        w=1;
-        addr.s_addr = iptr->source_ip;
-        //printf("Incoming TCP packet data_size %d [%s:%d -> %d]\n", iptr->data_size, inet_ntoa(addr), iptr->source_port, iptr->destination_port);
-   
-        if (iptr->flags & TCP_FLAG_FIN) printf("fin\n");
-        if (iptr->flags & TCP_FLAG_ACK) printf("ack\n");
-        if (iptr->flags & TCP_FLAG_RST) printf("rst\n");
-        if (iptr->flags & TCP_FLAG_PSH) printf("psh\n");
-  
-    }
   
     // be sure both are same IP protocol ipv4 vs ipv6
     if (sptr->address_ipv4 && !iptr->source_ip) {
@@ -1205,7 +1184,7 @@ CLR_RESET();*/
                 sptr->seq += sptr->out_buf->size;
 
                 // free the buffer of this packet since its validated then we wont be using it for retransmission
-                PtrFree(&sptr->out_buf->buf);
+                PtrFree((char **)&sptr->out_buf->buf);
 
                 // use as temporary value so we can free the current packet information
                 ioptr = sptr->out_buf->next;
@@ -1214,7 +1193,7 @@ CLR_RESET();*/
                 PacketBuildInstructionsFree(&sptr->out_buf->iptr);
 
                 // free the actual packet we were awaiting validation for
-                PtrFree(&sptr->out_buf);
+                PtrFree((char **)&sptr->out_buf);
 
                 // move pointer in outgoing buffer to the next in our outgoing list of packets
                 sptr->out_buf = ioptr;
@@ -1454,7 +1433,7 @@ IOBuf *NetworkAPI_BufferOutgoing(int sockfd, char *buf, int len) {
 
         // duplicate the buffer we were given and copy into this outgoing queue structure
         if (!PtrDuplicate(sptr, size, &ioptr->buf, &ioptr->size)) {
-            PtrFree(&ioptr);
+            PtrFree((char **)&ioptr);
             goto end;
         }
 
@@ -1506,7 +1485,6 @@ end:;
 // takes multiple IOBufs and puts them together into a single one
 // ** this does NOT lock the connection context ** calling function must
 IOBuf *NetworkAPI_ConsolidateIncoming(SocketContext *sptr) {
-    AS_context *ctx = NetworkAPI_CTX;
     //SocketContext *sptr = NULL;
     IOBuf *ioptr = NULL;
     IOBuf *ret = NULL;
@@ -1544,7 +1522,7 @@ IOBuf *NetworkAPI_ConsolidateIncoming(SocketContext *sptr) {
 
     // allocate space within this new structure for the buffer itself
     if ((ret->buf = malloc(size)) == NULL) {
-        PtrFree(&ret);
+        PtrFree((char **)&ret);
         goto end;
     }
 
@@ -1863,7 +1841,7 @@ int NetworkAPI_AcceptConnection(int sockfd) {
     pthread_mutex_lock(&ctx->socket_list_mutex);
 
     // unlink from the 'connections' location where it was waiting
-    L_unlink((LINK **)&sptr->connections, connptr);
+    L_unlink((LINK **)&sptr->connections, (LINK *)connptr);
 
     // link to real normal list
     L_link_ordered((LINK **)&ctx->socket_list[NetworkAPI_IP_JTABLE(connptr->socket_fd,NULL)], (LINK *)connptr);
@@ -1913,14 +1891,12 @@ int NetworkAPI_Listen(int sockfd) {
 
     printf("listening on %d\n", sptr->port);
 
-end:;
     if (sptr) pthread_mutex_unlock(&sptr->mutex);
     // no error
     return 0;
 }
 
 int NetworkAPI_Close(int fd) {
-    int i = 0;
     AS_context *ctx = NetworkAPI_CTX;
     SocketContext *sptr = NULL;
     PacketBuildInstructions *iptr = NULL;
@@ -1934,20 +1910,20 @@ int NetworkAPI_Close(int fd) {
 
     if (sptr->completed == 0) {
         iptr = NetworkAPI_GeneratePacket(ctx, sptr, TCP_FLAG_RST|TCP_FLAG_ACK|TCP_OPTIONS|TCP_OPTIONS_TIMESTAMP);
-        i = NetworkQueueInstructions(ctx, iptr, &optr);
+        NetworkQueueInstructions(ctx, iptr, &optr);
         if (optr) OutgoingQueueLink(ctx, optr);
         sptr->completed = 2;
-        goto end;
+    } else {
+
+        // set state to 0
+        sptr->state = 0;
+        // set completed to 2 (program isnt going to require any data in the buffer)
+        sptr->completed = 1;
+
+        sptr->port = 1;
+        sptr->remote_port = 1;
     }
 
-    // set state to 0
-    sptr->state = 0;
-    // set completed to 2 (program isnt going to require any data in the buffer)
-    sptr->completed = 1;
-
-    sptr->port = 1;
-    sptr->remote_port = 1;
-end:;
     pthread_mutex_unlock(&sptr->mutex);
 
     return 0;
@@ -1963,7 +1939,7 @@ SocketContext *NetworkAPI_DuplicateSocket(SocketContext *sptr) {
     int ret_size = 0;
 
     // duplicate the socket context
-    if (!PtrDuplicate(sptr, sizeof(SocketContext), &ret, &ret_size)) return NULL;
+    if (!PtrDuplicate((char *)sptr, (int)sizeof(SocketContext), (char **)&ret, (int *)&ret_size)) return NULL;
 
     // change things which are required for all duplicated sockets
     ret->next = NULL;
@@ -2168,6 +2144,7 @@ ssize_t my_recv(int sockfd, void *buf, size_t len, int flags) {
 
 ssize_t my_recvmsg(int sockfd, struct msghdr *msg, int flags) {
     //NetworkAPI_ReadSocket(sockfd, buf, len);
+    return 0;
 }
 
 
@@ -2219,9 +2196,9 @@ int my_listen(int sockfd, int backlog) {
 
 int my_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
     AS_context *ctx = NetworkAPI_CTX;
-    int port = 0;
-    uint32_t address = 0;
-    struct in6_addr *address_ipv6 = NULL;
+    //int port = 0;
+    //uint32_t address = 0;
+    //struct in6_addr *address_ipv6 = NULL;
     struct sockaddr_in *addr_ipv4;
     struct sockaddr_in6 *addr_ipv6;
     SocketContext *sptr = NULL;
@@ -2272,8 +2249,7 @@ double time_diff(struct timeval x, struct timeval y) {
 
 // we are going to do this differently.. since we control all sockets, and we already lock the socket structure... 
 // ill just loop and check if they are in the sets...
-int both_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout_ms, struct timespec *timeout_ns) {
-    int i = 0;
+int both_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout_ms, const struct timespec *timeout_ns) {
     AS_context *ctx = (AS_context *)NetworkAPI_CTX;
     SocketContext *sptr = NULL;
     IOBuf *ioptr = NULL;
@@ -2290,7 +2266,6 @@ int both_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, 
     fd_set local_readfds;
     fd_set local_writefds;
     fd_set local_exceptfds;
-    int j = 0;
     EnumerateState enumeratestate;
 
     memset(&enumeratestate, 0, sizeof(EnumerateState));
@@ -2493,58 +2468,63 @@ int my_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
     SocketContext *sptr = NULL;
     IOBuf *ioptr = NULL;
     int start = time(0);
+    int j = 0;
 
     // set alll revents  to 0 in case some are stdio, etc which wont capture here..
     // we dont want to return 5, and the app had some old data setting revents to ones we dont even verify
     // then skips sommething due to the implementation
     for (i = 0; i < nfds; i++) fds[i].revents=0;
 
+    pthread_mutex_lock(&ctx->socket_list_mutex);
     while (!count) {
         count = 0;
-        pthread_mutex_lock(&ctx->socket_list_mutex);
-        sptr = ctx->socket_list;
-        while (sptr != NULL) {
-            pthread_mutex_lock(&sptr->mutex);
+    
+        while (j < JTABLE_SIZE) {
+            sptr = ctx->socket_list[j];
+            while (sptr != NULL) {
+                pthread_mutex_lock(&sptr->mutex);
 
-            // check if the poll parameters include this socket
-            i = poll_which(fds, nfds, sptr->socket_fd);
-            if (i != -1) {
-                // set all events to 0
-                fds[i].revents = 0;
+                // check if the poll parameters include this socket
+                i = poll_which(fds, nfds, sptr->socket_fd);
+                if (i != -1) {
+                    // set all events to 0
+                    fds[i].revents = 0;
 
-                // if we have readfd set, and this socket matches it
-                if (fds[i].events & POLLIN) {
-                    ioptr = NetworkAPI_ConsolidateIncoming(sptr);
+                    // if we have readfd set, and this socket matches it
+                    if (fds[i].events & POLLIN) {
+                        ioptr = NetworkAPI_ConsolidateIncoming(sptr);
 
-                    if (ioptr && ((ioptr->size - ioptr->ptr))) {
-                        fds[i].revents |= POLLIN;
-                        count++;
+                        if (ioptr && ((ioptr->size - ioptr->ptr))) {
+                            fds[i].revents |= POLLIN;
+                            count++;
+                        }
+                    }
+
+                    // if we have writefds, and this socket matches..
+                    if (fds[i].events & POLLOUT) {
+                        n = NetworkAPI_Count_Outgoing_Queue(sptr->out_buf);
+
+                        // ok in future we should allow user to choose buffer size
+                        // for outgoing packets.. anyways this is fine for now
+                        // ***
+                        if (n <= 0) {
+                            fds[i].revents |= POLLOUT;
+                            count++;
+                        }
+                    }
+
+                    if (fds[i].events & POLLERR) {
+                        if (sptr->completed) {
+                            fds[i].revents |= POLLERR;
+                            count++;
+                        }
                     }
                 }
 
-                // if we have writefds, and this socket matches..
-                if (fds[i].events & POLLOUT) {
-                    n = NetworkAPI_Count_Outgoing_Queue(sptr->out_buf);
-
-                    // ok in future we should allow user to choose buffer size
-                    // for outgoing packets.. anyways this is fine for now
-                    // ***
-                    if (n <= 0) {
-                        fds[i].revents |= POLLOUT;
-                        count++;
-                    }
-                }
-
-                if (fds[i].events & POLLERR) {
-                    if (sptr->completed) {
-                        fds[i].revents |= POLLERR;
-                        count++;
-                    }
-                }
+                pthread_mutex_unlock(&sptr->mutex);
+                sptr = sptr->next;
             }
-
-            pthread_mutex_unlock(&sptr->mutex);
-            sptr = sptr->next;
+            j++;
         }
 
         if (!count && time(0) - start > timeout) break;

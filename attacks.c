@@ -87,6 +87,7 @@ TCP protocol attacks - (causes traffic disruption)
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
 #include <string.h>
+#include <sys/time.h>
 #include "network.h"
 #include "antisurveillance.h"
 #include "packetbuilding.h"
@@ -108,11 +109,10 @@ TCP protocol attacks - (causes traffic disruption)
 // at that characters location. Compression on top of all other analysis engines used to generate actual intelligence from raw internet
 // data would clog those threads, CPUs, and possibly even hard drives up drastically.
 int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body) {
-    int i = 0, n = 0, y = 0,r = 0, q = 0;
+    int i = 0, n = 0, y = 0;
     char *data = NULL;
     int data_size = 0;
     char *sptr = 0;
-    char *header_end_ptr=NULL;
     int zip_size = 0;
     z_stream infstream;
     z_stream outstream;
@@ -189,7 +189,6 @@ int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body)
             sptr = strstr((char *)sptr, "\r\n");
             sptr += 2;
             // keep information on when the header ends..
-            header_end_ptr = sptr;
             header_size = (int)((char *)sptr - (char *)*server_body);
             //printf("\rHeader Size: %d\t\n", header_size);
 
@@ -336,7 +335,6 @@ int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body)
     
         // keep track of parameters before, and after compression so we can accurately calculate
         n = outstream.total_in;
-        q = outstream.total_out;
         i = deflate(&outstream, Z_NO_FLUSH);
 
         // not enough buffer space.. lets realloc
@@ -352,7 +350,6 @@ int GZipAttack(AS_context *ctx, AS_attacks *aptr, int *size, char **server_body)
         }
 
         y = outstream.total_in;
-        r = outstream.total_out;
 
         // update by how many bytes went out..
         compressed_in += (y - n);
@@ -572,7 +569,7 @@ int BH_add_IP(AS_context *ctx, uint32_t ip) {
 
 // remove by IP
 int BH_del_IP(AS_context *ctx, uint32_t ip) {
-    BH_Queue *qptr = ctx->blackhole_queue, *qlast = NULL, *qnext = NULL;
+    BH_Queue *qptr = ctx->blackhole_queue;
     int ret = 0;
 
     while (qptr != NULL) {
@@ -638,7 +635,7 @@ int BH_Perform(AS_context *ctx) {
     while (qptr != NULL) {
 
         if (qptr->ip) {
-            ip = qptr->next;
+            ip = qptr->ip;
         } else {
             sprintf(Aip, "%d.%d.%d.%d", qptr->a, qptr->b, qptr->c, qptr->d);
             ip = inet_addr(Aip);
@@ -648,6 +645,7 @@ int BH_Perform(AS_context *ctx) {
     }
     
 
+    ip = ip;
 
 
     end:;
@@ -744,8 +742,7 @@ void attacks_init(AS_context *ctx) {
 // find by criteria...
 AS_attacks *AttackFind(AS_context *ctx, int id, char *source_ip, char *destination_ip, char *any_ip, int source_port, int destination_port, int any_port, int age) {
     AS_attacks *aptr = ctx->attack_list;
-    uint32_t src = 0, dst = 0, any = 0;
-    int ts = 0;
+    uint32_t any = 0;
     struct timeval tv;
     struct timeval time_diff;
     int src_is_ipv6 = 0, dst_is_ipv6 = 0;

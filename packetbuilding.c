@@ -221,7 +221,6 @@ int BuildSingleTCP4Packet(PacketBuildInstructions *iptr) {
 
 
 int BuildPacketInstructions(PacketBuildInstructions *ptr) {
-    PacketInfo *qptr = NULL;
     int i = 0;
     int n = 0;
     int ret = 1;
@@ -278,8 +277,6 @@ end:;
 void BuildPackets(AS_attacks *aptr) {
     PacketBuildInstructions *ptr = aptr->packet_build_instructions;
     PacketInfo *qptr = NULL;
-    int i = 0;
-    int n = 0;
 
 
     //printf("1 build packets aptr %d completed %d\n", aptr->id, aptr->completed);
@@ -607,7 +604,6 @@ int BuildSingleICMP4Packet(PacketBuildInstructions *iptr) {
     char *final_packet = NULL;
     int final_packet_size = 0;
     struct packeticmp4 *p = NULL;
-    uint32_t pkt_chk = 0;
     struct icmphdr *icmp = NULL;
     int extra_data = 0;
 
@@ -694,7 +690,6 @@ int BuildSingleICMP6Packet(PacketBuildInstructions *iptr) {
     char *final_packet = NULL;
     int final_packet_size = 0;
     struct packeticmp6 *p = NULL;
-    uint32_t pkt_chk = 0;
     struct icmp6_hdr *icmp6 = NULL;
 
     // this is only for ipv4 tcp
@@ -975,7 +970,6 @@ int BuildSingleTCP6Packet(PacketBuildInstructions *iptr) {
 // !!!
 int PacketTCPBuildOptions(PacketBuildInstructions *iptr) {
     // later we nede to access parameters in aptr to build correctly (os emulation)
-    AS_attacks *aptr = iptr->aptr;
     // need to see what kind of packet by the flags....
     // then determine which options are necessaray...
     // low packet id (fromm 0 being syn connection) would require the tcp window size, etc

@@ -514,7 +514,6 @@ int GenerateTCPCloseConnectionInstructions(ConnectionProperties *cptr, PacketBui
 PacketBuildInstructions *ProcessUDP4Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     struct packetudp4 *p = NULL;
-    char *data = NULL;
     int data_size = 0;
     char *checkbuf = NULL;
     struct pseudo_header_udp4 *udp_chk_hdr = NULL;
@@ -604,7 +603,6 @@ PacketBuildInstructions *ProcessUDP4Packet(char *packet, int size) {
 PacketBuildInstructions *ProcessICMP4Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     struct packeticmp4 *p = (struct packeticmp4 *)packet;
-    char *data = NULL;
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
@@ -672,7 +670,6 @@ PacketBuildInstructions *ProcessTCP4Packet(char *packet, int size) {
     struct packet *p = NULL;
     int flags = 0;
     int data_size = 0;
-    char *data = NULL;
     char *sptr = NULL;
     uint16_t pkt_chk = 0;
     struct pseudo_tcp4 *p_tcp = NULL;
@@ -851,7 +848,6 @@ PacketBuildInstructions *ProcessTCP6Packet(char *packet, int size) {
     struct packettcp6 *p = NULL;
     int flags = 0;
     int data_size = 0;
-    char *data = NULL;
     char *sptr = NULL;
     int tcp_header_size = 0;
 
@@ -950,8 +946,6 @@ PacketBuildInstructions *ProcessUDP6Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     struct packetudp6 *p = NULL;
     int data_size = 0;
-    char *data = NULL;
-    char *sptr = NULL;
     char *checkbuf = NULL;
     struct pseudo_header_udp6 *udp_chk_hdr = NULL;
     uint32_t pkt_chk = 0, our_chk = 0;
@@ -1039,7 +1033,6 @@ PacketBuildInstructions *ProcessUDP6Packet(char *packet, int size) {
 PacketBuildInstructions *ProcessICMP6Packet(char *packet, int size) {
     PacketBuildInstructions *iptr = NULL;
     struct packeticmp6 *p = (struct packeticmp6 *)packet;
-    char *data = NULL;
     int data_size = 0;
     unsigned short pkt_chk = 0, our_chk = 0;
 
@@ -1143,7 +1136,6 @@ typedef struct _packet_instructions PacketBuildInstructions;
 // those sessions :) BUT with new IPs, and everything else required to fuck shit up.
 PacketBuildInstructions *PacketsToInstructions(AS_context *ctx, char *buf, int size) {
     ProcessFunc Processor;
-    PacketInfo *pptr = NULL;
     struct packet *p = NULL;
     struct packettcp6 *p6 = NULL;
     PacketBuildInstructions *iptr = NULL;
@@ -1703,7 +1695,7 @@ void PacketBuildInstructionsFree(PacketBuildInstructions **list) {
         inext = iptr->next;
 
         // free this structure..
-        PtrFree(&iptr);
+        PtrFree((char **)&iptr);
 
         // move to the next..
         iptr = inext;

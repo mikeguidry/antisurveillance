@@ -125,7 +125,6 @@ IOBuf *NetworkAPI_ConsolidateIncoming(SocketContext *sptr);
 PacketBuildInstructions *NetworkAPI_GeneratePacket(AS_context *ctx, SocketContext *cptr, int flags);
 
 
-
 ssize_t my_send(int sockfd, const void *buf, size_t len, int flags);
 ssize_t my_recv(int sockfd, void *buf, size_t len, int flags);
 ssize_t my_sendmsg(int sockfd, const struct msghdr *msg, int flags);

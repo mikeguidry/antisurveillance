@@ -55,7 +55,6 @@ using other rudimentary tools.  A subsystem for packet capturing can also log to
 // etc)
 int PcapSave(AS_context *ctx, char *filename, OutgoingPacketQueue *packets, PacketInfo *ipackets, int free_when_done) {    
     OutgoingPacketQueue *ptr = packets;
-    OutgoingPacketQueue *qnext = NULL;
 
     PacketInfo *pptr = NULL;
     PacketInfo *pnext = NULL;
@@ -444,7 +443,6 @@ int PCAP_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 
     // done
 
-    end:;
     return ret;
 }
 
@@ -453,7 +451,6 @@ int PCAP_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
 // initialize traceroute research subsystem
 // this has to prepare the incoming packet filter, and structure so we get iniformation from the wire
 int PCAP_Init(AS_context *ctx) {
-    NetworkAnalysisFunctions *nptr = NULL;
     FilterInformation *flt = NULL;
     int ret = -1;
 
@@ -479,7 +476,7 @@ int PCAP_Init(AS_context *ctx) {
 
 // stop capturing to a packet capture file
 int PCAP_OperationRemove(AS_context *ctx, char *filename) {
-    PCAPOperation *cptr = ctx->pcap_operations, *clast = NULL, *cnext = NULL;
+    PCAPOperation *cptr = ctx->pcap_operations, *clast = NULL;
     int ret = 0;
 
     while (cptr != NULL) {

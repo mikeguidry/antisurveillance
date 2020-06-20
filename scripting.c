@@ -33,6 +33,7 @@ if pythoon didnt require indentions i'd prob try it more often
 #include "instructions.h"
 #include "utils.h"
 #include "research.h"
+#include "attacks.h"
 #include <Python.h>
 
 #ifndef offsetof
@@ -84,7 +85,6 @@ static PyObject *PyASC_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
 
 // this is literally the function that gets called while initializing the object which allows controlling the anti surveillance software
 static int PyASC_init(PyAS_Config *self, PyObject *args, PyObject *kwds) {
-    PyObject *first=NULL, *last=NULL, *tmp;
     void *ctx = NULL;
 
     static char *kwlist[] = { "ctx", NULL};
@@ -160,12 +160,11 @@ static PyObject *PyASC_PCAPload(PyAS_Config* self,  PyObject *args, PyObject *kw
 
 // save all packet captures to a filename fromm network outgoing queue
 static PyObject *PyASC_PCAPsave(PyAS_Config* self, PyObject *Pfilename){
-    int ret = 0;
     const char* s = PyString_AsString(Pfilename);
 
     if (s && self->ctx) {
         pthread_mutex_lock(&self->ctx->network_queue_mutex);
-        ret = PcapSave(self->ctx, (char *)s, self->ctx->outgoing_queue, NULL, 0);
+        PcapSave(self->ctx, (char *)s, self->ctx->outgoing_queue, NULL, 0);
         pthread_mutex_unlock(&self->ctx->network_queue_mutex);
     }
 
@@ -320,9 +319,7 @@ static PyObject *PyASC_AttackClear(PyAS_Config* self){
 }
 
 // perform one iteration of all attack structures
-static PyObject *PyASC_AttackPerform(PyAS_Config* self){    
-    int i = 0;
-
+static PyObject *PyASC_AttackPerform(PyAS_Config* self) { 
     if (self->ctx) AS_perform(self->ctx);
 
     Py_INCREF(Py_None);
@@ -372,7 +369,7 @@ static PyObject *PyASC_BlackholeAdd(PyAS_Config* self, PyObject *Ptarget){
 }
 
 // remove a single target from the blackhole attack
-static PyObject *PyASC_BlackholeDel(PyAS_Config* self, PyObject *Ptarget){
+static PyObject *PyASC_BlackholeDel(PyAS_Config* self, PyObject *Ptarget) {
     const char* target = PyString_AsString(Ptarget);
 
     if (self->ctx)
@@ -608,7 +605,6 @@ err:;
 
 static PyObject *PyASC_AttackDetails(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"attack_id", 0};
-    int ret = 0;
     int attack_id = 0;
     AS_attacks *aptr = NULL;
     PyObject *pRet = NULL;
@@ -619,7 +615,7 @@ static PyObject *PyASC_AttackDetails(PyAS_Config* self, PyObject *args, PyObject
     }
 
     if (self->ctx) {
-        aptr = AttackFind(self->ctx, attack_id, NULL, NULL, 0, 0, 0, 0);
+        aptr = AttackFind(self->ctx, attack_id, NULL, NULL, NULL, 0, 0, 0, 0);
         if (aptr != NULL) {
             pRet = PyAttackDetails(aptr);
         }
@@ -792,7 +788,6 @@ static PyObject *PyASC_AttackList(PyAS_Config* self, PyObject *args, PyObject *k
     PyObject *PAttackList = NULL;
     AS_attacks *aptr = NULL;
     int i = 0;
-    PyObject *Plist_element = NULL;
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|sssiiii", kwd_list, &source_ip, &destination_ip, &any_ip, &source_port, &destination_port, &any_port, &age)) {
         PyErr_Print();
@@ -945,7 +940,6 @@ static PyObject *PyASC_SpiderLoad(PyAS_Config* self, PyObject *args, PyObject *k
     static char *kwd_list[] = {"filename",0};
     char fname[] = "traceroute";
     char *filename = (char *)&fname;
-    int ret = 0;
     
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", kwd_list, &filename)) {
@@ -966,7 +960,6 @@ static PyObject *PyASC_SpiderSave(PyAS_Config* self, PyObject *args, PyObject *k
     static char *kwd_list[] = {"filename",0};
     char fname[] = "traceroute";
     char *filename = (char *)&fname;
-    int ret = 0;
     
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", kwd_list, &filename)) {
@@ -975,7 +968,7 @@ static PyObject *PyASC_SpiderSave(PyAS_Config* self, PyObject *args, PyObject *k
     }
 
     if (self->ctx) {
-        Spider_Save (self->ctx);//, filename);
+        Spider_Save(self->ctx);
     }
 
     Py_INCREF(Py_None);
@@ -1016,7 +1009,6 @@ static PyObject *PyASC_TracerouteStatus(PyAS_Config* self) {
     long ttl_count[MAX_TTL];
     TracerouteSpider *sptr = NULL;
     int count  = 0;
-    int n = 0;
 
     memset(ttl_count, 0, sizeof(long)*MAX_TTL);
 
@@ -1039,7 +1031,7 @@ static PyObject *PyASC_TracerouteStatus(PyAS_Config* self) {
         printf("total %d\n", count);
 
         for (i = 0; i < MAX_TTL; i++) {
-            printf("2. ttl_count[%d] = %d\n", i, ttl_count[i]);
+            printf("2. ttl_count[%d] = %ld\n", i, ttl_count[i]);
             
             PyList_SET_ITEM(PStatusList, i, PyLong_FromLong(ttl_count[i]));
         }
@@ -1068,7 +1060,6 @@ static PyObject *PyASC_TracerouteSetPriority(PyAS_Config* self, PyObject *args, 
     static char *kwd_list[] = {"address","priority", 0};
     TracerouteQueue *qptr = NULL;
     int ret = 0;
-    char *target = NULL;
     char *address = NULL;
     int priority = 1;
     uint32_t address_ipv4 = 0;
@@ -1096,7 +1087,6 @@ static PyObject *PyASC_TracerouteSetPriority(PyAS_Config* self, PyObject *args, 
 static PyObject *PyASC_TracerouteSetMax(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"max",0};
     int ret = 0;
-    char *target = NULL;
     int set_max = 0;
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwd_list, &set_max)) {
@@ -1116,7 +1106,6 @@ static PyObject *PyASC_TracerouteSetMax(PyAS_Config* self, PyObject *args, PyObj
 static PyObject *PyASC_TracerouteRandom(PyAS_Config* self, PyObject *args, PyObject *kwds) {
     static char *kwd_list[] = {"completed", 0};
     int completed = 0;
-    char IP[50];
     TracerouteQueue *qptr = NULL;
     int i = 0, count = 0;
     char *_IP = NULL;
@@ -1465,15 +1454,15 @@ void PyASC_Initialize(void) {
 PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name, PyObject *pArgs) {
     PyObject *pName=NULL, *pModule=NULL, *pFunc=NULL;
     PyObject *pValue=NULL;
-    int ret = 0;
+    PyObject *ret = NULL;
     char fmt[] = "sys.path.append(\"%s\")";
     char *dirs[] = { "/tmp", "/var/tmp", ".", NULL };
     char buf[1024];
     int i = 0;
-    PyObject *pCtx = NULL, *pSetCTX = NULL;
-    PyObject *pPerform = NULL, *pASPtr = NULL, *pManager = NULL;
+    PyObject *pCtx = NULL;
+    PyObject *pPerform = NULL;
 
-    if (eptr == NULL) return -1;
+    if (eptr == NULL) return NULL;
     
     // The script has not been loaded before (the pointer isnt in the structure)
     if (!eptr->pModule) {
@@ -1501,7 +1490,7 @@ PyObject *PythonLoadScript(AS_scripts *eptr, char *script_file, char *func_name,
         // keep for later (for the plumbing/loop)
         if ((eptr->pModule = pModule) == NULL) {
             PyErr_Print();
-            ret = -1;
+            ret = NULL;
             goto end;
         }
 
@@ -1603,7 +1592,7 @@ int python_call_function(AS_scripts *mptr,  char *message, int size) {
                 PyTuple_SetItem(pArgs, 2, pValue);
                 
                 // now push that argument to the actual python 'incoming' function in that script
-                ret = PythonLoadScript(mptr, NULL, scripting_main_loop_function, pArgs);
+                ret = PythonLoadScript(mptr, NULL, (char *)scripting_main_loop_function, pArgs) != NULL;
                 
                 // free size
                 Py_DECREF(pValue);
@@ -1632,12 +1621,11 @@ int Scripting_Perform(AS_context *ctx) {
 
         // on load did this script contain "script_perform" ?
         if (sptr->perform)
-            ret = PythonLoadScript(sptr, NULL, scripting_main_loop_function, NULL);
+            ret = PythonLoadScript(sptr, NULL, (char *)scripting_main_loop_function, NULL) != NULL;
         
         sptr = sptr->next;
     }
 
-    end:;
     return ret;
 }
 
@@ -1646,7 +1634,6 @@ int Scripting_Perform(AS_context *ctx) {
 // initialize function for the scripting subsystem... simple w just python
 int Scripting_Init(AS_context *ctx) {
     int ret = -1;
-    int i = 0;
     
     // initialize python required function
     Py_Initialize();
@@ -1664,7 +1651,6 @@ int Scripting_Init(AS_context *ctx) {
 
     ret = 1;
 
-    end:;
     return ret;           
 }
 
@@ -1713,8 +1699,8 @@ AS_scripts *Scripting_New(AS_context *ctx) {
 // it would like to call, or callback
 AS_scripts *Scripting_FindFunction(AS_context *ctx, char *func_name) {
     AS_scripts *eptr = ctx->scripts;
-    AS_scripts *ret = NULL;
     PyObject *pFunc = NULL;
+    AS_scripts *ret = NULL;
     
 
     while (eptr != NULL) {
@@ -1740,7 +1726,7 @@ AS_scripts *Scripting_FindFunction(AS_context *ctx, char *func_name) {
         Scripting_ThreadPost(ctx, eptr);
     }
 
-    return eptr;
+    return ret;
 }
 
 
@@ -1798,18 +1784,18 @@ PyObject *PyAttackDetails(AS_attacks *aptr) {
     PyObject *pPortSrc = NULL;
     PyObject *pPortDst = NULL;
     PyObject *pInstructionsCount = NULL;
-    PyObject *pCurrentPacket = NULL;
+    //PyObject *pCurrentPacket = NULL;
     PyObject *pPaused = NULL;
     PyObject *pCount = NULL;
     PyObject *pInterval = NULL;
     PyObject *pCompleted = NULL;
-    PyObject *pFunction = NULL;
+    //PyObject *pFunction = NULL;
     PyObject *pSkipAdjustments = NULL;
     char *Src = NULL;
     char *Dst = NULL;
 
-    Src = (char *)IP_prepare_ascii(&aptr->src, &aptr->src6);
-    Dst = (char *)IP_prepare_ascii(&aptr->dst, &aptr->dst6);
+    Src = (char *)IP_prepare_ascii(aptr->src, &aptr->src6);
+    Dst = (char *)IP_prepare_ascii(aptr->dst, &aptr->dst6);
     
     pSrc = PyString_FromString(Src);
     pDst = PyString_FromString(Dst);

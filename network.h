@@ -96,7 +96,7 @@ typedef struct _network_analysis_functions {
     long long bytes_processed;
 } NetworkAnalysisFunctions;
 
-int prepare_socket();
+
 void *thread_network_flush(void *arg);
 int AS_queue(AS_context *ctx, AS_attacks *attack, PacketInfo *qptr);
 void *AS_queue_threaded(void *arg);
@@ -109,7 +109,10 @@ int NetworkQueueInstructions(AS_context *ctx, PacketBuildInstructions *iptr, Out
 int NetworkAllocateReadPools(AS_context *ctx);
 int NetworkAllocateWritePools(AS_context *ctx);
 void OutgoingQueueLink(AS_context *ctx, OutgoingPacketQueue *optr);
-
+int prepare_read_sockets(AS_context *ctx);
+int prepare_write_sockets(AS_context *ctx);
+int network_read_loop(AS_context *ctx);
+int network_process_incoming_buffer(AS_context *ctx);
 
 
 enum {

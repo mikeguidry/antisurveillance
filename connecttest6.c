@@ -30,7 +30,9 @@ typedef struct _thread_details {
     int tid;
 } ThreadDetails;
 
+
 int my_connect(int sockfd, const struct sockaddr_in *addr, socklen_t addrlen);
+
 
 // everything in here for testing shoold use  my_*
 // later we will takeover all of those functions correctly
@@ -69,7 +71,8 @@ int network_code_start(AS_context *ctx, int start_ts, int tid) {
     if (tid == 0) tid = 1;
 
     memset(&dest, 0, sizeof(struct sockaddr_in6));
-    sprintf(ip, "2600:1004:b158:bdd0:20c:29ff:febc:9fa5");//, tid);
+    sprintf(ip, "2600:1004:b14b:c765:250:56ff:fe26:1865");//, tid);
+
     inet_pton(AF_INET6, ip, &dest.sin6_addr);
     //printf("settinng ip %s\n", ip);
     //sptr->our_ipv4 = inet_addr(ip);
@@ -92,7 +95,7 @@ int network_code_start(AS_context *ctx, int start_ts, int tid) {
     // prepare structure for our outgoing connection to google.com port 80
     memset(&dest, 0, sizeof(struct sockaddr_in6));
     //dest.sin_addr.s_addr = inet_addr("2600:1004:b163:583b:250:56ff:fe33:b63c");
-    sprintf(ip, "2600:1004:b158:bdd0:250:56ff:fe33:b63c");
+    sprintf(ip, "2600:1004:b14b:c765:250:56ff:fe24:7d5b");
     inet_pton(AF_INET6, ip, &dest.sin6_addr);
     //dest.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest.sin6_family = AF_INET6;

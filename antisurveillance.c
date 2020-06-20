@@ -34,7 +34,8 @@ If this is the damage I can do alone... what do you  think will happen in the fu
 #include "http.h"
 #include "utils.h"
 #include "network_api.h"
-
+#include "scripting.h"
+#include "research.h"
 
 #define TEST
 
@@ -383,7 +384,7 @@ AS_context *Antisurveillance_Init(int start_threads) {
     }
 
     // initialize scripting subsystem
-    Scripting_Init();
+    Scripting_Init(ctx);
 
     if ((sctx = Scripting_New(ctx)) == NULL) {
         //printf("Initialize scripting failed.\n");
@@ -413,7 +414,6 @@ Subsystem_Module *Module_Add(AS_context *ctx, init_function init, perform_functi
     if (init) init(ctx);
     if (perform) perform(ctx);
 
-end:;
     return mptr;
 }
 

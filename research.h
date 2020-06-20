@@ -263,7 +263,7 @@ typedef struct _traceroute_data {
 int Traceroute_Perform(AS_context *ctx);
 int Traceroute_Incoming(AS_context *ctx, PacketBuildInstructions *iptr);
 void get_local_ipv6(struct in6_addr *dst);
-uint32_t get_local_ipv4();
+uint32_t get_local_ipv4(void);
 int Traceroute_Init(AS_context *ctx);
 TracerouteQueue *Traceroute_Queue(AS_context *ctx, uint32_t target, struct in6_addr *targetv6);
 int Traceroute_Count(AS_context *ctx, int, int);
@@ -276,6 +276,7 @@ int Spider_Load2(AS_context *ctx, char *filename);
 TracerouteSpider *Traceroute_FindByIdentifierTTL(AS_context *ctx, uint32_t id, int ttl);
 TracerouteSpider *Traceroute_FindByHop(AS_context *ctx, uint32_t hop_ipv4, struct in6_addr *hop_ipv6);
 TracerouteSpider *Traceroute_FindByTarget(AS_context *ctx, uint32_t target_ipv4, struct in6_addr *target_ipv6);
+TracerouteSpider *Traceroute_Find(AS_context *ctx, uint32_t address, struct  in6_addr *addressv6, int check_targets);   
 int Traceroute_RetryAll(AS_context *ctx);
 void Traceroute_Watchdog_Add(AS_context *ctx);
 int Traceroute_Watchdog(AS_context *ctx);
@@ -439,14 +440,14 @@ typedef struct _ip_addresses {
 
 int fourteen_check_id(int country_id);
 int fourteen_check(char *country);
-int TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4);
+TracerouteQueue *TracerouteQueueFindByIP(AS_context *ctx, uint32_t ipv4);
 int testcallback(AS_context *ctx);
 int Spider_Load_threaded(AS_context *ctx, char *filename);
 SiteIdentifier *Site_Add(AS_context *ctx, char *site, char *url);
 SiteURL *URL_Add(SiteIdentifier *sident, char *url);
 
 IPAddresses *GenerateIPAddressesCountry_ipv4(AS_context *ctx, char *country, int count);
-IPAddresses *GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int count);
+int GenerateIPAddressesCountry_ipv6(AS_context *ctx, char *country, int count);
 
 
 
@@ -486,3 +487,4 @@ int file_to_iplist(AS_context *ctx, char *filename, char *country);
 int IPAddressesMark(AS_context *ctx, char *country, uint32_t ip, struct in6_addr *ipv6, int marker);
 int iplistv4_to_file(AS_context *ctx, char *filename, char *country, int marker);
 IPAddresses *IPAddressesPtr(AS_context *ctx, char *country);
+int Spider_Save(AS_context *ctx);

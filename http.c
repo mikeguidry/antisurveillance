@@ -136,7 +136,6 @@ int BuildHTTP4Session(AS_context *ctx, AS_attacks *aptr, uint32_t server_ip, uin
 
 // The thread has been started to perform a GZIP attack without affecting non GZIP attack packets
 void *thread_gzip_attack(void *arg) {
-    int i = 0;
     GZIPDetails *dptr = (GZIPDetails *)arg;
     AS_attacks *aptr = dptr->aptr;
     AS_context *ctx = dptr->ctx;
@@ -152,7 +151,7 @@ void *thread_gzip_attack(void *arg) {
     GZipAttack(ctx, aptr, &dptr->server_body_size, &dptr->server_body);
  
     // build session using the modified server body w gzip attacks
-    i = BuildHTTP4Session(ctx, aptr, aptr->dst, aptr->src, aptr->destination_port, dptr->client_body, dptr->client_body_size, 
+    BuildHTTP4Session(ctx, aptr, aptr->dst, aptr->src, aptr->destination_port, dptr->client_body, dptr->client_body_size, 
         dptr->server_body, dptr->server_body_size);
             
     // free the details that were passed to us
@@ -323,7 +322,6 @@ char *ConnectionData(PacketBuildInstructions *_iptr, int side, int *_size) {
         iptr = iptr->next;
     }
 
-    end:;
     *_size = size;
     return ret;
 }
@@ -336,17 +334,12 @@ char *ConnectionData(PacketBuildInstructions *_iptr, int side, int *_size) {
 // take information from the connetion (src/dst ip and port) and clietn body (from cleitn side) and server body..
 // and rebuild with a completely new structur so that we can do advanced modifications.
 int HTTPContentModification(AS_attacks *aptr) {
-    int i = 0;
-    int p = 0;
     //float z = 0;
     char *tags_to_modify[] = {"<html>","<body>","<head>","<title>","</title>","</head>","</body>","</html>",NULL};
-    char *sptr = NULL;
     int ret = 0;
-    char magic[4] = "HTTP";
     char *response = NULL;
     int response_size = 0;
     // https://github.com/h2o/picohttpparser starting with their example...
-    char *hptr = NULL;
 
     // work in progress
     return 0;
@@ -355,7 +348,7 @@ int HTTPContentModification(AS_attacks *aptr) {
     if (aptr->destination_port != 80) return ret;
 
     // call a function which will return all data from a particular side of the TCP connection (inn this case we want to modify the server's response)
-    if ((response = ConnectionData(aptr, FROM_SERVER, &response_size)) == NULL) return 0;
+    if ((response = ConnectionData(aptr->packet_build_instructions, FROM_SERVER, &response_size)) == NULL) return 0;
 
     // the data iis here but the library below didnt work as expected... =/
     // It might be smart to just remove it, and write some of my own code to accomplish...
@@ -423,7 +416,6 @@ int HTTPContentModification(AS_attacks *aptr) {
         }
     }*/
 
-    end:;
 
     PtrFree(&response);
 
@@ -443,8 +435,8 @@ int ResearchPyDiscoveredHTTPSession(AS_context *ctx, char *IP_src, int *source_p
     PyObject *pCountry_src = NULL, *pCountry_dst = NULL;
     PyObject *pBodyClient = NULL, *pBodyServer = NULL;
     PyObject *pBodyClientSize = NULL, *pBodyServerSize = NULL;
-    PyObject *pFunc = NULL, *pValue = NULL, *pTuple = NULL;
-    AS_scripts *eptr = ctx->scripts;
+    PyObject *pFunc = NULL, *pValue = NULL;
+    //AS_scripts *eptr = ctx->scripts;
     AS_scripts *sptr = ctx->scripts;
     
     char *new_client_body = NULL;
@@ -634,7 +626,6 @@ int WebDiscover_Init(AS_context *ctx) {
 int WebDiscover_Incoming(AS_context *ctx, PacketBuildInstructions *iptr) {
     int ret = -1;
     HTTPBuffer *hptr = ctx->http_buffer_list;
-    char fname[32];
     PacketBuildInstructions *packet_copy = NULL;
     AS_attacks *aptr = ctx->attack_list;
     //sprintf(fname, "packets/data_%d.dat", pcount);
@@ -869,7 +860,7 @@ int WebDiscover_AnalyzeSession(AS_context *ctx, HTTPBuffer *hptr) {
     int max_packet_size_client = OS_client ? OS_client->window_size : (1500 - (20 * 2 + 12));
     int max_packet_size_server = OS_server ? OS_server->window_size : (1500 - (20 * 2 + 12)); 
 
-    int client_port = 1024 + (rand()%(65535-1024));
+    //int client_port = 1024 + (rand()%(65535-1024));
 
     uint32_t client_seq = rand()%0xFFFFFFFF;
     uint32_t server_seq = rand()%0xFFFFFFFF;
@@ -1150,7 +1141,6 @@ int WebDiscover_Perform(AS_context *ctx) {
 
     ret += WebDiscover_Cleanup(ctx);
 
-    end:;
     return ret;
 }
 
@@ -1187,7 +1177,6 @@ int WebDiscover_Cleanup(AS_context *ctx) {
         hptr = hptr->next;
     }
 
-    end:;
     return ret;
 }
 
@@ -1300,7 +1289,7 @@ int TLS_Version(char *data) {
 // takes a buffer, and another buffer made to keep track of the first, and it finds a random byte which has not been already used
 // or returned by the same buffer
 int random_untouched(unsigned char *data, int size, char *touched, int not_null) {
-    int r = rand()%size;
+    //int r = rand()%size;
     int i = 0;
     int try = 50;
 
@@ -1335,7 +1324,7 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
     int i = 0;
     char *touched = NULL;
     int untouched = 0;
-    int a = 0, b = 0;
+    int a = 0;
     int op = 0;
     char *new_packet = NULL;
     int new_packet_size = 0;
@@ -1393,7 +1382,7 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
                 // loop for the new  amount we are adding.. starting at the end of the old data
                 i = data_size;
                 while (i < new_data_size) {
-                    untouched = random_untouched(data, data_size, touched, 0);
+                    untouched = random_untouched((unsigned char *)data, data_size, touched, 0);
                     if (untouched == 0) {
                         new_data[i] = rand()%255;
                     } else {
@@ -1429,7 +1418,7 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
                 // lets mark the current as touched so we never get it as the second operand
                 touched[i] = 1;
                 // get a pointer to data that hasn't been touched by this loop yet
-                untouched = random_untouched(data, data_size, touched, 0);
+                untouched = random_untouched((unsigned char *)data, data_size, touched, 0);
 
                 // pick a random operation
                 op = rand()%5;
@@ -1458,7 +1447,6 @@ int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr) {
             }
     }
 
-    end:;
 
     return 1;
 }

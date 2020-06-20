@@ -100,7 +100,6 @@ IncomingPacketQueue *IncomingQueueAlloc(AS_context *ctx) {
 
 OutgoingPacketQueue *OutgoingPoolGet(AS_context *ctx) {
     OutgoingPacketQueue *optr = NULL;
-    int ts = time(0);
 
     // get outgoing packet queue structure from buffer
     pthread_mutex_lock(&ctx->network_pool_mutex);
@@ -151,7 +150,7 @@ void DebugTCPPacket(OutgoingPacketQueue *optr, int cur_packet) {
     char *sptr = NULL;
 
     sptr = optr->packets[cur_packet].buf;
-    p = sptr;
+    p = (struct packet *)sptr;
 
 CLR_RED();
     printf("WIRE SEQ: ID %04X %08X ACK: %08X addr: %p %p raw: %08X %08X\n",
@@ -171,9 +170,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
     OutgoingPacketQueue *pool = NULL, *plast = NULL;
     struct sockaddr_in raw_out_ipv4;
     struct sockaddr_in6 raw_out_ipv6;
-    struct ether_header *ethhdr = NULL;
     int bytes_sent = 0;
-    char *IP = NULL;
     char *sptr = NULL;
     int cur_packet = 0;
     int packet_size = 0;
@@ -222,7 +219,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
                     raw_out_ipv6.sin6_port   = 0;//htons(optr->packets[cur_packet].dest_port);
                     CopyIPv6Address(&raw_out_ipv6.sin6_addr, &optr->packets[cur_packet].dest_ipv6);
 
-                    bytes_sent = sendto(ctx->write_socket[optr->packets[cur_packet].protocol][optr->packets[cur_packet].ipversion], sptr, packet_size, 0, (struct sockaddr_in6 *) &raw_out_ipv6, sizeof(raw_out_ipv6));
+                    bytes_sent = sendto(ctx->write_socket[optr->packets[cur_packet].protocol][optr->packets[cur_packet].ipversion], sptr, packet_size, 0, (const struct sockaddr *) &raw_out_ipv6, sizeof(raw_out_ipv6));
                 }
 
                 // if sent matches size then we count it
@@ -297,7 +294,7 @@ int FlushOutgoingQueueToNetwork(AS_context *ctx, OutgoingPacketQueue *optr) {
 }
 
 void ClearPackets(AS_context *ctx) {
-    OutgoingPacketQueue *optr = ctx->outgoing_queue, *onext = NULL;
+    OutgoingPacketQueue *optr = ctx->outgoing_queue;
 
     pthread_mutex_lock(&ctx->network_queue_mutex);
 
@@ -343,9 +340,7 @@ void *thread_network_flush(void *arg) {
     AS_context *ctx = (AS_context *)arg;
     int count = 0;
     int i = 0;
-    struct sched_param params;
-    //pthread_t this_thread = pthread_self();
-    OutgoingPacketQueue *optr = NULL;
+    //pthread_t this_thread = pthread_self()
 
     // prioritize this pthread as high
     //params.sched_priority = sched_get_priority_max(SCHED_FIFO);
@@ -381,8 +376,6 @@ int prepare_write_sockets(AS_context *ctx) {
     int ip_ver = 0, proto = 0;
     int which_proto = 0, which_domain = 0;
     int bufsize = 1024*1024*10;
-    struct ifreq ifr;
-    struct packet_mreq mreq;
     int flags = 0;
 
     for (proto = 0; proto < 3; proto++) {
@@ -457,12 +450,9 @@ int prepare_read_sockets(AS_context *ctx) {
     int ret = 0;
     struct ifreq ifr;
     struct sockaddr_ll sll;
-    int protocol= IPPROTO_TCP;
-    int sockopt = 1;
     int flags = 0;
     struct ifreq if_mac;
     struct ifreq if_ip;
-    int one = 1;
     int bufsize = 1024*1024*10;
     int ip_ver = 0;
     int which_proto = 0, proto = 0, which_domain = 0;
@@ -570,14 +560,11 @@ int prepare_read_sockets(AS_context *ctx) {
 // *** todo: maybe make a filter check which takes a packet buffer instead of
 // requiring the build instructions (less cycles)
 int process_packet(AS_context *ctx, char *packet, int size) {
-    PacketInfo *pptr = NULL;
     NetworkAnalysisFunctions *nptr = ctx->IncomingPacketFunctions;
     PacketBuildInstructions *iptr = NULL;
     int ret = -1;
-    FILE *fd;
+    //FILE *fd;
     //char fname[1024];
-    int r = 0;
-    int count = 0;
 
     //if (size == 0) goto end;
 
@@ -599,7 +586,9 @@ int process_packet(AS_context *ctx, char *packet, int size) {
         if (!nptr->flt || FilterCheck(ctx, nptr->flt, iptr)) {
             //printf("pass filter iptr %p funnc %p\n", iptr, nptr->incoming_function);
             // maybe verify respoonse, and break the loop inn some case
-            r = nptr->incoming_function(ctx, iptr);
+            nptr->incoming_function(ctx, iptr);
+
+            ret = 1;
             
             nptr->bytes_processed += size;
         }
@@ -609,7 +598,7 @@ int process_packet(AS_context *ctx, char *packet, int size) {
     }
 
     // worked out alright.
-    ret = 1;
+    ret = 0;
 
     end:;
 
@@ -625,10 +614,7 @@ int network_process_incoming_buffer(AS_context *ctx) {
     IncomingPacketQueue *nptr = NULL, *nnext = NULL;
     IncomingPacketQueue *pool = NULL, *plast = NULL;
     int ret = 0;
-    char *sptr = NULL;
     int cur_packet = 0;
-    int packet_size = 0;
-    int pret = 0;
 
     //printf("process incomming buffer\n");
     
@@ -710,9 +696,6 @@ int NetworkReadSocket(IncomingPacketQueue *nptr, int socket, int proto, int ip_v
     char *sptr = NULL;
     int r = 0;
     int ret = 0;    
-    struct sockaddr_ll sll;
-
-    int sll_len = sizeof(struct sockaddr_ll);
 
 
     //printf("ReadSocket %d proto %d ip %d\n", socket, proto, ip_ver);
@@ -856,7 +839,7 @@ int NetworkAllocateWritePools(AS_context *ctx) {
 
 // thread to read constantly from the network
 int network_read_loop(AS_context *ctx) {
-    int i = 0;
+    int ret = 0;
     IncomingPacketQueue *nptr = NULL;
 
     //printf("network read loop\n");
@@ -894,6 +877,8 @@ int network_read_loop(AS_context *ctx) {
             ctx->incoming_queue_last->next = nptr;
             // set the last as this one for the next queue
             ctx->incoming_queue_last = nptr;
+
+            ret = 1;
         } else {
             // buffer is completely empty.. set it, and the last pointer to this one
             ctx->incoming_queue = ctx->incoming_queue_last = nptr;
@@ -917,21 +902,19 @@ int network_read_loop(AS_context *ctx) {
     }
 
     //printf("network read end\n");
-
     end:;
+    return ret;
 }
 
 
 void *thread_read_network(void *arg) {
     AS_context *ctx = (AS_context *)arg;
-    struct sched_param params;
     //pthread_t this_thread = pthread_self();
     int paused = 0;
  
      // We'll set the priority to the maximum.
     //params.sched_priority = sched_get_priority_max(SCHED_FIFO);
     //pthread_setschedparam(this_thread, SCHED_FIFO, &params);
-    int cnt = 0;
     while (1) {
         network_read_loop(ctx);
 
@@ -972,7 +955,7 @@ void *thread_read_network(void *arg) {
     // exit thread
     pthread_exit(NULL);
 
-    return;
+    return 0;
 }
 
 
@@ -1018,10 +1001,8 @@ void OutgoingQueueLink(AS_context *ctx, OutgoingPacketQueue *optr) {
 int NetworkQueueInstructions(AS_context *ctx, PacketBuildInstructions *iptr, OutgoingPacketQueue **_optr) {
     int ret = 0;
     OutgoingPacketQueue *optr = NULL;
-    int which_proto = 0;
     char *sptr = NULL;
     int which_protocol = 0;
-    int i = 0;
 
 /*CLR_YELLOW();
     printf("nqueue %04X %08X %08X [seq %p ack %p] %p\n", iptr->header_identifier, iptr->seq, iptr->ack, &iptr->seq, &iptr->ack, iptr->packet);

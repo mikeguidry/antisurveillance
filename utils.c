@@ -18,6 +18,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <net/if.h>
+#include "research.h"
 
 #define BUFFER_SIZE 4096
 
@@ -71,7 +72,7 @@ void L_link_ordered(LINK **list, LINK *ele) {
 
   // unlinks something from a list
 void L_unlink(LINK **list, LINK *ptr) {
-    LINK *lptr = *list, *lnext = NULL, *llast = NULL;
+    LINK *lptr = *list, *llast = NULL;
 
     while (lptr != NULL) {
 
@@ -160,7 +161,6 @@ int timeval_subtract (struct timeval *result, struct timeval  *x, struct timeval
 
 
 int FileWrite(char *filename, char *ptr, int size) {
-    int ret = 0;
     int r = 0;
     FILE *fd = fopen(filename, "wb");
     if (fd == NULL) return -1;
@@ -209,7 +209,6 @@ int CompareIPv6Addresses(struct in6_addr *first, struct in6_addr *second) {
 
 // Orderd linking (first in first out) which is required for packets
 void L_link_ordered_offset(LINK **list, LINK *ele, int offset) {
-    LINK *_last = NULL;
     void **ptr = NULL;
     void **ptr2 = NULL;
 
@@ -260,7 +259,7 @@ void L_link_ordered_offset(LINK **list, LINK *ele, int offset) {
 // means itll work for multidimensional lists we use in research.c
 int L_count_offset(LINK *lptr, int offset) {
     int count = 0;
-    void **ptr = NULL, **ptr2 = NULL;
+    void **ptr = NULL;
 
     // if we dont have any at all...
     if (lptr == NULL) return 0;
@@ -320,7 +319,9 @@ char *IP_prepare_ascii(uint32_t ipv4_dest, struct in6_addr *ipv6_src) {
         dst.s_addr = ipv4_dest;
         strncpy(final, inet_ntoa(dst), sizeof(final));
     } else if (ipv6_src != NULL) {
-        buf = inet_ntop(AF_INET6, ipv6_src, &final, sizeof(final)); 
+        buf = inet_ntop(AF_INET6, (const void *)ipv6_src, (char *)&final, (socklen_t) sizeof(final)); 
+        strncpy(final, buf, 50);
+        free(buf);
     }
 
     return strdup(final);
@@ -337,7 +338,7 @@ int file_exist(char *filename) {
 
 // https://gist.githubusercontent.com/javiermon/6272065/raw/f6456b6db893a8f020a2436f1043f0eb12ac57e1/gateway_netlink.c
 
-char *getgatewayandiface() {
+char *getgatewayandiface(void) {
     int     received_bytes = 0, msg_len = 0, route_attribute_len = 0;
     int     sock = 0, msgseq = 0;
     struct  nlmsghdr *nlh, *nlmsg;
@@ -443,10 +444,9 @@ end:;
 
 // on routers if the free memory is extremely low then we dont want to hold all outgoing packets in our memory (IoT routers wouldnt handle it properly)
 // especially with large attack structures, and attempting to filter out our own packets
-int FreeMemoryMB() {
+int FreeMemoryMB(void) {
     FILE *fd;
     char buf[1024];
-    int i = 0;
     unsigned long long ret = 0;
     unsigned long long value = 0;
     char type[32];
@@ -476,7 +476,7 @@ int FreeMemoryMB() {
 
 // allows us to use various IPv4 addresses which we receieve data for
 // this needs to obviously be redone.. 
-uint32_t get_source_ipv4() {
+uint32_t get_source_ipv4(void) {
     char ip[16];
     int r = 1+rand()%250;
     

@@ -89,3 +89,4 @@ HTTPObservedVariables *ObserveAdd(AS_context *ctx, int ttl, int window_size);
 HTTPObservedVariables *ObserveCheck(AS_context *ctx, int ttl, int window_size);
 HTTPObservedVariables *ObserveGet(AS_context *ctx, int from_client);
 int SSL_Modifications(AS_context *ctx, PacketBuildInstructions *iptr);
+int WebDiscover_Perform(AS_context *ctx);
